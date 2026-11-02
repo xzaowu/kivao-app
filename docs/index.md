@@ -8,6 +8,7 @@
 
 - [Docker 部署](content/docs/overview/docker.mdx)：默认服务器方案、Compose 选择与已有部署核对。
 - [在线更新与安全回退](content/docs/backend/system-update.mdx)：受管部署条件、安装、备份、迁移和回退。
+- [KIVAO 首次镜像切换](content/docs/backend/kivao-first-release.mdx)：固定线上源码、自有镜像、隔离恢复与原地回滚；生产步骤另需人工授权。
 - [本地开发](content/docs/backend/local-development.mdx)：宿主机与热更新开发环境。
 
 ## 设计沉淀

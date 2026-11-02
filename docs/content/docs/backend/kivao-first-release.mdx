@@ -1,0 +1,307 @@
+---
+title: KIVAO 首次镜像切换
+description: 从线上相同源码构建独立镜像，保留 PostgreSQL、数据与反代，分阶段验证备份、切换和回滚。
+---
+
+# KIVAO 首次镜像切换
+
+本文是操作方案。生产备份、停止写入、暂停 Redis、修改部署环境、拉取生产候选镜像和切换均未执行，必须先获得对应人工授权。禁止直接运行官方安装脚本覆盖既有部署。首次接管不安装 Host Updater。
+
+## 冻结的发布身份
+
+| 项目 | 固定值 |
+| --- | --- |
+| 应用源码 | `eeccf718e8ad78aee98ca49d142d0594ea7000b2` |
+| 源码 tree | `ef66139b54abb4376a5c6b964fd9a776337d6a9a` |
+| 内部应用版本 | `v1.7.3.3`，不改产品版本文件 |
+| 构建时间参数 | `2026-10-30T13:21:58+08:00`，取源码提交时间 |
+| 自有发布修订 | `kivao-1.0.0-eeccf718-r1` |
+| 架构 | `linux/amd64`，与目标服务器 `x86_64` 对应 |
+| 数据库 | PostgreSQL 17；Schema 77、76 条迁移记录 |
+
+三个镜像分别命名为 `ghcr.io/xzaowu/kivao-app-web`、`ghcr.io/xzaowu/kivao-app-backend`、`ghcr.io/xzaowu/kivao-app-agent`。候选 tag 使用上述发布修订；正式部署只接受 `仓库@sha256:摘要`。tag 本身仍可被仓库管理员改写，digest 才是部署身份。已存在的候选修订禁止覆盖；重建须创建新的受审查修订。
+
+发布准备文件位于从该源码创建的 `release/kivao-baseline-eeccf718` 分支。main 和当前产品分支不回退、不 rebase 到该提交。构建脚本使用 `git archive` 导出固定源码，不把工作区中新写的文档、脚本或任何未提交文件放入应用构建上下文。
+
+```bash
+python3 scripts/test_kivao_build_baseline.py
+python3 scripts/kivao-build-baseline.py
+python3 scripts/kivao-build-baseline.py --build
+```
+
+输出在 Git 忽略的 `.local/cache/kivao-first-release/`：源码归档、依赖锁 SHA-256、构建参数、Docker/Buildx 版本、三个构建日志、BuildKit 元信息和 `build-result.json`。依赖以该提交的 `web/bun.lock`、`backend/go.mod` / `go.sum`、Pi Runtime 的 `package-lock.json` 为准。Web 使用 Bun 1.3.9，Backend 使用 Go 1.25，Runtime 使用 Node 22.19 Alpine。基础镜像标签和 Alpine 软件包仓库会随时间变化；保留构建日志、实际解析的基础镜像 digest 和最终镜像，不能把相同源码误称为与官方镜像逐字节相同。
+
+原生解密验证所需的工具镜像也从同一源码归档构建，只供非生产验证：
+
+```bash
+git archive eeccf718e8ad78aee98ca49d142d0594ea7000b2 \
+  | docker --host unix:///var/run/docker.sock buildx build --platform linux/amd64 --load \
+      --file backend/Dockerfile --target backend-build \
+      --tag kivao-first-release-backend-check:eeccf718 -
+```
+
+## 发布与认证
+
+`.github/workflows/kivao-baseline.yml` 只监听专用发布分支和精确的首发标签。推送 `release/kivao-baseline-eeccf718` 只执行检查和构建，不登录 GHCR、不推送镜像；另行批准推送 `kivao-1.0.0-eeccf718-r1` 标签后才发布。它检查产品源码未变，调用原 `quality.yml`，随后从冻结提交构建三个 AMD64 镜像，不生成 `latest`。发布标签不匹配原流程的 `v*`，避免顺带触发旧镜像发布。
+
+本轮只准备文件。提交、推送发布分支、触发 CI、创建并推送发布标签、发布 GHCR 包及服务器拉取另需明确授权。不得将此分支合并到 main 来替换 main 的产品源码。发布准备提交可以包含本方案和工具，镜像应用源码始终来自冻结 SHA。
+
+发布前完成以下检查：
+
+1. 仓库保持 Private；三个目标包不存在时确认首次发布的私有可见性规则，存在时检查其可见性与访问控制，不自动改成 Public。
+2. GitHub 连接具有仓库管理权限不等于包写权限；工作流显式请求 `packages: write`，运行成功后仍须检查三个包的实际可见性。
+3. 服务器有 GHCR 认证条目仅证明存在认证材料。必须在授权后以其现有身份读取三个已发布 digest 的 manifest，确认 AMD64 和访问权限；不能输出认证文件、Token 或 Authorization header。
+4. 远端 main 已核实仍是 `82fc5c03`，目前没有新工作流。GitHub 要求手动工作流先存在于默认分支，见[手动运行工作流](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow)。本方案选择专用分支 / 标签的 push 入口，避免仅为登记 workflow_dispatch 改动 main。不要运行原 `publish-images.yml`，它仍有旧包名和可变标签推广行为。本轮未提交、推送、创建标签或触发任何工作流。
+
+发布成功的 artifact `kivao-baseline-release-lock` 包含 `release-images.env`，其四个键为 `CANVAS_BACKEND_IMAGE`、`CANVAS_WEB_IMAGE`、`CANVAS_YINGCE_AGENT_IMAGE`、`CANVAS_IMAGE_TAG`。三个镜像值均包含真实 registry digest。未发布时不能用本地 image ID 或未验证的 BuildKit digest 填充生产锁文件。
+
+CI 重建的镜像可能与本地构建 digest 不同；必须对最终发布的三个 digest 再做拉取、身份核验及隔离验收，不能直接沿用本地候选的测试结果。
+
+## 保留范围与写入冻结
+
+保持现有安装目录、Compose 项目名、两个 Compose 文件、PostgreSQL 17、Redis、所有挂载以及 `127.0.0.1:13100`。首次正常切换只重建 backend、yingce-agent、web，不执行 `up` 全项目、不启动 migrate、不使用 `down -v`、不升级数据库镜像。
+
+授权后的生产 shell 使用：
+
+```bash
+set -euo pipefail
+umask 077
+cd /opt/yingce
+DC=(/usr/local/bin/docker-compose --project-name yingce \
+  --env-file /opt/yingce/.env \
+  -f /opt/yingce/docker-compose.yml \
+  -f /opt/yingce/docker-compose.override.yml)
+test "$(uname -m)" = x86_64
+"${DC[@]}" config --quiet
+```
+
+先确认当前版本、源码、三个实际镜像 ID / RepoDigest、Schema 77 和挂载仍与审计相符。对照全服务器容器清单，保存其他项目的容器 ID 与 StartedAt，供切换后比较。配置解析只输出检查结果，禁止将完整 `compose config` 或 `docker inspect` 的环境值打印到终端。
+
+本轮审计快照为 5 个系统渠道、44 条模型记录（40 条未删除）、31 条价格档、3 个积分账户、22 条积分流水、8 条计费订单、7 条系统设置、5 条支付配置及 9 条本地资源。实际切换以停写后重新采集的快照为准，不能把本轮数字当作永久断言。
+
+先要求管理员退出写操作并确认没有待处理生成、Agent、上传、充值、支付对账或其他写入方。停止 web 阻止入口访问；给 backend 足够时间完成 SIGTERM drain；最后停止 Agent。遇到仍在执行且未确认结果的上游任务时中止本次窗口，不能强制杀死后当作无损。
+
+```bash
+"${DC[@]}" stop web backend
+"${DC[@]}" stop yingce-agent
+```
+
+PostgreSQL 保持运行。下面为最终一致性备份，而非日常在线备份；应用停止后的授权窗口覆盖备份和验收。人工不接受冻结期间外部支付回调失败时，应另约无回调窗口后再开始。
+
+## 最终备份命令（尚未执行）
+
+将已审查的 `kivao-data-check.sql` 放在受控的操作资料目录。该 SQL 只输出关键表行数及排序后的内容指纹，不输出配置值；MD5 指纹用于恢复前后相等比较，不作为恶意篡改证明，备份文件另用 SHA-256。
+
+```bash
+B="/opt/yingce/backups/kivao-$(date -u +%Y%m%dT%H%M%SZ)"
+install -d -m 0700 "$B"
+docker exec yingce-postgres-1 sh -c \
+  'exec pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "$B/database.dump"
+docker exec -i yingce-postgres-1 pg_restore --list < "$B/database.dump" > "$B/database.contents"
+docker exec -i yingce-postgres-1 sh -c \
+  'exec psql -X -w -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -Atq' \
+  < /opt/yingce/operations/kivao-data-check.sql > "$B/data-before.jsonl"
+tar --numeric-owner --acls --xattrs -C /opt/yingce -cpf "$B/backend-data.tar" data
+tar --numeric-owner --acls --xattrs -C /opt/yingce -cpf "$B/web.tar" web
+tar --numeric-owner --acls --xattrs -C /opt/yingce -cpf "$B/deployment.tar" \
+  .env docker-compose.yml docker-compose.override.yml
+tar --numeric-owner --acls --xattrs -C / -cpf "$B/nginx.tar" \
+  www/server/panel/vhost/nginx/app.kivao.cc.conf \
+  www/server/proxy_project/sites/app.kivao.cc/app.kivao.cc.json \
+  www/server/nginx/conf/kivao-guide.conf \
+  www/server/panel/vhost/nginx/extension/app.kivao.cc \
+  www/server/panel/vhost/nginx/well-known/app.kivao.cc.conf \
+  www/server/panel/vhost/cert/app.kivao.cc
+```
+
+Nginx 备份包含 TLS 私钥，数据库和 `.env` 也含敏感数据；只能 root 访问，离机副本须加密。缺少任何必需路径、tar 出现文件变动或 dump 失败即停止，恢复原应用后重新计划，不把部分备份标为成功。
+
+Redis 的 AOF 可能在后台 rewrite，不能将运行中的目录直接打包后称为一致备份。应用已停止后，单独授权将 Redis **暂停数秒**，冻结其子进程并复制目录；保证失败也执行 unpause。此操作不更换或重启 Redis。若不批准该短暂停顿，本方案的 Redis 一致备份门禁保持 NO-GO。
+
+```bash
+trap 'docker unpause yingce-redis-1 >/dev/null 2>&1 || true' EXIT
+docker pause yingce-redis-1 >/dev/null
+tar --numeric-owner --acls --xattrs -C /opt/yingce -cpf "$B/redis.tar" redis
+docker unpause yingce-redis-1 >/dev/null
+trap - EXIT
+```
+
+还需将以下内容写入 `$B` 的受限元数据文件，不在聊天或终端打印敏感原始对象：三个应用镜像的实际 RepoDigest / ID、OCI 标签、容器状态、挂载、端口、网络、启动命令、环境变量名称与存在性；保存两个 Compose 和 `.env` 的完整受限副本。原应用镜像用 `docker image save` 留存离线归档，以免回滚依赖远端可用性。不得把未经脱敏的 `docker inspect` 发往聊天。
+
+旧版固定引用为下列已审计值；备份时必须重新确认当前运行镜像与它们一致，漂移则停止。
+
+```text
+CANVAS_BACKEND_IMAGE=ghcr.io/ddcat-ai/open-ai-canvas-backend@sha256:bc144b5834ffc5358d3c7757f50166c200130295d21bf2b8297c73567e64d53f
+CANVAS_WEB_IMAGE=ghcr.io/ddcat-ai/open-ai-canvas-web@sha256:75e55e92370011751448467b3720b3a3558e639adde6023f6c3f7c23586b0326
+CANVAS_YINGCE_AGENT_IMAGE=ghcr.io/ddcat-ai/open-ai-canvas-yingce-agent@sha256:c2dc010158ba6eb19344fa1dc99a40a26f93f5e9c2cb0b9a0045532ccb7bcbb2
+CANVAS_IMAGE_TAG=1.7.3.3
+```
+
+将这四行保存为 `$B/rollback-images.env`；这是镜像锁，不含凭据。用已审查脚本验证后保存旧镜像，保存 Docker 元信息时严格排除环境变量值：
+
+```bash
+python3 /opt/yingce/operations/kivao-apply-image-lock.py \
+  --env-file /opt/yingce/.env --lock-file "$B/rollback-images.env" --rollback
+mapfile -t old_images < <(awk -F= '$1 ~ /^CANVAS_(BACKEND|WEB|YINGCE_AGENT)_IMAGE$/ { print $2 }' "$B/rollback-images.env")
+test "${#old_images[@]}" -eq 3
+docker image save -o "$B/original-app-images.tar" "${old_images[@]}"
+python3 - "$B" <<'PY'
+import json, pathlib, subprocess, sys, tarfile
+backup = pathlib.Path(sys.argv[1])
+names = ['yingce-backend-1', 'yingce-web-1', 'yingce-yingce-agent-1',
+         'yingce-postgres-1', 'yingce-redis-1', 'yingce-migrate-1']
+raw = json.loads(subprocess.check_output(['docker', 'inspect', *names]))
+safe = []
+for item in raw:
+    config = item.get('Config', {})
+    safe.append({'name': item['Name'], 'id': item['Id'], 'image_id': item['Image'],
+                 'image_reference': config.get('Image'), 'labels': config.get('Labels'),
+                 'mounts': item.get('Mounts'), 'restart_policy': item.get('HostConfig', {}).get('RestartPolicy'),
+                 'ports': item.get('NetworkSettings', {}).get('Ports'),
+                 'networks': list(item.get('NetworkSettings', {}).get('Networks', {})),
+                 'started_at': item.get('State', {}).get('StartedAt'),
+                 'environment_presence': {value.split('=', 1)[0]: bool(value.partition('=')[2])
+                                          for value in config.get('Env', [])}})
+(backup / 'containers.redacted.json').write_text(json.dumps(safe, indent=2) + '\n')
+with tarfile.open(backup / 'backend-data.tar') as archive:
+    item = archive.getmember('data/.settings-key')
+    assert item.isfile() and item.size == 32, 'settings key backup metadata is invalid'
+print('container metadata saved; settings key exists in archive and has 32 bytes')
+PY
+```
+
+打包前后只对 `.settings-key` 做 stat 和内部一致性检查，不展示文件内容，也不单独输出其哈希。
+
+```bash
+(cd "$B" && sha256sum database.dump backend-data.tar web.tar redis.tar \
+  deployment.tar nginx.tar original-app-images.tar containers.redacted.json \
+  rollback-images.env data-before.jsonl > SHA256SUMS && sha256sum -c SHA256SUMS)
+```
+
+生产首次备份和恢复演练之间可恢复旧应用正常服务；真正切换时必须再停写、重新制作最终备份，不能拿较早的演练备份覆盖后续新增数据。
+
+## 隔离恢复演练（当前未获生产数据备份授权）
+
+只在独立的非生产 Docker 主机进行。使用经过授权传输的备份副本，创建新的目录、内部网络、数据库和 Redis；绝不挂载生产目录、Docker Socket、SSH 凭据或生产 `.env`。数据库名固定为 `kivao_rehearsal`，数据库服务别名固定为 `postgres`，凭据现场生成，仅写到本机权限 0600 的演练环境文件。
+
+1. 校验 SHA256SUMS，检查 tar 路径没有绝对路径或 `..`，将三个数据归档还原到新的演练目录；保留只读备份，再复制一份供应用写入。完整保留隐藏文件、权限和 UID/GID。
+2. 创建 `docker network create --internal kivao-rehearsal`。仅接入演练 PostgreSQL 17、Redis、Backend、Web、Agent；不发布宿主机端口。不得连接生产 Docker 网络或配置 host networking / host gateway。
+3. PostgreSQL 使用新的演练数据目录初始化，恢复逻辑备份；Redis 从复制的原持久化目录启动。不要复制运行中的 PGDATA 当作逻辑恢复。
+4. 在应用启动前运行数据快照 SQL，并逐行比较备份的 `data-before.jsonl`；包括渠道、价格、积分、支付配置、系统设置及 schema_migrations 指纹。
+5. Backend 强制 `CANVAS_AUTO_MIGRATE=false`，只连演练 PostgreSQL / Redis / Agent；不要复制生产连接串、回调地址或 Updater Socket。数据目录挂载演练副本，保留原 `.settings-key`。
+6. 在应用启动前，使用固定基线工具镜像运行下面的原生解密验证器。它调用该源码实际的 `decryptSettingSecret`，不解密到文件、不打印明文、不启动 Worker；数据目录只读，数据库连接强制只读。不存在 32 字节密钥或没有任何加密值被验证时直接失败，不生成密钥。
+
+```bash
+docker run --rm --network kivao-rehearsal \
+  --env-file "$R/verifier.env" \
+  -e KIVAO_COPY_VERIFICATION=1 \
+  -v "$R/data:/rehearsal/data:ro" \
+  -v "$OPS/kivao-restore-secrets_test.go:/src/backend/internal/app/kivao_restore_secrets_test.go:ro" \
+  --entrypoint go kivao-first-release-backend-check:eeccf718 \
+  test ./internal/app -run '^TestKivaoRestoredSecrets$' -count=1 -v
+```
+
+`$R` 是非生产演练目录，`$OPS` 是本发布的审查资料目录。`verifier.env` 仅包含演练专用 `KIVAO_REHEARSAL_DSN`；宿主机名必须为 `postgres`、数据库名必须为 `kivao_rehearsal`，不能使用生产 DSN。工具镜像须从本发布的原始 Backend Dockerfile 的 `backend-build` 阶段构建并保存，挂入的文件仅作为验证用例，不进入应用镜像。
+
+第 3 步使用以下命令恢复数据库，在启动应用及原生解密验证之前完成；不能运行 `migrate-schema up`：
+
+```bash
+docker exec -i kivao-rehearsal-postgres sh -c \
+  'exec pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --no-owner --no-privileges --exit-on-error --single-transaction' \
+  < "$R/database.dump"
+```
+
+应用内部发起管理员密码登录、读取分页后的全部渠道及模型、价格档、积分、系统设置和支付配置。登录 Cookie 和密码仅在进程内使用，响应只记录状态、数量或断言结果。若管理员只能使用外部 OAuth / 验证码登录，禁止为演练重置生产账号；列为待人工完成项。
+
+内部网络必须实际验证出站被拒绝，再启动 Worker；清除本机 Docker 自动注入的 HTTP_PROXY / HTTPS_PROXY / ALL_PROXY 及小写变量，避免隔离检查和本地健康检查绕向宿主机代理。恢复数据里可能有启用的支付、通知或排队任务，不能仅依赖 UI 不点击。若无法证明出站隔离，停止启动应用。禁止调用“测试模型”“测试存储”“充值”“支付查询”等会访问真实服务的入口。
+
+逐个核对 9 条资源对应的文件是否存在，并通过登录态资源 API 读取、比较字节摘要；不能只检查目录存在。用历史已完成文本任务或隔离创建的固定事件测试 SSE 的事件 ID、Last-Event-ID / after 游标、terminal 事件和重连；空闲 Agent healthz 或 NDJSON 错误响应不能替代 Backend SSE 验收。模型执行只能用隔离 stub，明确记录为传输测试，不记为真实生成成功。
+
+最后在演练环境执行一次下面的 Web 恢复与旧 digest 回滚，确认资源目录完整、版本恢复、关键表指纹一致，记录实际耗时。该结果通过前生产结论保持 NO-GO。
+
+## 原地切换命令（人工批准后）
+
+前提：三个包均为 Private、目标服务器可拉取真实 digest、完整 CI 通过、隔离恢复和回滚演练通过、维护窗口获批。将已验证的 `release-images.env` 放到操作资料目录并校验其来自本发布 artifact；不得手填本地 image ID。
+
+通过现有认证分别预拉三个锁定 digest；这个动作可在停写前进行，但本轮未授权执行。读取 env 锁文件时逐行验证四个允许的键，三个镜像必须分别属于上述 xzaowu 仓库且以 `@sha256:` 加 64 位小写十六进制结尾，版本必须为固定修订；拒绝重复键、缺失键和额外键。使用 Python 文本解析，不 `source` 未验证的文件。
+
+维护窗口内按前文停写并完成最终备份。`kivao-apply-image-lock.py` 默认只验证，`--apply` 才将 `.env` 中四个镜像版本键替换为审核后的锁文件值，保留其他所有行；使用同目录临时文件、保留原权限与属主、原子替换，不打印 `.env`。两份 Compose 文件不变，migrate 自然引用同一 `CANVAS_BACKEND_IMAGE`，但本次不运行迁移服务。
+
+```bash
+python3 /opt/yingce/operations/kivao-apply-image-lock.py \
+  --env-file /opt/yingce/.env \
+  --lock-file /opt/yingce/operations/release-images.env
+# 只有完整备份及停写门禁通过后执行：
+python3 /opt/yingce/operations/kivao-apply-image-lock.py \
+  --env-file /opt/yingce/.env \
+  --lock-file /opt/yingce/operations/release-images.env --apply
+"${DC[@]}" config --quiet
+"${DC[@]}" up -d --no-deps --pull never --force-recreate --wait --wait-timeout 180 yingce-agent
+"${DC[@]}" up -d --no-deps --pull never --force-recreate --wait --wait-timeout 180 backend
+"${DC[@]}" up -d --no-deps --pull never --force-recreate --wait --wait-timeout 180 web
+```
+
+所有 `up` 都有 `--no-deps`，避免因 backend 的 depends_on 隐式启动 migrate 或重建 PostgreSQL / Redis。每步失败立即停止后续启动并进入回滚决策。成功后将运行容器的 `.Image` 与对应 digest 在本机 `docker image inspect` 解析出的 ID 对比，同时核对 OCI revision、平台和内部版本；不能只看 tag 或页面版本。
+
+Web 原始入口会把 `/opt/canvas-release` 发布到持久化 HTML 目录，最后替换 index.html，并保留当前/前一版 hashed chunks。切换前必须备份整个 Web 目录；禁止把持久化挂载当作不会被写入的只读目录。正常切换允许入口脚本发布自有镜像资源，保留现有挂载路径。
+
+## 回滚命令与一致性
+
+同源首次切换默认先选择应用回滚，不恢复数据库；正常启动的种子维护、登录和 Worker 仍可能写数据，必须比较关键表快照后决定。只要已发生不兼容写入、Schema 不是 77 或有未确认上游执行，停止自动处理，由人工决定一致性恢复；不能通过修改迁移账本绕过检查。
+
+授权的应用回滚：停止三项应用，恢复备份 `.env` 的其他配置，并用 `rollback-images.env` 将四个版本键固定到旧 digest；不能直接恢复仍含 latest 的 `.env` 后启动。
+
+恢复原 Web 目录时，先将当前目录移到本次备份内的失败现场目录，再解包 `web.tar` 到原路径，保留原目录以便排查。必须重建 web 容器以重新绑定目录，不能只 `docker start`。为了不让旧镜像入口再次覆盖恢复后的 index.html，回滚增加一个专用 overlay：
+
+```yaml
+services:
+  web:
+    entrypoint: ["nginx", "-g", "daemon off;"]
+```
+
+保存为 `$B/rollback-web.yml`，只在回滚命令中追加该文件。它使用原 Web 镜像的 nginx.conf，直接服务恢复的完整快照，不运行静态资源发布脚本。后续操作须继续带该 overlay，直到下一次明确批准发布新资源。
+
+```bash
+"${DC[@]}" stop web backend yingce-agent
+tar --numeric-owner --acls --xattrs -xpf "$B/deployment.tar" -C /opt/yingce
+python3 /opt/yingce/operations/kivao-apply-image-lock.py \
+  --env-file /opt/yingce/.env --lock-file "$B/rollback-images.env" --rollback --apply
+mv /opt/yingce/web "$B/web-after-failed-switch"
+tar --numeric-owner --acls --xattrs -xpf "$B/web.tar" -C /opt/yingce
+# 此处已恢复并固定旧镜像环境；不得跳过。
+"${DC[@]}" up -d --no-deps --pull never --force-recreate --wait yingce-agent
+"${DC[@]}" up -d --no-deps --pull never --force-recreate --wait backend
+"${DC[@]}" -f "$B/rollback-web.yml" up -d --no-deps --pull never --force-recreate --wait web
+```
+
+需要恢复业务数据时另获授权，并在应用全部停止后执行：
+
+1. 保存失败现场，恢复 `backend-data.tar` 到原位置，包括原 `.settings-key`；重建 backend 确保挂载对应新目录。
+2. 保持原 PostgreSQL 17 容器和业务数据库，使用下面的事务恢复已有对象，不运行 dropdb / createdb，也不运行迁移。
+3. 如需恢复同一时间点的 Redis 持久化目录，须单独批准停止/启动原 Redis 容器。移动失败目录、恢复 `redis.tar`，重建原 Redis 服务以重新绑定目录，确认仍是原镜像 ID；这一步属于异常数据回滚，不属于正常应用镜像切换。
+4. 按旧 digest 启动应用，比较 schema、关键表指纹、加密验证、媒体摘要与完整 Web 文件清单。若发现额外 Schema 对象或指纹不一致，保持入口关闭，不继续提供服务。
+
+```bash
+docker exec -i yingce-postgres-1 sh -c \
+  'exec pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists --no-owner --no-privileges --exit-on-error --single-transaction' \
+  < "$B/database.dump"
+```
+
+恢复备份会覆盖备份后的写入。验收前不开放新写入；若已经开放，先保存增量并由人工决定，不能承诺直接恢复备份无损。Nginx 在正常切换和应用回滚中均不修改，不需要 reload。
+
+## 最终验收与人工批准
+
+| 验收项 | 放行证据 |
+| --- | --- |
+| 页面、API、ready | HTTPS 页面可用；业务 code 为 0；ready 含数据库/运行时/schema 成功 |
+| 管理员登录 | 真实管理员登录成功，Cookie 不外泄 |
+| 渠道、模型、定价 | 停写前后数量与关键表指纹一致，覆盖全部分页及软删除记录 |
+| 加密配置 | 隔离副本原生解密验证成功；不以列表可读代替解密 |
+| 积分、系统设置、支付配置 | 关键表指纹及余额/冻结额核对通过；不发起充值或支付查询 |
+| 已有媒体 | 每条资源通过鉴权 API 读取并核对内容摘要 |
+| Agent、SSE | 独立 Runtime 健康、鉴权、隔离 stub 通信；真实后端 SSE 及重连通过 |
+| 没有迁移 | auto migrate 关闭；migrate 容器 ID/StartedAt 未变；迁移账本全文指纹未变 |
+| 其他项目 | 非 yingce 容器 ID/StartedAt、监听端口未变 |
+| 回滚 | 隔离演练从旧 digest 恢复原 Web 和一致数据，记录恢复耗时 |
+
+批准顺序：发布准备提交/分支推送与私有 GHCR 发布；生产备份及副本传输；隔离恢复和回滚演练；生产预拉镜像；维护窗口、最终备份与镜像切换；必要时异常数据恢复与 Redis 重建。各阶段独立记录结果，不把前一阶段授权延伸为生产切换授权。

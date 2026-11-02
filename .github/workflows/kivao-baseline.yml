@@ -1,0 +1,152 @@
+name: KIVAO first baseline images
+
+on:
+  push:
+    branches:
+      - release/kivao-baseline-eeccf718
+    tags:
+      - kivao-1.0.0-eeccf718-r1
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kivao-baseline-eeccf718
+  cancel-in-progress: false
+
+jobs:
+  source:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require the isolated baseline release branch
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          case "$REF" in
+            refs/heads/release/kivao-baseline-eeccf718|refs/tags/kivao-1.0.0-eeccf718-r1) ;;
+            *) exit 1 ;;
+          esac
+          git merge-base --is-ancestor eeccf718e8ad78aee98ca49d142d0594ea7000b2 HEAD
+          git diff --exit-code eeccf718e8ad78aee98ca49d142d0594ea7000b2 -- \
+            Dockerfile backend web yingce-agent plugin-packages docker docker-compose.deploy.yml nginx.conf .dockerignore \
+            VERSION assets CHANGELOG.md README.md .github/workflows/quality.yml
+      - run: python3 scripts/test_kivao_build_baseline.py
+      - run: python3 scripts/test_kivao_apply_image_lock.py
+
+  checks:
+    needs: source
+    uses: ./.github/workflows/quality.yml
+
+  build:
+    needs: checks
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - role: web
+            dockerfile: Dockerfile
+            variable: CANVAS_WEB_IMAGE
+          - role: backend
+            dockerfile: backend/Dockerfile
+            variable: CANVAS_BACKEND_IMAGE
+          - role: agent
+            dockerfile: yingce-agent/Dockerfile
+            variable: CANVAS_YINGCE_AGENT_IMAGE
+    env:
+      IMAGE: ghcr.io/xzaowu/kivao-app-${{ matrix.role }}
+      RELEASE: kivao-1.0.0-eeccf718-r1
+      SOURCE: eeccf718e8ad78aee98ca49d142d0594ea7000b2
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: eeccf718e8ad78aee98ca49d142d0594ea7000b2
+      - id: metadata
+        run: |
+          test "$(git rev-parse HEAD)" = "$SOURCE"
+          echo "version=$(tr -d '\r\n' < VERSION)" >> "$GITHUB_OUTPUT"
+          echo "time=$(git show -s --format=%cI HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        if: github.ref == 'refs/tags/kivao-1.0.0-eeccf718-r1'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Refuse to overwrite a published candidate
+        id: existing
+        if: github.ref == 'refs/tags/kivao-1.0.0-eeccf718-r1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Only an explicit missing manifest permits publishing this revision.
+          bash .github/scripts/resolve-image.sh "$IMAGE:$RELEASE"
+      - name: Require a new candidate revision
+        if: github.ref == 'refs/tags/kivao-1.0.0-eeccf718-r1' && steps.existing.outputs.found != 'false'
+        run: |
+          echo "Candidate already exists or absence was not established; use a new reviewed revision" >&2
+          exit 1
+      - id: image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64
+          push: ${{ github.ref == 'refs/tags/kivao-1.0.0-eeccf718-r1' }}
+          load: ${{ github.ref != 'refs/tags/kivao-1.0.0-eeccf718-r1' }}
+          tags: ${{ env.IMAGE }}:${{ env.RELEASE }}
+          build-args: |
+            BUILD_VERSION=${{ steps.metadata.outputs.version }}
+            BUILD_COMMIT=${{ env.SOURCE }}
+            BUILD_TIME=${{ steps.metadata.outputs.time }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/xzaowu/kivao-app
+            org.opencontainers.image.revision=${{ env.SOURCE }}
+            org.opencontainers.image.version=${{ steps.metadata.outputs.version }}
+            io.kivao.release=${{ env.RELEASE }}
+      - name: Record registry digest
+        if: github.ref == 'refs/tags/kivao-1.0.0-eeccf718-r1'
+        env:
+          DIGEST: ${{ steps.image.outputs.digest }}
+          VARIABLE: ${{ matrix.variable }}
+        run: |
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          mkdir -p release
+          printf '%s=%s@%s\n' "$VARIABLE" "$IMAGE" "$DIGEST" > "release/${{ matrix.role }}.env"
+          printf '%s\n' "$SOURCE" > release/source-sha.txt
+      - uses: actions/upload-artifact@v4
+        if: github.ref == 'refs/tags/kivao-1.0.0-eeccf718-r1'
+        with:
+          name: kivao-baseline-${{ matrix.role }}
+          path: release/
+          if-no-files-found: error
+          retention-days: 30
+
+  manifest:
+    if: github.ref == 'refs/tags/kivao-1.0.0-eeccf718-r1'
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: kivao-baseline-*
+          path: release
+          merge-multiple: true
+      - name: Assemble application image lock
+        run: |
+          test "$(cat release/source-sha.txt)" = eeccf718e8ad78aee98ca49d142d0594ea7000b2
+          cat release/backend.env release/web.env release/agent.env > release/release-images.env
+          echo CANVAS_IMAGE_TAG=kivao-1.0.0-eeccf718-r1 >> release/release-images.env
+          test "$(grep -c '@sha256:' release/release-images.env)" -eq 3
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kivao-baseline-release-lock
+          path: release/
+          if-no-files-found: error
+          retention-days: 30
