@@ -5,14 +5,16 @@ import ReactMarkdown from "react-markdown";
 import { AppModal } from "@/components/ui/product/app-modal/app-modal";
 import { aceternityMotion } from "@/lib/aceternity-motion";
 import { useAppearanceStore } from "@/stores/use-appearance-store";
+import { useUserStore } from "@/stores/use-user-store";
 import { updateAnnouncementVersion } from "@/lib/update-announcement";
 import { UpdateAnnouncementContent } from "./update-announcement-content";
 
-export function AppChangelogDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function AppChangelogDialog({ open, onClose, technical = false }: { open: boolean; onClose: () => void; technical?: boolean }) {
     const reducedMotion = useReducedMotion();
     const updates = useAppearanceStore((state) => state.appearance.updates);
-    const custom = Boolean(updates?.enabled);
-    const version = updateAnnouncementVersion(updates, __APP_VERSION__);
+    const isAdmin = useUserStore((state) => state.hydrated && state.user?.role === "admin");
+    const version = technical ? updateAnnouncementVersion(undefined, __APP_VERSION__) : updates?.enabled ? updateAnnouncementVersion(updates, __APP_VERSION__) : "";
+    if (technical && !isAdmin) return null;
 
     return (
         <AppModal
@@ -23,10 +25,10 @@ export function AppChangelogDialog({ open, onClose }: { open: boolean; onClose: 
                         <ScrollText className="size-4" />
                     </span>
                     <div className="app-changelog-heading-copy">
-                        <div className="app-changelog-heading-title">{custom ? "更新公告" : "更新日志"}</div>
-                        <div className="app-changelog-heading-description">{custom ? "按版本查看本站发布的更新与功能介绍" : "按版本查看产品能力、交互与稳定性变化"}</div>
+                        <div className="app-changelog-heading-title">{technical ? "技术更新记录" : "更新公告"}</div>
+                        <div className="app-changelog-heading-description">{technical ? "应用源码随附的上游技术记录，仅管理员可见" : "本站发布的产品公告与功能介绍"}</div>
                     </div>
-                    <span className="app-changelog-current-version">当前版本 {version}</span>
+                    {version ? <span className="app-changelog-current-version">当前版本 {version}</span> : null}
                 </div>
             }
             open={open}
@@ -41,9 +43,7 @@ export function AppChangelogDialog({ open, onClose }: { open: boolean; onClose: 
             )}
         >
             <div className="app-changelog-scroll thin-scrollbar">
-                {custom && updates ? (
-                    <UpdateAnnouncementContent value={updates} />
-                ) : (
+                {technical ? (
                     <ReactMarkdown
                         components={{
                             h1: () => null,
@@ -67,6 +67,10 @@ export function AppChangelogDialog({ open, onClose }: { open: boolean; onClose: 
                     >
                         {__APP_CHANGELOG__}
                     </ReactMarkdown>
+                ) : updates?.enabled && updates.releases.length ? (
+                    <UpdateAnnouncementContent value={updates} />
+                ) : (
+                    <p className="update-announcement-empty">暂无已发布的产品公告。</p>
                 )}
             </div>
         </AppModal>

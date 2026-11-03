@@ -5,6 +5,7 @@ import { useWalletBalance } from "@/hooks/use-wallet-balance";
 import { useWorkspaceLogout } from "@/hooks/use-workspace-logout";
 import { useUserStore } from "@/stores/use-user-store";
 import { UserAvatar } from "./user-avatar";
+import { AppChangelogButton } from "./app-changelog-modal";
 import { UserGroupAvatarRing, UserGroupBadge } from "./user-group-badge";
 import "./workspace-account-card.css";
 
@@ -16,21 +17,73 @@ export function WorkspaceAccountCard({ onWallet, onNavigate }: { onWallet: () =>
     const { availableMicrocredits, refreshing, refresh } = useWalletBalance(user?.id, creditsEnabled);
     const { handleLogout, loggingOut } = useWorkspaceLogout();
     if (!user) return null;
-    return <section className="workspace-account-card" aria-label="我的账户">
-        <header className="workspace-account-card-identity">
-            <UserGroupAvatarRing><UserAvatar user={user} className="workspace-account-card-avatar" /></UserGroupAvatarRing>
-            <div><strong className="workspace-account-card-name"><span>{user.displayName || user.username}</span><UserGroupBadge /></strong><span>@{user.username}</span></div>
-            <em>{user.role === "admin" ? "管理员" : "创作者"}</em>
-        </header>
-        {creditsEnabled ? <div className="workspace-account-card-wallet">
-            <div className="workspace-account-card-balance"><span><Coins />可用积分</span><strong>{availableMicrocredits === null ? "—" : (availableMicrocredits / 1_000_000).toLocaleString("zh-CN", { maximumFractionDigits: 2 })}</strong></div>
-            {availableMicrocredits === null ? <Button size="small" loading={refreshing} icon={<RefreshCw />} onClick={() => void refresh()}>刷新余额</Button> : <button type="button" onClick={onWallet}>充值 / 兑换<ArrowUpRight /></button>}
-        </div> : null}
-        <nav className="workspace-account-card-actions" aria-label="账户操作">
-            <Link to="/settings?section=profile" onClick={onNavigate}><Settings /><span>账户与设置</span><ArrowUpRight /></Link>
-            {referralAvailable ? <Link to="/referral" onClick={onNavigate}><Gift /><span>推广中心</span><ArrowUpRight /></Link> : null}
-            {user.role === "admin" ? <Link to="/admin" onClick={onNavigate}><ShieldCheck /><span>管理员后台</span><ArrowUpRight /></Link> : null}
-            <Button danger type="text" icon={<LogOut />} loading={loggingOut} onClick={() => void handleLogout()}>退出登录</Button>
-        </nav>
-    </section>;
+    return (
+        <section className="workspace-account-card" aria-label="我的账户">
+            <header className="workspace-account-card-identity">
+                <UserGroupAvatarRing>
+                    <UserAvatar user={user} className="workspace-account-card-avatar" />
+                </UserGroupAvatarRing>
+                <div>
+                    <strong className="workspace-account-card-name">
+                        <span>{user.displayName || user.username}</span>
+                        <UserGroupBadge />
+                    </strong>
+                    <span>@{user.username}</span>
+                </div>
+                <em>{user.role === "admin" ? "管理员" : "创作者"}</em>
+            </header>
+            {creditsEnabled ? (
+                <div className="workspace-account-card-wallet">
+                    <div className="workspace-account-card-balance">
+                        <span>
+                            <Coins />
+                            可用积分
+                        </span>
+                        <strong>{availableMicrocredits === null ? "—" : (availableMicrocredits / 1_000_000).toLocaleString("zh-CN", { maximumFractionDigits: 2 })}</strong>
+                    </div>
+                    {availableMicrocredits === null ? (
+                        <Button size="small" loading={refreshing} icon={<RefreshCw />} onClick={() => void refresh()}>
+                            刷新余额
+                        </Button>
+                    ) : (
+                        <button type="button" onClick={onWallet}>
+                            充值 / 兑换
+                            <ArrowUpRight />
+                        </button>
+                    )}
+                </div>
+            ) : null}
+            <nav className="workspace-account-card-actions" aria-label="账户操作">
+                <AppChangelogButton
+                    className="flex w-full items-center gap-2 rounded px-2 py-2 text-xs text-foreground/65 hover:bg-surface-hover [&_svg]:size-3.5"
+                    showLabel
+                    showVersion
+                    versionClassName="ml-auto text-[var(--fs-micro)] tabular-nums text-foreground/32"
+                />
+                <AppChangelogButton technical className="flex w-full items-center gap-2 rounded px-2 py-2 text-xs text-foreground/65 hover:bg-surface-hover [&_svg]:size-3.5" showLabel />
+                <Link to="/settings?section=profile" onClick={onNavigate}>
+                    <Settings />
+                    <span>账户与设置</span>
+                    <ArrowUpRight />
+                </Link>
+                {referralAvailable ? (
+                    <Link to="/referral" onClick={onNavigate}>
+                        <Gift />
+                        <span>推广中心</span>
+                        <ArrowUpRight />
+                    </Link>
+                ) : null}
+                {user.role === "admin" ? (
+                    <Link to="/admin" onClick={onNavigate}>
+                        <ShieldCheck />
+                        <span>管理员后台</span>
+                        <ArrowUpRight />
+                    </Link>
+                ) : null}
+                <Button danger type="text" icon={<LogOut />} loading={loggingOut} onClick={() => void handleLogout()}>
+                    退出登录
+                </Button>
+            </nav>
+        </section>
+    );
 }

@@ -1,6 +1,7 @@
 import { ScrollText } from "lucide-react";
 import { lazy, Suspense, useState, type CSSProperties, type ReactNode } from "react";
 import { useAppearanceStore } from "@/stores/use-appearance-store";
+import { useUserStore } from "@/stores/use-user-store";
 import { updateAnnouncementVersion } from "@/lib/update-announcement";
 import { refreshPublicAppearance } from "@/services/appearance-bootstrap";
 
@@ -17,12 +18,16 @@ type AppChangelogButtonProps = {
     versionClassName?: string;
     icon?: ReactNode;
     label?: ReactNode;
+    technical?: boolean;
 };
 
-export function AppChangelogButton({ className, style, showVersion = false, showLabel = false, labelClassName, versionClassName, icon, label }: AppChangelogButtonProps) {
+export function AppChangelogButton({ className, style, showVersion = false, showLabel = false, labelClassName, versionClassName, icon, label, technical = false }: AppChangelogButtonProps) {
     const [open, setOpen] = useState(false);
     const updates = useAppearanceStore((state) => state.appearance.updates);
-    const title = updates?.enabled ? "更新公告" : "更新日志";
+    const isAdmin = useUserStore((state) => state.hydrated && state.user?.role === "admin");
+    const title = technical ? "技术更新记录" : "更新公告";
+    const version = technical ? updateAnnouncementVersion(undefined, APP_VERSION) : updates?.enabled ? updateAnnouncementVersion(updates, APP_VERSION) : "";
+    if (technical && !isAdmin) return null;
 
     return (
         <>
@@ -39,15 +44,15 @@ export function AppChangelogButton({ className, style, showVersion = false, show
             >
                 {icon ?? <ScrollText className="size-4 shrink-0" />}
                 {showLabel ? <span className={`whitespace-nowrap ${labelClassName || ""}`}>{label ?? title}</span> : null}
-                {showVersion ? (
-                    <span className={`${versionClassName || ""} min-w-0 truncate`} title={updateAnnouncementVersion(updates, APP_VERSION)}>
-                        {updateAnnouncementVersion(updates, APP_VERSION)}
+                {showVersion && version ? (
+                    <span className={`${versionClassName || ""} min-w-0 truncate`} title={version}>
+                        {version}
                     </span>
                 ) : null}
             </button>
             {open ? (
                 <Suspense fallback={null}>
-                    <AppChangelogDialog open onClose={() => setOpen(false)} />
+                    <AppChangelogDialog open technical={technical} onClose={() => setOpen(false)} />
                 </Suspense>
             ) : null}
         </>

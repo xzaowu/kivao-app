@@ -51,7 +51,7 @@ export function UpdateAnnouncementEditor({ value, onChange, disabled, onUploadin
             <div className="admin-update-announcement-switch">
                 <div>
                     <h3>自定义更新公告</h3>
-                    <p>关闭时展示原有更新日志；开启时展示下方自定义版本与内容。修改后点击页面顶部“保存修改”生效。</p>
+                    <p>关闭时普通用户看到暂无产品公告；开启后展示下方自定义版本与内容。管理员可通过独立入口查看技术更新记录。修改后点击页面顶部“保存修改”生效。</p>
                 </div>
                 <Switch checked={value.enabled} disabled={locked} aria-label="启用自定义更新公告" onChange={(enabled) => change({ enabled })} />
             </div>

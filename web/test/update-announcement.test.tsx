@@ -28,7 +28,7 @@ test("switch selects the custom display version and restores the real version", 
     expect(updateAnnouncementVersion({ ...custom(), enabled: false }, "v1.6.0")).toBe("v1.6.0");
     expect(updateAnnouncementVersion(undefined, "1.6.0")).toBe("v1.6.0");
 });
-test("old appearance data defaults to the original log", () => {
+test("old appearance data keeps custom announcements disabled", () => {
     expect(normalizePublicAppearance({}).updates).toEqual(DEFAULT_UPDATE_ANNOUNCEMENT);
 });
 test("publication rejects missing versions, duplicate versions, and incomplete media", () => {
