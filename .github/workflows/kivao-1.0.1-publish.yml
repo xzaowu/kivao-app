@@ -1,0 +1,155 @@
+name: KIVAO 1.0.1 authorized image publish
+
+on:
+  push:
+    tags:
+      - kivao-1.0.1-*
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: kivao-101-publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  authorize:
+    if: github.repository == 'xzaowu/kivao-app' && vars.KIVAO_101_PUBLISH_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    outputs:
+      sha: ${{ steps.plan.outputs.sha }}
+      version: ${{ steps.plan.outputs.version }}
+      time: ${{ steps.plan.outputs.time }}
+      release: ${{ steps.plan.outputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Require an annotated dedicated tag
+        env:
+          REF: ${{ github.ref }}
+          SOURCE: ${{ github.sha }}
+        run: |
+          test "$(git cat-file -t "$REF")" = tag
+          test "$(git rev-parse "$REF^{}")" = "$SOURCE"
+      - id: plan
+        env:
+          SOURCE: ${{ github.sha }}
+          RELEASE: ${{ github.ref_name }}
+        run: python3 scripts/kivao-release.py source --sha "$SOURCE" --release "$RELEASE" --output "$RUNNER_TEMP/source.json"
+      - name: Require successful CI and reports on this exact SHA
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/kivao-1.0.1-ci.yml/runs?head_sha=$GITHUB_SHA&status=success&event=push&per_page=100" > "$RUNNER_TEMP/runs.json"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          runs = json.loads((Path(os.environ['RUNNER_TEMP']) / 'runs.json').read_text())['workflow_runs']
+          valid = [r for r in runs if r['head_sha'] == os.environ['GITHUB_SHA'] and r['head_branch'] in ('dev/kivao-1.0.1-baseline', 'release/kivao-1.0.1') and r['conclusion'] == 'success']
+          if not valid:
+              raise SystemExit('No successful dedicated CI for this source')
+          with open(os.environ['GITHUB_ENV'], 'a') as output:
+              output.write('VERIFIED_CI_RUN=' + str(valid[0]['id']) + '\n')
+          PY
+      - name: Validate the successful CI artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download "$VERIFIED_CI_RUN" --name kivao-101-ci-report --dir "$RUNNER_TEMP/verified-ci"
+          python3 scripts/kivao-release.py check-ci --sha "$GITHUB_SHA" --report "$RUNNER_TEMP/verified-ci/ci-report.json" --output "$RUNNER_TEMP/verified-ci.json"
+
+  publish:
+    needs: authorize
+    runs-on: ubuntu-24.04
+    environment: kivao-image-publish-1.0.1
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - role: web
+            dockerfile: Dockerfile
+          - role: backend
+            dockerfile: backend/Dockerfile
+          - role: agent
+            dockerfile: yingce-agent/Dockerfile
+    env:
+      SOURCE: ${{ needs.authorize.outputs.sha }}
+      RELEASE: ${{ needs.authorize.outputs.release }}
+      IMAGE: ghcr.io/xzaowu/kivao-app-${{ matrix.role }}:${{ needs.authorize.outputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.authorize.outputs.sha }}
+          fetch-depth: 0
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Require absent immutable revision
+        id: existing
+        run: bash .github/scripts/resolve-image.sh "$IMAGE"
+      - name: Reject overwrite or uncertain registry state
+        if: steps.existing.outputs.found != 'false'
+        run: exit 1
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64
+          push: false
+          load: true
+          provenance: false
+          tags: ${{ env.IMAGE }}
+          build-args: |
+            BUILD_VERSION=${{ needs.authorize.outputs.version }}
+            BUILD_COMMIT=${{ needs.authorize.outputs.sha }}
+            BUILD_TIME=${{ needs.authorize.outputs.time }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/xzaowu/kivao-app
+            org.opencontainers.image.revision=${{ needs.authorize.outputs.sha }}
+            org.opencontainers.image.version=${{ needs.authorize.outputs.version }}
+            io.kivao.release=${{ needs.authorize.outputs.release }}
+          cache-from: type=gha,scope=kivao-101-${{ matrix.role }}
+      - name: Verify before registry publication, then verify the pushed digest
+        env:
+          ROLE: ${{ matrix.role }}
+        run: |
+          python3 scripts/kivao-release.py verify-image --sha "$SOURCE" --release "$RELEASE" --role "$ROLE" --image "$IMAGE" --output "$RUNNER_TEMP/image-before-push.json"
+          docker push "$IMAGE"
+          digest=$(docker buildx imagetools inspect "$IMAGE" --format '{{.Manifest.Digest}}')
+          docker pull "${IMAGE%:*}@$digest"
+          python3 scripts/kivao-release.py verify-image --sha "$SOURCE" --release "$RELEASE" --role "$ROLE" --image "$IMAGE" --registry-digest "$digest" --output "$RUNNER_TEMP/image-$ROLE.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kivao-101-published-${{ matrix.role }}
+          path: ${{ runner.temp }}/image-${{ matrix.role }}.json
+          if-no-files-found: error
+          retention-days: 90
+
+  locks:
+    needs: [authorize, publish]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.authorize.outputs.sha }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: kivao-101-published-*
+          path: evidence
+          merge-multiple: true
+      - run: python3 scripts/kivao-release.py locks --directory evidence --output release-locks
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kivao-101-paired-release-locks
+          path: release-locks/
+          if-no-files-found: error
+          retention-days: 90

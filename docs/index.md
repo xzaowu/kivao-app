@@ -9,7 +9,7 @@
 - [KIVAO 首次生产结项](operations/kivao-first-cutover-closeout.md)：实际部署、固定镜像、备份/回滚及已验收边界。
 - [KIVAO 生产固定清单](operations/kivao-production-r1.json)：源码、镜像 digest、编排及原始证据摘要。
 - [KIVAO 后续发布与上游整合原则](operations/kivao-release-policy.md)：生产基线开发、候选 CI、自有镜像与独立 main 整合。
-- [KIVAO 1.0.1 最小开发方案](plans/kivao-1.0.1-plan.md)：品牌与自有公告已实施待发布验收，插件显隐延期；[开发验证记录](plans/kivao-1.0.1-validation.md)区分自动化、本机浏览器及生产边界。
+- [KIVAO 1.0.1 最小开发方案](plans/kivao-1.0.1-plan.md)：品牌与自有公告已实施待发布验收，插件显隐代码改造取消；[开发验证记录](plans/kivao-1.0.1-validation.md)和[发布准备](plans/kivao-1.0.1-release-preparation.md)区分自动化、本机浏览器、候选 CI 及生产边界。
 
 其他上游默认部署使用官方 Release 镜像、`docker-compose.deploy.yml` 和 Host Updater。本地 SQLite 构建与自定义 Compose 不属于后台在线更新管理范围。私有 `docs/operations/` 不纳入公开文档站。
 

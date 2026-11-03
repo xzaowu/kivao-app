@@ -1,0 +1,139 @@
+name: KIVAO 1.0.1 CI
+
+on:
+  push:
+    branches:
+      - dev/kivao-1.0.1-baseline
+      - release/kivao-1.0.1
+
+permissions:
+  contents: read
+  actions: read
+  packages: none
+
+concurrency:
+  group: kivao-101-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source:
+    name: Frozen product scope and lineage
+    runs-on: ubuntu-24.04
+    outputs:
+      sha: ${{ steps.plan.outputs.sha }}
+      version: ${{ steps.plan.outputs.version }}
+      time: ${{ steps.plan.outputs.time }}
+      release: ${{ steps.plan.outputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - id: plan
+        env:
+          SOURCE: ${{ github.sha }}
+        run: python3 scripts/kivao-release.py source --sha "$SOURCE" --output "$RUNNER_TEMP/evidence/source.json"
+      - name: Release boundary and rollback tests
+        run: |
+          python3 scripts/test_kivao_release.py
+          python3 scripts/test_kivao_build_baseline.py
+          python3 scripts/test_kivao_apply_image_lock.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kivao-101-source
+          path: ${{ runner.temp }}/evidence/source.json
+          if-no-files-found: error
+          retention-days: 14
+
+  quality:
+    needs: source
+    uses: ./.github/workflows/quality.yml
+
+  build:
+    name: Build and verify ${{ matrix.role }} amd64
+    needs: source
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - role: web
+            dockerfile: Dockerfile
+          - role: backend
+            dockerfile: backend/Dockerfile
+          - role: agent
+            dockerfile: yingce-agent/Dockerfile
+    env:
+      SOURCE: ${{ needs.source.outputs.sha }}
+      IMAGE: ghcr.io/xzaowu/kivao-app-${{ matrix.role }}:candidate-${{ needs.source.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.source.outputs.sha }}
+          fetch-depth: 0
+      - uses: docker/setup-buildx-action@v3
+      - id: image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64
+          push: false
+          load: true
+          provenance: false
+          tags: ${{ env.IMAGE }}
+          build-args: |
+            BUILD_VERSION=${{ needs.source.outputs.version }}
+            BUILD_COMMIT=${{ needs.source.outputs.sha }}
+            BUILD_TIME=${{ needs.source.outputs.time }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/xzaowu/kivao-app
+            org.opencontainers.image.revision=${{ needs.source.outputs.sha }}
+            org.opencontainers.image.version=${{ needs.source.outputs.version }}
+            io.kivao.release=${{ needs.source.outputs.release }}
+          cache-from: type=gha,scope=kivao-101-${{ matrix.role }}
+          cache-to: type=gha,mode=max,scope=kivao-101-${{ matrix.role }}
+      - name: Verify actual OCI and embedded build identities
+        env:
+          ROLE: ${{ matrix.role }}
+          BUILD_METADATA: ${{ steps.image.outputs.metadata }}
+        run: |
+          python3 scripts/kivao-release.py verify-image --sha "$SOURCE" --role "$ROLE" --image "$IMAGE" --output "$RUNNER_TEMP/evidence/image-$ROLE.json"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          path = Path(os.environ['RUNNER_TEMP']) / 'evidence' / ('image-' + os.environ['ROLE'] + '.json')
+          value = json.loads(path.read_text())
+          value['buildkit_metadata'] = json.loads(os.environ['BUILD_METADATA'])
+          path.write_text(json.dumps(value, indent=2) + '\n')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kivao-101-${{ matrix.role }}
+          path: ${{ runner.temp }}/evidence/image-${{ matrix.role }}.json
+          if-no-files-found: error
+          retention-days: 14
+
+  report:
+    name: Complete candidate report
+    needs: [source, quality, build]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.source.outputs.sha }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: kivao-101-*
+          path: evidence
+          merge-multiple: true
+      - name: Require quality and all three verified candidate images
+        env:
+          QUALITY_RESULT: ${{ needs.quality.result }}
+        run: python3 scripts/kivao-release.py summary --directory evidence --quality-result "$QUALITY_RESULT" --output evidence/ci-report.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kivao-101-ci-report
+          path: evidence/ci-report.json
+          if-no-files-found: error
+          retention-days: 14

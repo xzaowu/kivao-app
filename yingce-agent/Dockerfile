@@ -7,6 +7,10 @@ RUN apk add --no-cache ca-certificates wget \
     && adduser -S app -G app
 
 WORKDIR /app
+ARG BUILD_VERSION
+ARG BUILD_COMMIT=unknown
+ARG BUILD_TIME=unknown
+RUN printf '{"version":"%s","commit":"%s","buildTime":"%s"}\n' "$BUILD_VERSION" "$BUILD_COMMIT" "$BUILD_TIME" > /app/build-info.json
 COPY backend/agent-runtime/pi/package.json backend/agent-runtime/pi/package-lock.json /app/agent-runtime/
 RUN npm ci --omit=dev --ignore-scripts --prefix /app/agent-runtime
 COPY backend/agent-runtime/pi/agent-runtime.mjs /app/agent-runtime/agent-runtime.mjs
