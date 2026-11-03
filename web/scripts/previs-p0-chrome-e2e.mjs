@@ -407,6 +407,42 @@ async function addProp(cdp, name, label) {
     if (!(await cdp.poll(`!!document.querySelector(${JSON.stringify(`[aria-label="删除 ${name}"]`)})`, `${label} prop row`, 20000))) throw new Error(`${label}: ${name} row did not appear`);
 }
 
+const UNDO_SELECTOR = '[data-canvas-previs-workbench] .previs-desk-history button[aria-label="撤销"]';
+
+async function diagnoseUndo(cdp) {
+    const snapshot = await cdp.evaluate(`(() => {
+        const describe = (el) => el ? { tag: el.tagName, class: String(el.className).slice(0, 80), label: el.getAttribute('aria-label')?.slice(0, 80) || null } : null;
+        const buttons = [...document.querySelectorAll('[aria-label="撤销"]')];
+        const history = document.querySelector('[data-canvas-previs-workbench] .previs-desk-history');
+        const undo = history?.querySelector('[aria-label="撤销"]');
+        const redo = history?.querySelector('[aria-label="重做"]');
+        return {
+            buttonCount: buttons.length,
+            workbenchButtonCount: document.querySelectorAll(${JSON.stringify(UNDO_SELECTOR)}).length,
+            viewport: { width: innerWidth, height: innerHeight },
+            history: { canUndo: undo ? !undo.disabled : null, canRedo: redo ? !redo.disabled : null },
+            propPresent: !!document.querySelector('[aria-label="删除 单人沙发"]'),
+            buttons: buttons.slice(0, 3).map((el) => {
+                const rect = el.getBoundingClientRect();
+                const style = getComputedStyle(el);
+                const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+                const animations = [];
+                for (let ancestor = el; ancestor && animations.length < 3; ancestor = ancestor.parentElement) {
+                    for (const animation of ancestor.getAnimations()) {
+                        if (animation.pending || animation.playState === 'running') animations.push({ element: describe(ancestor), name: animation.animationName || null });
+                        if (animations.length === 3) break;
+                    }
+                }
+                return { disabled: el.matches(':disabled'), ariaDisabled: el.getAttribute('aria-disabled'),
+                    rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+                    display: style.display, visibility: style.visibility, opacity: style.opacity, pointerEvents: style.pointerEvents,
+                    hit: describe(hit), covered: !!hit && hit !== el && !el.contains(hit), animations };
+            }),
+        };
+    })()`);
+    console.log(`UNDO_DIAGNOSTICS ${JSON.stringify(snapshot)}`);
+}
+
 async function smokeWorkbench(cdp, baseUrl) {
     console.log("\n=== A. workbench smoke ===");
     await cdp.navigateFresh(`${baseUrl}/dev/previs-repro`);
@@ -494,10 +530,32 @@ async function smokeWorkbench(cdp, baseUrl) {
     const propAppeared = await cdp.poll(`!!document.querySelector('[aria-label="删除 单人沙发"]')`, "prop row", 20000);
     assert(propAppeared, "A10 added prop appears in object list");
 
-    const undone = await cdp.click('[aria-label="撤销"]');
-    if (!undone) throw new Error("A: 撤销 button not clickable");
-    const propGone = await cdp.poll(`!document.querySelector('[aria-label="删除 单人沙发"]')`, "prop removed by undo", 20000);
-    assert(propGone, "A11 Undo removes the added prop");
+    try {
+        // 道具行可先于添加弹窗退场出现；等待真实历史可用且按钮中心不再被弹窗遮挡。
+        const undoReady = await cdp.poll(
+            `(() => {
+            const buttons = document.querySelectorAll(${JSON.stringify(UNDO_SELECTOR)});
+            if (buttons.length !== 1) return false;
+            const button = buttons[0];
+            if (button.disabled || button.getAttribute('aria-disabled') === 'true') return false;
+            button.scrollIntoView({ block: 'center', inline: 'center' });
+            const rect = button.getBoundingClientRect();
+            const style = getComputedStyle(button);
+            if (rect.width <= 0 || rect.height <= 0 || style.display === 'none' || style.visibility === 'hidden' || style.pointerEvents === 'none' || Number(style.opacity) <= 0) return false;
+            const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+            return !!hit && (hit === button || button.contains(hit));
+        })()`,
+            "undo history enabled and control uncovered",
+            20000,
+        );
+        if (!assert(undoReady, "A10a undo history ready and button uncovered")) throw new Error("A: 撤销 history/control not ready");
+        if (!(await cdp.click(UNDO_SELECTOR))) throw new Error("A: 撤销 button not clickable");
+        const propGone = await cdp.poll(`!document.querySelector('[aria-label="删除 单人沙发"]')`, "prop removed by undo", 20000);
+        if (!assert(propGone, "A11 Undo removes the added prop")) await diagnoseUndo(cdp);
+    } catch (error) {
+        await diagnoseUndo(cdp);
+        throw error;
+    }
 
     // 场景结束前必须真实关闭：下一个场景要重新导航，不能靠忽略 beforeunload 绕过未保存态。
     const closed = await cdp.click('[aria-label="关闭预演台"]');

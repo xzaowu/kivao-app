@@ -30,6 +30,7 @@ PROTECTED = ["backend", "plugin-packages", "web/src/services/api", "web/src/lib/
 PREPARATION = {
     ".github/kivao-1.0.1.json", ".github/workflows/kivao-1.0.1-ci.yml", ".github/workflows/kivao-1.0.1-publish.yml",
     "scripts/kivao-release.py", "scripts/test_kivao_release.py", "yingce-agent/Dockerfile",
+    "web/scripts/previs-p0-chrome-e2e.mjs",
 }
 
 
