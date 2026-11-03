@@ -1,16 +1,79 @@
 import { expect, test } from "bun:test";
 
-import { appearanceLogoURL, normalizePublicAppearance } from "../src/stores/use-appearance-store";
+import { appearanceLogoURL, brandStudioLabel, DEFAULT_PUBLIC_APPEARANCE, normalizePublicAppearance, useAppearanceStore } from "../src/stores/use-appearance-store";
+import { bootstrapAppearance } from "../src/services/appearance-bootstrap";
 import { moduleGroupSource } from "./helpers/module-group-source";
 
-test("initial HTML stays brand neutral until the public appearance is resolved", async () => {
+test("initial HTML identifies KIVAO before the public appearance is resolved", async () => {
     const [html, mainSource] = await Promise.all([Bun.file(new URL("../index.html", import.meta.url)).text(), Bun.file(new URL("../src/main.tsx", import.meta.url)).text()]);
 
     expect(html).not.toContain("影策");
-    expect(html).toContain("<title>正在加载</title>");
+    expect(html).toContain("<title>KIVAO</title>");
     expect(mainSource).toContain("bootstrapAppearance()");
     expect(mainSource).toContain('import("./application")');
     expect(mainSource.indexOf("bootstrapAppearance()")).toBeLessThan(mainSource.indexOf('import("./application")'));
+});
+
+test("unsaved upstream identity resolves to KIVAO without changing protocol or canvas settings", () => {
+    const appearance = normalizePublicAppearance({
+        configured: false,
+        brandName: "影策",
+        brandSlug: "open-ai-canvas",
+        seoTitle: "影策",
+        seoDescription: "影策工作台",
+        footerCopyright: "影策",
+        logoUrl: "/logo.svg",
+        darkLogoUrl: "/logo.svg",
+        revision: "builtin",
+    });
+    expect(appearance.brandName).toBe("KIVAO");
+    expect(appearance.seoTitle).toBe("KIVAO");
+    expect(appearance.footerCopyright).toContain("KIVAO");
+    expect(appearanceLogoURL(appearance, "light")).toBe("/kivao-logo.svg");
+    expect(appearanceLogoURL(appearance, "dark")).toBe("/kivao-logo.svg");
+    expect(brandStudioLabel(appearance)).toBe("KIVAO STUDIO");
+    expect(appearance.canvas).toEqual(DEFAULT_PUBLIC_APPEARANCE.canvas);
+    expect(appearance.configured).toBe(false);
+});
+
+test("slow bootstrap keeps KIVAO until saved brand, SEO and theme logos arrive", async () => {
+    useAppearanceStore.setState({ appearance: DEFAULT_PUBLIC_APPEARANCE, resolved: false });
+    let resolve!: (value: ReturnType<typeof normalizePublicAppearance>) => void;
+    const bootstrap = bootstrapAppearance(
+        () =>
+            new Promise((done) => {
+                resolve = done;
+            }),
+    );
+    expect(useAppearanceStore.getState().appearance.brandName).toBe("KIVAO");
+    expect(useAppearanceStore.getState().resolved).toBe(false);
+    const saved = normalizePublicAppearance({
+        configured: true,
+        brandName: "自有工作室",
+        brandSlug: "custom-studio",
+        seoTitle: "自定义 SEO",
+        seoDescription: "自定义说明",
+        footerCopyright: "自定义页脚",
+        logoConfigured: true,
+        darkLogoConfigured: true,
+        logoUrl: "/custom-light.svg",
+        darkLogoUrl: "/custom-dark.svg",
+    });
+    resolve(saved);
+    await bootstrap;
+    expect(useAppearanceStore.getState().resolved).toBe(true);
+    expect(useAppearanceStore.getState().appearance).toEqual(saved);
+    expect(appearanceLogoURL(saved, "light")).toBe("/custom-light.svg");
+    expect(appearanceLogoURL(saved, "dark")).toBe("/custom-dark.svg");
+});
+
+test("offline bootstrap releases the loading gate with KIVAO defaults", async () => {
+    const appearance = await bootstrapAppearance(async () => {
+        throw new Error("offline");
+    });
+    expect(appearance.brandName).toBe("KIVAO");
+    expect(appearance.seoTitle).toBe("KIVAO");
+    expect(useAppearanceStore.getState().resolved).toBe(true);
 });
 
 test("a custom login video never falls back to the built-in poster", () => {
@@ -46,7 +109,7 @@ test("appearance URLs reject executable and insecure remote schemes", () => {
         authVideoUrl: "http://example.com/brand.mp4",
     });
 
-    expect(appearance.logoUrl).toBe("/logo.svg");
+    expect(appearance.logoUrl).toBe("/kivao-logo.svg");
     expect(appearance.authVideoUrl).not.toContain("example.com");
 });
 

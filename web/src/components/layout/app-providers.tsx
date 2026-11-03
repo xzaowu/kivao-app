@@ -32,6 +32,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
     const theme = useActiveTheme();
     const dark = theme === "dark";
     const appearance = useAppearanceStore((state) => state.appearance);
+    const appearanceResolved = useAppearanceStore((state) => state.resolved);
 
     useLayoutEffect(() => {
         document.documentElement.classList.toggle("dark", dark);
@@ -57,6 +58,8 @@ export function AppProviders({ children }: { children: ReactNode }) {
             document.removeEventListener("visibilitychange", refresh);
         };
     }, [isolateDevRepro]);
+
+    if (!isolateDevRepro && !appearanceResolved) return <FullScreenLoader label="KIVAO" detail="正在读取站点配置" />;
 
     return (
         // 两个汉字的按钮（取消、确定）不再被 antd 拉开字距，与其他按钮的文字节奏一致。

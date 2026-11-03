@@ -17,7 +17,8 @@ export function BrandLogo({ className, fallback, alt = "", theme = "auto" }: Bra
     const currentTheme = useActiveTheme();
     const source = appearanceLogoURL(appearance, theme === "auto" ? currentTheme : theme);
     const [failedSource, setFailedSource] = useState<string | null>(null);
-    if (!appearance.logoConfigured) return <>{fallback}</>;
+    if (!appearance.logoConfigured)
+        return source ? <span className={cn("block bg-current", className)} style={{ mask: `url(${source}) center / contain no-repeat`, WebkitMask: `url(${source}) center / contain no-repeat` }} aria-hidden="true" /> : <>{fallback}</>;
     // A configured custom logo must never fall through to the built-in brand
     // when its file becomes unavailable. Keep its footprint neutral instead.
     if (failedSource === source) return <span className={cn("block", className)} aria-hidden="true" />;

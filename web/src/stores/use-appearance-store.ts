@@ -9,22 +9,22 @@ export const DEFAULT_PUBLIC_APPEARANCE: PublicAppearance = {
     updates: DEFAULT_UPDATE_ANNOUNCEMENT,
     canvas: DEFAULT_CANVAS_APPEARANCE,
     schemaVersion: 10,
-    brandName: "影策",
-    brandSlug: "open-ai-canvas",
+    brandName: "KIVAO",
+    brandSlug: "kivao",
     authHeroTitle: "让一个故事，\n从文字走向银幕。",
     authHeroDescription: "",
-    logoUrl: "/logo.svg",
-    darkLogoUrl: "/logo.svg",
+    logoUrl: "/kivao-logo.svg",
+    darkLogoUrl: "/kivao-logo.svg",
     logoFrameEnabled: true,
     authVideoUrl: "https://boss-shjd.biliapi.net/updream/aniforge/video/video_bbcb00bd-650d-4249-9346-5cd21fd2484c_m1hc-u0-1pu13x-3v1s.mp4",
     authVideoPosterUrl: "https://i0.hdslb.com/bfs/aitool/aniforge/image/02933f26-5f1b-49ff-a811-b7f95ee5e5b8_m1hc-u0-sau.jpg",
     authVideoAutoplay: true,
     skinId: "classic",
     activeSkin: DEFAULT_CLASSIC_SKIN,
-    seoTitle: "影策",
-    seoDescription: "影策，面向 AI 影视与短剧创作的工作台。",
+    seoTitle: "KIVAO",
+    seoDescription: "KIVAO，面向 AI 影视与短剧创作的工作台。",
     seoKeywords: "",
-    footerCopyright: `© ${new Date().getFullYear()} 影策. All rights reserved.`,
+    footerCopyright: `© ${new Date().getFullYear()} KIVAO. All rights reserved.`,
     icpFilingEnabled: false,
     icpFilingNumber: "",
     redeemPurchaseUrl: "",
@@ -49,18 +49,20 @@ export const useAppearanceStore = create<AppearanceStore>((set) => ({
 }));
 
 export function normalizePublicAppearance(value?: Partial<PublicAppearance> | null): PublicAppearance {
-    const brandName = String(value?.brandName || "").trim();
-    const brandSlug = normalizeBrandSlug(value?.brandSlug);
+    // An unsaved backend appearance contains upstream defaults, not a chosen identity.
+    const identity = value?.configured === false ? DEFAULT_PUBLIC_APPEARANCE : value;
+    const brandName = String(identity?.brandName || "").trim();
+    const brandSlug = normalizeBrandSlug(identity?.brandSlug);
     const authHeroTitle = normalizeAppearanceCopy(value?.authHeroTitle, DEFAULT_PUBLIC_APPEARANCE.authHeroTitle);
     const authHeroDescription = normalizeAppearanceCopy(value?.authHeroDescription, DEFAULT_PUBLIC_APPEARANCE.authHeroDescription, true);
     const customVideo = Boolean(value?.authVideoConfigured);
-    const logoUrl = safeAppearanceURL(value?.logoUrl, DEFAULT_PUBLIC_APPEARANCE.logoUrl);
-    const darkLogoUrl = safeAppearanceURL(value?.darkLogoUrl, logoUrl);
+    const logoUrl = value?.logoConfigured ? safeAppearanceURL(value.logoUrl, DEFAULT_PUBLIC_APPEARANCE.logoUrl) : DEFAULT_PUBLIC_APPEARANCE.logoUrl;
+    const darkLogoUrl = value?.logoConfigured ? safeAppearanceURL(value.darkLogoUrl, logoUrl) : DEFAULT_PUBLIC_APPEARANCE.darkLogoUrl;
     const resolvedBrandName = brandName || DEFAULT_PUBLIC_APPEARANCE.brandName;
-    const seoTitle = normalizeAppearanceCopy(value?.seoTitle, resolvedBrandName);
-    const seoDescription = normalizeAppearanceCopy(value?.seoDescription, `${resolvedBrandName}，面向 AI 影视与短剧创作的工作台。`, true);
-    const seoKeywords = normalizeAppearanceCopy(value?.seoKeywords, "", true);
-    const footerCopyright = normalizeAppearanceCopy(value?.footerCopyright, `© ${new Date().getFullYear()} ${resolvedBrandName}. All rights reserved.`);
+    const seoTitle = normalizeAppearanceCopy(identity?.seoTitle, resolvedBrandName);
+    const seoDescription = normalizeAppearanceCopy(identity?.seoDescription, `${resolvedBrandName}，面向 AI 影视与短剧创作的工作台。`, true);
+    const seoKeywords = normalizeAppearanceCopy(identity?.seoKeywords, "", true);
+    const footerCopyright = normalizeAppearanceCopy(identity?.footerCopyright, `© ${new Date().getFullYear()} ${resolvedBrandName}. All rights reserved.`);
     const icpFilingNumber = normalizeAppearanceCopy(value?.icpFilingNumber, "", true);
     const redeemPurchaseUrl = typeof value?.redeemPurchaseUrl === "string" ? safeAppearanceURL(value.redeemPurchaseUrl, "") : "";
     return {
@@ -164,7 +166,7 @@ export function appearanceLogoURL(appearance: PublicAppearance, theme: "light" |
 }
 
 export function brandStudioLabel(appearance: PublicAppearance) {
-    if (appearance.brandName === DEFAULT_PUBLIC_APPEARANCE.brandName && appearance.brandSlug === DEFAULT_PUBLIC_APPEARANCE.brandSlug) return "YINGCE STUDIO";
+    if (appearance.brandName === DEFAULT_PUBLIC_APPEARANCE.brandName && appearance.brandSlug === DEFAULT_PUBLIC_APPEARANCE.brandSlug) return "KIVAO STUDIO";
     return appearance.brandSlug.replace(/-+/g, " ").toLocaleUpperCase();
 }
 

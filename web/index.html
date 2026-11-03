@@ -7,7 +7,7 @@
         <!-- 不写内置品牌资源：首屏必须品牌中性，favicon 由 use-appearance-store 解析出外观后写入。
              空 data URL 只是为了不让浏览器去请求 /favicon.ico（那会是一条 404）。 -->
         <link rel="icon" href="data:," />
-        <title>正在加载</title>
+        <title>KIVAO</title>
         <style>
             /* Fix layer order before production chunks can register utilities ahead of base. */
             @layer theme, base, components, utilities;
@@ -46,8 +46,22 @@
                 border-radius: 999px;
                 animation: appearance-bootstrap-orbit 2.8s linear infinite;
             }
-            @keyframes appearance-bootstrap-pulse { 0%, 100% { opacity: .62; transform: scale(.82); } 50% { opacity: 1; transform: scale(1.08); } }
-            @keyframes appearance-bootstrap-orbit { to { transform: rotate(360deg); } }
+            @keyframes appearance-bootstrap-pulse {
+                0%,
+                100% {
+                    opacity: 0.62;
+                    transform: scale(0.82);
+                }
+                50% {
+                    opacity: 1;
+                    transform: scale(1.08);
+                }
+            }
+            @keyframes appearance-bootstrap-orbit {
+                to {
+                    transform: rotate(360deg);
+                }
+            }
             @media (prefers-reduced-motion: reduce) {
                 #root:empty::before,
                 #root:empty::after {
@@ -64,7 +78,7 @@
             } catch (e) {}
         </script>
     </head>
-    <body class="bg-background text-foreground antialiased" style="background:#ffffff">
+    <body class="bg-background text-foreground antialiased" style="background: #ffffff">
         <div id="root"></div>
         <script type="module" src="/src/main.tsx"></script>
     </body>
