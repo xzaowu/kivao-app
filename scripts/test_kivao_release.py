@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.dont_write_bytecode = True
 spec = importlib.util.spec_from_file_location("release", Path(__file__).with_name("kivao-release.py"))
@@ -49,6 +50,24 @@ class ReleaseTest(unittest.TestCase):
     def test_local_identity_is_not_a_registry_digest(self):
         with self.assertRaises(ValueError):
             release.paired_locks(self.reports(published=False))
+
+    def test_backend_verifies_daemon_commit_and_records_migration_hashes_without_running_them(self):
+        commands = []
+        def capture(args):
+            commands.append(args)
+            if "inspect" in args:
+                return json.dumps([self.image()])
+            if "sha256sum" in args[-1]:
+                return "c" * 64 + "  /usr/local/bin/migration-cli"
+            return ""
+        with patch.object(release, "source_report", return_value=self.plan()), patch.object(release, "capture", side_effect=capture):
+            result = release.verify_image(SHA, "backend", "candidate")
+        grep_commands = [command[-1] for command in commands if "grep" in command[-1]]
+        self.assertEqual(len(grep_commands), 1)
+        self.assertTrue(grep_commands[0].endswith("/usr/local/bin/yingce-backend"))
+        self.assertEqual(result["embedded_commit_scope"], "yingce-backend")
+        self.assertEqual(len(result["migration_binaries"]), 2)
+        self.assertTrue(all(v["execution"] == "NOT_RUN" and not v["embedded_commit_verified"] for v in result["migration_binaries"].values()))
 
     def test_rollback_is_current_kivao_r1_and_agent_init_required(self):
         locks = release.paired_locks(self.reports())

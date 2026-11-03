@@ -107,14 +107,19 @@ def verify_image(sha, role, reference, release=None, registry_digest=None):
     docker = ["docker", "--host", "unix:///var/run/docker.sock"]
     info = validate_image(json.loads(capture([*docker, "image", "inspect", reference]))[0], plan)
     command = [*docker, "run", "--rm", "--network", "none", "--read-only", "--entrypoint", "sh", reference, "-ec"]
+    migration_binaries = {}
     if role == "web":
         capture([*command, f"grep -rlF -- '{sha}' /opt/canvas-release/assets >/dev/null"])
         actual = capture([*command, "sha256sum /opt/canvas-release/kivao-mark.png"]).split()[0]
         if actual != POLICY["brand_sha256"]:
             raise ValueError("Web image does not contain the approved kite asset")
     elif role == "backend":
-        for binary in ["yingce-backend", "migrate-schema", "migrate-sqlite-postgres"]:
-            capture([*command, f"grep -aqF -- '{sha}' /usr/local/bin/{binary}"])
+        capture([*command, f"grep -aqF -- '{sha}' /usr/local/bin/yingce-backend"])
+        # Migration CLIs do not link buildinfo.Current; preserve their actual hashes without executing them.
+        for binary in ["migrate-schema", "migrate-sqlite-postgres"]:
+            value = capture([*command, f"test -x /usr/local/bin/{binary}; sha256sum /usr/local/bin/{binary}"]).split()[0]
+            digest("sha256:" + value)
+            migration_binaries[binary] = {"sha256": value, "embedded_commit_verified": False, "execution": "NOT_RUN"}
     else:
         embedded = json.loads(capture([*command, "cat /app/build-info.json"]))
         if embedded != {"version": plan["application_version"], "commit": sha, "buildTime": plan["build_args"]["BUILD_TIME"]}:
@@ -129,7 +134,8 @@ def verify_image(sha, role, reference, release=None, registry_digest=None):
         if remote["Id"] != info["image_id"]:
             raise ValueError("pushed image differs from the verified candidate")
     return {**plan, "role": role, "image": reference, **info, "embedded_commit_verified": True,
-            "registry_digest": registry_digest, "registry_publish": bool(registry_digest)}
+            "embedded_commit_scope": "yingce-backend" if role == "backend" else "compiled-web-assets" if role == "web" else "agent-build-info",
+            "migration_binaries": migration_binaries, "registry_digest": registry_digest, "registry_publish": bool(registry_digest)}
 
 
 def read_reports(directory):

@@ -21,7 +21,8 @@
    原工作流的 ARM64 支付 smoke 仅在 PR 条件下运行；本次 push 的候选架构仅为 linux/amd64，不声称验证 ARM64。
 3. 从当前候选 SHA 构建三个 linux/amd64 镜像，记录锁文件、Dockerfile 哈希、构建参数、OCI 标签、实际 image ID 和 BuildKit 元信息。
 4. 只启动无网络、只读的独立检查容器，覆盖 ENTRYPOINT，不启动业务服务或迁移：
-   Web 检查实际 JS 中的提交 SHA 及正式图标字节；Backend 检查三个实际二进制的嵌入 SHA；Agent 检查实际 build-info.json 的版本/SHA/时间。
+   Web 检查实际 JS 中的提交 SHA 及正式图标字节；Backend 检查 yingce-backend 的嵌入 SHA，并记录两个迁移 CLI 的实际 SHA-256；Agent 检查实际 build-info.json 的版本/SHA/时间。
+   两个迁移 CLI 不链接应用 buildinfo 字段，不声称它们嵌有候选 SHA；其来源由同镜像的构建上下文、Dockerfile/源代码冻结及实际二进制哈希追溯，始终不执行迁移。
 5. 只有完整质量检查与三个构建全部成功才生成 kivao-101-ci-report。报告中的 registry_digest 为 null，image ID/BuildKit digest 不能冒充已发布 registry digest。
 
 配置在 .github/kivao-1.0.1.json；验证/成对锁工具为 scripts/kivao-release.py，边界测试为 scripts/test_kivao_release.py。
