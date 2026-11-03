@@ -1,0 +1,102 @@
+{
+  "format_version": 1,
+  "reviewed_on": "2026-11-03",
+  "decision": "PRODUCTION CUTOVER GO",
+  "service": "app.kivao.cc",
+  "repository": "xzaowu/kivao-app",
+  "release": "kivao-1.0.0-eeccf718-r1",
+  "release_commit": "e19976f61bd08c271ae88d9921a20f8304d729f4",
+  "application_source": "eeccf718e8ad78aee98ca49d142d0594ea7000b2",
+  "application_version": "v1.7.3.3",
+  "schema": 77,
+  "migration_ledger_rows": 76,
+  "architecture": "linux/amd64",
+  "images": {
+    "web": {
+      "reference": "ghcr.io/xzaowu/kivao-app-web@sha256:e72091fcf0ea4388dd1c089ba0ea3445a9bfa0baf44b2949c01a916db5adcbba",
+      "image_id": "sha256:3dd61d68bc7bbdb0b4e51f3543206111dbb38a70cb2dc6e0596d11c68977c2a7"
+    },
+    "backend": {
+      "reference": "ghcr.io/xzaowu/kivao-app-backend@sha256:5a2d8b4ecf3153700d523b21547ae7049c45e898acaef18cda0bb2f66a02a21b",
+      "image_id": "sha256:03c66c183d3ab92e7dd813709e3343e0a82f5dbfef38cded3cff71b0b29184e5"
+    },
+    "agent": {
+      "reference": "ghcr.io/xzaowu/kivao-app-agent@sha256:c4c1f5db0e5534340494533d1adc7edfdb136b5cac47aac0aef194a67470a70c",
+      "image_id": "sha256:38fd43a03b616c3d5e95a72b63dfc7711f4f590c5bc08462291e4f0754321874"
+    }
+  },
+  "deployment": {
+    "directory": "/opt/yingce",
+    "project": "yingce",
+    "compose_files": [
+      "/opt/yingce/docker-compose.yml",
+      "/opt/yingce/docker-compose.override.yml",
+      "/opt/yingce/operations/agent-stop-repair-r1/agent-init.override.yml"
+    ],
+    "web_listen": "127.0.0.1:13100",
+    "agent_init": true,
+    "env_mode": "0600",
+    "automatic_schema_migration": false,
+    "paths": {
+      "backend_data": "/opt/yingce/data",
+      "web": "/opt/yingce/web",
+      "postgres": "/opt/yingce/postgres",
+      "redis": "/opt/yingce/redis"
+    }
+  },
+  "backups": {
+    "final": "/opt/yingce/backups/final-kivao-r1-20261103T042004Z-8af57a52",
+    "phase2": "/opt/yingce/backups/phase2-20261102T101603Z",
+    "encrypted": true,
+    "private_key_in_repository": false
+  },
+  "git_snapshot": {
+    "main": "82fc5c03233c33380a5335146c50bb507deb5692",
+    "release_branch": "release/kivao-baseline-eeccf718",
+    "tag": "kivao-1.0.0-eeccf718-r1",
+    "annotated_tag_object": "e9b232bffc3a788d2f09dbf74663fea7e00ffc44",
+    "merge_base": "eeccf718e8ad78aee98ca49d142d0594ea7000b2",
+    "main_only_commits": 14,
+    "release_only_commits": 1
+  },
+  "evidence": {
+    "classification": "private operational summary; do not publish this directory as public docs",
+    "private_artifact_relative_directory": ".local/phase3b/retry-init-r1",
+    "sha256": {
+      "FINAL-REPORT.md": "816fc4862f132935289590ec84423a3c9dc66a9597e153e43fffe27f9e234ce9",
+      "FINAL-RESULT.json": "ab6b190bb4262171e94c667b45aa6614d2799771ffbd2ee88db7980f6c74524e",
+      "PRODUCTION-OPERATIONS.md": "92d755d26453e86488f7894dbb97bbc58d5e1d582a06fe17c280c249633c2b7d"
+    },
+    "ci_runs": [
+      {
+        "id": 41422427278,
+        "name": "KIVAO first baseline images",
+        "event": "push",
+        "head_sha": "e19976f61bd08c271ae88d9921a20f8304d729f4",
+        "status": "completed",
+        "conclusion": "success",
+        "url": "https://github.com/xzaowu/kivao-app/actions/runs/41422427278"
+      },
+      {
+        "id": 41420310966,
+        "name": "KIVAO first baseline images",
+        "event": "push",
+        "head_sha": "e19976f61bd08c271ae88d9921a20f8304d729f4",
+        "status": "completed",
+        "conclusion": "success",
+        "url": "https://github.com/xzaowu/kivao-app/actions/runs/41420310966"
+      }
+    ]
+  },
+  "acceptance": {
+    "restored_tables": 130,
+    "native_decryption_values": 11,
+    "browser_routes": 12,
+    "media_http_sha256_matches": 9,
+    "protected_tables": 12,
+    "other_containers_unchanged": 15,
+    "real_paid_model_calls": false,
+    "real_payment_calls": false,
+    "positive_incremental_production_sse_verified": false
+  }
+}

@@ -5,7 +5,7 @@ description: Host Updater、Release 检查、数据库备份迁移、健康验�
 
 # 在线更新与安全回退
 
-KIVAO 首次接管既有部署采用[首次镜像切换方案](./kivao-first-release.mdx)，不使用本页的官方安装命令，也不默认安装 Host Updater。
+KIVAO 已完成[首次自有镜像接管](./kivao-first-release.mdx)，结论为 PRODUCTION CUTOVER GO。该既有生产以私有仓库中的 [生产结项](../../../operations/kivao-first-cutover-closeout.md)和[发布原则](../../../operations/kivao-release-policy.md)为准：禁止使用本页的官方安装、自动更新或迁移流程覆盖自有镜像，不安装或启用 Host Updater。以下说明仅适用于上游官方受管部署。
 
 管理后台的“系统配置 → 系统更新”只负责管理员鉴权、展示状态和发起操作。真正的 Docker、数据库备份与服务切换由宿主机上的 `open-ai-canvas-host-updater` 执行，业务后端不挂载 Docker Socket。
 

@@ -4,11 +4,18 @@
 
 ## 部署与更新入口
 
-用户要求部署服务器时，默认使用官方 Release 镜像、`docker-compose.deploy.yml` 和 Host Updater。本地 SQLite 构建与自定义 Compose 不属于后台在线更新管理范围。
+**KIVAO 既有生产已完成自有镜像接管。** 维护 `app.kivao.cc` 优先读取下列私有结项与发布规则，不使用官方安装/自动更新流程覆盖自有镜像；当前 main 不等于线上源码。
+
+- [KIVAO 首次生产结项](operations/kivao-first-cutover-closeout.md)：实际部署、固定镜像、备份/回滚及已验收边界。
+- [KIVAO 生产固定清单](operations/kivao-production-r1.json)：源码、镜像 digest、编排及原始证据摘要。
+- [KIVAO 后续发布与上游整合原则](operations/kivao-release-policy.md)：生产基线开发、候选 CI、自有镜像与独立 main 整合。
+- [KIVAO 1.0.1 最小开发方案](plans/kivao-1.0.1-plan.md)：品牌、插件显隐及自有更新日志，计划未实施。
+
+其他上游默认部署使用官方 Release 镜像、`docker-compose.deploy.yml` 和 Host Updater。本地 SQLite 构建与自定义 Compose 不属于后台在线更新管理范围。私有 `docs/operations/` 不纳入公开文档站。
 
 - [Docker 部署](content/docs/overview/docker.mdx)：默认服务器方案、Compose 选择与已有部署核对。
 - [在线更新与安全回退](content/docs/backend/system-update.mdx)：受管部署条件、安装、备份、迁移和回退。
-- [KIVAO 首次镜像切换](content/docs/backend/kivao-first-release.mdx)：固定线上源码、自有镜像、隔离恢复与原地回滚；生产步骤另需人工授权。
+- [KIVAO 首次镜像接管](content/docs/backend/kivao-first-release.mdx)：已完成首发的状态索引与后续授权边界。
 - [本地开发](content/docs/backend/local-development.mdx)：宿主机与热更新开发环境。
 
 ## 设计沉淀
