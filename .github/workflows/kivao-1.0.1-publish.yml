@@ -60,7 +60,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           APPROVED_CI_RUN: ${{ steps.approval.outputs.ci_run_id }}
         run: |
-          gh run download "$APPROVED_CI_RUN" --name kivao-101-ci-report --dir "$RUNNER_TEMP/verified-ci"
+          gh run download "$APPROVED_CI_RUN" --repo "$GITHUB_REPOSITORY" --name kivao-101-ci-report --dir "$RUNNER_TEMP/verified-ci"
           python3 scripts/kivao-release.py check-ci --sha "$GITHUB_SHA" --report "$RUNNER_TEMP/verified-ci/ci-report.json" --output "$RUNNER_TEMP/verified-ci.json"
       - uses: actions/upload-artifact@v4
         with:

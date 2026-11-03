@@ -212,6 +212,7 @@ class ReleaseTest(unittest.TestCase):
         self.assertIn("KIVAO_101_PUBLISH_ENABLED", publish)
         self.assertIn("kivao-1.0.1-*", publish)
         self.assertIn("check-ci", publish)
+        self.assertIn('gh run download "$APPROVED_CI_RUN" --repo "$GITHUB_REPOSITORY"', publish)
         self.assertIn("KIVAO_101_PUBLISH_APPROVAL", publish)
         self.assertNotIn("environment:", publish)
         self.assertIn("needs: [authorize, registry]", publish)
