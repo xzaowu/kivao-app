@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 
-import { appearanceLogoURL, brandStudioLabel, DEFAULT_PUBLIC_APPEARANCE, normalizePublicAppearance, useAppearanceStore } from "../src/stores/use-appearance-store";
+import { appearanceLogoURL, applyAppearanceMetadata, brandStudioLabel, DEFAULT_PUBLIC_APPEARANCE, normalizePublicAppearance, useAppearanceStore } from "../src/stores/use-appearance-store";
+import { Window } from "happy-dom";
 import { bootstrapAppearance } from "../src/services/appearance-bootstrap";
 import { moduleGroupSource } from "./helpers/module-group-source";
 
@@ -74,6 +75,34 @@ test("offline bootstrap releases the loading gate with KIVAO defaults", async ()
     expect(appearance.brandName).toBe("KIVAO");
     expect(appearance.seoTitle).toBe("KIVAO");
     expect(useAppearanceStore.getState().resolved).toBe(true);
+});
+
+test("saved SEO metadata and light/dark favicon use the same resolved custom identity", () => {
+    const dom = new Window({ url: "https://studio.example.test/login" });
+    try {
+        const appearance = normalizePublicAppearance({
+            configured: true,
+            brandName: "工作室",
+            seoTitle: "工作室 SEO",
+            seoDescription: "已保存说明",
+            seoKeywords: "影视,创作",
+            logoConfigured: true,
+            darkLogoConfigured: true,
+            logoUrl: "/light.svg",
+            darkLogoUrl: "/dark.svg",
+        });
+        const target = dom.document as unknown as Document;
+        for (const theme of ["light", "dark"]) {
+            target.documentElement.classList.toggle("dark", theme === "dark");
+            applyAppearanceMetadata(appearance, target);
+            expect(target.title).toBe("工作室 SEO");
+            expect(target.querySelector('meta[name="description"]')?.getAttribute("content")).toBe("已保存说明");
+            expect(target.querySelector('meta[property="og:site_name"]')?.getAttribute("content")).toBe("工作室");
+            expect(target.querySelector('link[rel="icon"]')?.getAttribute("href")).toBe(`/${theme}.svg`);
+        }
+    } finally {
+        dom.happyDOM.abort();
+    }
 });
 
 test("a custom login video never falls back to the built-in poster", () => {

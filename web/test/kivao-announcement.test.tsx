@@ -52,6 +52,22 @@ test("technical entry fails closed for visitors, ordinary users and unresolved s
     expect(await render(true)).toBe("");
 });
 
+test("technical entry disappears when the mounted administrator session changes", async () => {
+    actor("admin");
+    const host = document.createElement("div");
+    const root = createRoot(host);
+    try {
+        await act(async () => root.render(<AppChangelogButton technical showLabel />));
+        expect(host.textContent).toContain("技术更新记录");
+        await act(async () => actor("user"));
+        expect(host.innerHTML).toBe("");
+        await act(async () => actor(null));
+        expect(host.innerHTML).toBe("");
+    } finally {
+        await act(async () => root.unmount());
+    }
+});
+
 test("administrator technical record uses the source version even with a custom product version", async () => {
     actor("admin");
     useAppearanceStore.setState({ appearance: normalizePublicAppearance({ updates: { enabled: true, currentVersion: "工作室公告版本", releases: [] } }) });

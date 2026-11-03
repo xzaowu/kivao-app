@@ -43,7 +43,15 @@ description: 从产品功能快速定位主要代码入口
 
 - 后台编辑：`web/src/pages/admin/settings/components/update-announcement-editor.tsx`；版本、排序与草稿校验：`web/src/lib/update-announcement.ts`。
 - 统一入口与弹窗：`web/src/components/layout/app-changelog-modal.tsx`、`app-changelog-dialog.tsx`；图文视频展示：`update-announcement-content.tsx`。
+- KIVAO 顶部/侧栏的真实共享调用方：`workspace-account-card.tsx`，顶部容器为 `workspace-account-menu.tsx`，侧栏为 `workspace-sidebar-nav.tsx`；`workspace-sidebar-footer.tsx` 未被当前路由使用。技术入口与弹窗读取 `use-user-store.ts` 的已恢复管理员角色，普通公告不回退原始日志。
 - 服务端持久化、校验、公开投影及媒体访问：`backend/internal/app/appearance_updates.go` 与 `appearance.go`；HTTP 边界：`backend/internal/handler/appearance.go`。
+
+## KIVAO 品牌初始化
+
+- 初始标题：`web/index.html`；异步读取/失败回退：`web/src/services/appearance-bootstrap.ts`；默认身份、未配置投影和 SEO：`web/src/stores/use-appearance-store.ts`。
+- `web/src/components/layout/app-providers.tsx` 在外观未解析时保持 KIVAO 加载态；`components/brand/brand-logo.tsx` 复用主题颜色渲染 `web/public/kivao-logo.svg`，后台已配置的深浅 Logo 仍优先。
+- 独立欢迎页 `web/src/pages/welcome/index.tsx` 的序幕大标题与辅助标签读取 brandName，保留上游资料与许可入口。
+- 不修改服务端默认身份、API 标识、Schema 或已保存配置；测试入口为 `web/test/appearance-bootstrap.test.ts` 与 `kivao-announcement.test.tsx`。
 
 ## 画布 Agent 配置与 Live2D
 
