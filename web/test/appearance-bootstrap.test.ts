@@ -3,6 +3,7 @@ import { expect, test } from "bun:test";
 import { appearanceLogoURL, applyAppearanceMetadata, brandStudioLabel, DEFAULT_PUBLIC_APPEARANCE, normalizePublicAppearance, useAppearanceStore } from "../src/stores/use-appearance-store";
 import { Window } from "happy-dom";
 import { bootstrapAppearance } from "../src/services/appearance-bootstrap";
+import { createHash } from "node:crypto";
 import { moduleGroupSource } from "./helpers/module-group-source";
 
 test("initial HTML identifies KIVAO before the public appearance is resolved", async () => {
@@ -13,6 +14,15 @@ test("initial HTML identifies KIVAO before the public appearance is resolved", a
     expect(mainSource).toContain("bootstrapAppearance()");
     expect(mainSource).toContain('import("./application")');
     expect(mainSource.indexOf("bootstrapAppearance()")).toBeLessThan(mainSource.indexOf('import("./application")'));
+});
+
+test("bundled KIVAO kite is the unchanged supplied RGBA asset", async () => {
+    const bytes = new Uint8Array(await Bun.file(new URL("../public/kivao-mark.png", import.meta.url)).arrayBuffer());
+    expect(createHash("sha256").update(bytes).digest("hex")).toBe("a4cca76e82c2b20294c6dfbd1bb1ded619288e2c0aa195b03b049d8080f67a1f");
+    const header = new DataView(bytes.buffer);
+    expect(header.getUint32(16)).toBe(1254);
+    expect(header.getUint32(20)).toBe(1254);
+    expect(bytes[25]).toBe(6);
 });
 
 test("unsaved upstream identity resolves to KIVAO without changing protocol or canvas settings", () => {
@@ -30,8 +40,8 @@ test("unsaved upstream identity resolves to KIVAO without changing protocol or c
     expect(appearance.brandName).toBe("KIVAO");
     expect(appearance.seoTitle).toBe("KIVAO");
     expect(appearance.footerCopyright).toContain("KIVAO");
-    expect(appearanceLogoURL(appearance, "light")).toBe("/kivao-logo.svg");
-    expect(appearanceLogoURL(appearance, "dark")).toBe("/kivao-logo.svg");
+    expect(appearanceLogoURL(appearance, "light")).toBe("/kivao-mark.png");
+    expect(appearanceLogoURL(appearance, "dark")).toBe("/kivao-mark.png");
     expect(brandStudioLabel(appearance)).toBe("KIVAO STUDIO");
     expect(appearance.canvas).toEqual(DEFAULT_PUBLIC_APPEARANCE.canvas);
     expect(appearance.configured).toBe(false);
@@ -138,7 +148,7 @@ test("appearance URLs reject executable and insecure remote schemes", () => {
         authVideoUrl: "http://example.com/brand.mp4",
     });
 
-    expect(appearance.logoUrl).toBe("/kivao-logo.svg");
+    expect(appearance.logoUrl).toBe("/kivao-mark.png");
     expect(appearance.authVideoUrl).not.toContain("example.com");
 });
 
