@@ -10,7 +10,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: kivao-101-publish-${{ github.ref }}
+  group: kivao-101-publish
   cancel-in-progress: false
 
 jobs:
@@ -22,11 +22,20 @@ jobs:
       version: ${{ steps.plan.outputs.version }}
       time: ${{ steps.plan.outputs.time }}
       release: ${{ steps.plan.outputs.release }}
+      ci_run_id: ${{ steps.approval.outputs.ci_run_id }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
+      - name: Require exact owner authorization; no Environment approval is implied
+        id: approval
+        env:
+          KIVAO_101_PUBLISH_ENABLED: ${{ vars.KIVAO_101_PUBLISH_ENABLED }}
+          KIVAO_101_PUBLISH_APPROVAL: ${{ vars.KIVAO_101_PUBLISH_APPROVAL }}
+          SOURCE: ${{ github.sha }}
+          RELEASE: ${{ github.ref_name }}
+        run: python3 scripts/kivao-release.py authorize --sha "$SOURCE" --release "$RELEASE" --output "$RUNNER_TEMP/authorization.json"
       - name: Require an annotated dedicated tag
         env:
           REF: ${{ github.ref }}
@@ -42,29 +51,54 @@ jobs:
       - name: Require successful CI and reports on this exact SHA
         env:
           GH_TOKEN: ${{ github.token }}
+          APPROVED_CI_RUN: ${{ steps.approval.outputs.ci_run_id }}
         run: |
-          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/kivao-1.0.1-ci.yml/runs?head_sha=$GITHUB_SHA&status=success&event=push&per_page=100" > "$RUNNER_TEMP/runs.json"
-          python3 - <<'PY'
-          import json, os
-          from pathlib import Path
-          runs = json.loads((Path(os.environ['RUNNER_TEMP']) / 'runs.json').read_text())['workflow_runs']
-          valid = [r for r in runs if r['head_sha'] == os.environ['GITHUB_SHA'] and r['head_branch'] in ('dev/kivao-1.0.1-baseline', 'release/kivao-1.0.1') and r['conclusion'] == 'success']
-          if not valid:
-              raise SystemExit('No successful dedicated CI for this source')
-          with open(os.environ['GITHUB_ENV'], 'a') as output:
-              output.write('VERIFIED_CI_RUN=' + str(valid[0]['id']) + '\n')
-          PY
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$APPROVED_CI_RUN" > "$RUNNER_TEMP/run.json"
+          python3 scripts/kivao-release.py check-ci-run --sha "$GITHUB_SHA" --run-id "$APPROVED_CI_RUN" --report "$RUNNER_TEMP/run.json" --output "$RUNNER_TEMP/ci-run.json"
       - name: Validate the successful CI artifact
         env:
           GH_TOKEN: ${{ github.token }}
+          APPROVED_CI_RUN: ${{ steps.approval.outputs.ci_run_id }}
         run: |
-          gh run download "$VERIFIED_CI_RUN" --name kivao-101-ci-report --dir "$RUNNER_TEMP/verified-ci"
+          gh run download "$APPROVED_CI_RUN" --name kivao-101-ci-report --dir "$RUNNER_TEMP/verified-ci"
           python3 scripts/kivao-release.py check-ci --sha "$GITHUB_SHA" --report "$RUNNER_TEMP/verified-ci/ci-report.json" --output "$RUNNER_TEMP/verified-ci.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kivao-101-publish-authorization
+          path: |
+            ${{ runner.temp }}/authorization.json
+            ${{ runner.temp }}/ci-run.json
+            ${{ runner.temp }}/verified-ci.json
+          if-no-files-found: error
+          retention-days: 90
 
-  publish:
+  registry:
     needs: authorize
     runs-on: ubuntu-24.04
-    environment: kivao-image-publish-1.0.1
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.authorize.outputs.sha }}
+      - name: Require all three revisions absent before any writer job starts
+        env:
+          GHCR_READ_USER: ${{ github.actor }}
+          GHCR_READ_TOKEN: ${{ github.token }}
+          SOURCE: ${{ needs.authorize.outputs.sha }}
+          RELEASE: ${{ needs.authorize.outputs.release }}
+        run: python3 scripts/kivao-release.py registry-preflight --sha "$SOURCE" --release "$RELEASE" --output "$RUNNER_TEMP/registry.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kivao-101-publish-registry
+          path: ${{ runner.temp }}/registry.json
+          if-no-files-found: error
+          retention-days: 90
+
+  publish:
+    needs: [authorize, registry]
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: write
@@ -93,12 +127,6 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Require absent immutable revision
-        id: existing
-        run: bash .github/scripts/resolve-image.sh "$IMAGE"
-      - name: Reject overwrite or uncertain registry state
-        if: steps.existing.outputs.found != 'false'
-        run: exit 1
       - uses: docker/build-push-action@v6
         with:
           context: .
@@ -121,7 +149,13 @@ jobs:
       - name: Verify before registry publication, then verify the pushed digest
         env:
           ROLE: ${{ matrix.role }}
+          KIVAO_101_PUBLISH_ENABLED: ${{ vars.KIVAO_101_PUBLISH_ENABLED }}
+          KIVAO_101_PUBLISH_APPROVAL: ${{ vars.KIVAO_101_PUBLISH_APPROVAL }}
+          GHCR_READ_USER: ${{ github.actor }}
+          GHCR_READ_TOKEN: ${{ github.token }}
         run: |
+          python3 scripts/kivao-release.py authorize --sha "$SOURCE" --release "$RELEASE" --output "$RUNNER_TEMP/authorization-before-push.json"
+          python3 scripts/kivao-release.py registry-preflight --sha "$SOURCE" --release "$RELEASE" --role "$ROLE" --output "$RUNNER_TEMP/registry-before-push.json"
           python3 scripts/kivao-release.py verify-image --sha "$SOURCE" --release "$RELEASE" --role "$ROLE" --image "$IMAGE" --output "$RUNNER_TEMP/image-before-push.json"
           docker push "$IMAGE"
           digest=$(docker buildx imagetools inspect "$IMAGE" --format '{{.Manifest.Digest}}')
@@ -147,6 +181,10 @@ jobs:
           path: evidence
           merge-multiple: true
       - run: python3 scripts/kivao-release.py locks --directory evidence --output release-locks
+      - uses: actions/download-artifact@v4
+        with:
+          name: kivao-101-publish-authorization
+          path: release-locks/authorization
       - uses: actions/upload-artifact@v4
         with:
           name: kivao-101-paired-release-locks

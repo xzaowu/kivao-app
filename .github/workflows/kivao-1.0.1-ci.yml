@@ -49,6 +49,30 @@ jobs:
     needs: source
     uses: ./.github/workflows/quality.yml
 
+  registry:
+    name: Read-only GHCR access and revision absence
+    needs: source
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.source.outputs.sha }}
+      - name: Prove r1 access before accepting candidate manifest absence
+        env:
+          GHCR_READ_USER: ${{ github.actor }}
+          GHCR_READ_TOKEN: ${{ github.token }}
+          SOURCE: ${{ needs.source.outputs.sha }}
+        run: python3 scripts/kivao-release.py registry-preflight --sha "$SOURCE" --output "$RUNNER_TEMP/registry.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kivao-101-registry
+          path: ${{ runner.temp }}/registry.json
+          if-no-files-found: error
+          retention-days: 14
+
   build:
     name: Build and verify ${{ matrix.role }} amd64
     needs: source
@@ -116,7 +140,7 @@ jobs:
 
   report:
     name: Complete candidate report
-    needs: [source, quality, build]
+    needs: [source, quality, build, registry]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4

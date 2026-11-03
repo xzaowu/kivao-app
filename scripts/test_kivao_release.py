@@ -1,4 +1,5 @@
 import copy
+from datetime import datetime, timezone
 import importlib.util
 import json
 from pathlib import Path
@@ -6,6 +7,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import urllib.error
+import io
 from unittest.mock import patch
 
 sys.dont_write_bytecode = True
@@ -16,6 +19,22 @@ SHA = "a" * 40
 
 
 class ReleaseTest(unittest.TestCase):
+    def approval(self):
+        return {"decision": "IMAGE_PUBLISH_APPROVED", "approved_by": "xzaowu", "sha": SHA,
+                "release": release.release_name(SHA), "ci_run_id": 123,
+                "authorization_ref": "HD-TEST-ONLY", "approved_at": "2026-01-01T10:00:00+00:00",
+                "expires_at": "2026-01-01T11:00:00+00:00"}
+
+    def context(self):
+        return {"GITHUB_REPOSITORY": "xzaowu/kivao-app", "GITHUB_EVENT_NAME": "push",
+                "GITHUB_ACTOR": "xzaowu", "GITHUB_TRIGGERING_ACTOR": "xzaowu",
+                "GITHUB_REF": "refs/tags/" + release.release_name(SHA), "GITHUB_SHA": SHA,
+                "GITHUB_RUN_ATTEMPT": "1", "KIVAO_101_PUBLISH_ENABLED": "true"}
+
+    def registry(self):
+        return {"source_commit": SHA, "registry_write": False,
+                "roles": {role: {"candidate_absent": True} for role in release.ROLES}}
+
     def plan(self):
         return {"source_commit": SHA, "application_version": "v1.7.3.3", "release": release.release_name(SHA)}
 
@@ -90,11 +109,69 @@ class ReleaseTest(unittest.TestCase):
 
     def test_ci_requires_same_sha_quality_and_three_build_only_images(self):
         report = {"source_commit": SHA, "status": "PASS", "quality_result": "success", "registry_publish": False,
-                  "images": {r["role"]: r for r in self.reports(False)}}
+                  "images": {r["role"]: r for r in self.reports(False)}, "registry_preflight": self.registry()}
         self.assertTrue(release.check_ci(report, SHA)["verified_ci"])
-        for field, value in [("quality_result", "failure"), ("source_commit", "b" * 40), ("registry_publish", True), ("images", {})]:
+        for field, value in [("quality_result", "failure"), ("source_commit", "b" * 40), ("registry_publish", True), ("images", {}), ("registry_preflight", {})]:
             with self.subTest(field=field), self.assertRaises(ValueError):
                 release.check_ci(report | {field: value}, SHA)
+
+    def test_authorization_is_exact_owner_first_attempt_and_short_lived(self):
+        now = datetime(2026, 1, 1, 10, 30, tzinfo=timezone.utc)
+        def check(approval=None, context=None):
+            return release.authorize_publish(SHA, release.release_name(SHA), approval or self.approval(), context or self.context(), now)
+        self.assertFalse(check()["independent_review"])
+        for key in self.context():
+            with self.subTest(context=key), self.assertRaises(ValueError):
+                check(context=self.context() | {key: "wrong"})
+        for key, value in [("sha", "b" * 40), ("release", "latest"), ("approved_by", "someone"),
+                           ("decision", "VISUAL_PASS"), ("ci_run_id", True), ("ci_run_id", 0),
+                           ("authorization_ref", ""), ("approved_at", "2026-01-01T10:31:00+00:00"),
+                           ("expires_at", "2026-01-01T10:30:00+00:00"),
+                           ("expires_at", "2026-01-03T10:30:00+00:00"), ("expires_at", "2026-01-01T11:00:00")]:
+            with self.subTest(approval=key, value=value), self.assertRaises(ValueError):
+                check(approval=self.approval() | {key: value})
+        with self.assertRaises(ValueError):
+            release.authorize_publish(SHA, release.release_name(SHA), None, self.context(), now)
+
+    def test_ci_run_is_bound_to_approved_run_workflow_branch_and_sha(self):
+        run = {"id": 123, "head_sha": SHA, "event": "push", "status": "completed", "conclusion": "success",
+               "path": ".github/workflows/kivao-1.0.1-ci.yml", "head_branch": "dev/kivao-1.0.1-baseline"}
+        self.assertTrue(release.check_ci_run(run, SHA, 123)["verified_ci_run"])
+        for key in run:
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                release.check_ci_run(run | {key: "wrong"}, SHA, 123)
+
+    def test_registry_requires_authenticated_anchor_and_only_manifest_unknown_is_absent(self):
+        def answer(url, authorization):
+            if "/token?" in url:
+                return 200, {}, {"token": "fixture-bearer"}
+            for role, key in release.ROLES.items():
+                anchor = release.POLICY["rollback"][key].split("@", 1)[1]
+                if url.endswith(anchor):
+                    return 200, {"Docker-Content-Digest": anchor}, {}
+            return 404, {}, {"errors": [{"code": "MANIFEST_UNKNOWN"}]}
+        with patch.object(release, "registry_json", side_effect=answer) as request:
+            result = release.registry_preflight(SHA, None, "xzaowu", "fixture-only")
+        self.assertEqual(request.call_count, 9)
+        self.assertEqual(set(result["roles"]), set(release.ROLES))
+        self.assertFalse(result["registry_write"])
+        for status, body in [(200, {}), (401, {}), (403, {}), (429, {}), (500, {}), (404, {}),
+                             (404, {"errors": [{"code": "NAME_UNKNOWN"}]})]:
+            def uncertain(url, authorization):
+                if url.endswith(release.release_name(SHA)):return status, {}, body
+                return answer(url, authorization)
+            with self.subTest(status=status, body=body), patch.object(release, "registry_json", side_effect=uncertain), self.assertRaises(ValueError):
+                release.registry_preflight(SHA, None, "xzaowu", "fixture-only")
+        with patch.object(release, "registry_json", return_value=(200, {}, {"token": "fixture-bearer"})), self.assertRaises(ValueError):
+            release.registry_preflight(SHA, None, "xzaowu", "fixture-only")
+
+    def test_registry_auth_errors_are_redacted_and_redirects_refused(self):
+        with patch.object(release.urllib.request, "build_opener") as opener:
+            opener.return_value.open.side_effect = urllib.error.HTTPError("https://ghcr.io/token", 403, "forbidden", {}, io.BytesIO(b"fixture-secret"))
+            with self.assertRaises(ValueError) as caught:
+                release.registry_json("https://ghcr.io/token", "fixture-secret")
+            self.assertNotIn("fixture-secret", str(caught.exception))
+        self.assertIsNone(release.NoRedirect().redirect_request(None, None, 302, "redirect", {}, "https://other.invalid"))
 
     def test_dry_run_and_atomic_apply_preserve_other_environment_bytes(self):
         bundle = release.paired_locks(self.reports())
@@ -135,6 +212,10 @@ class ReleaseTest(unittest.TestCase):
         self.assertIn("KIVAO_101_PUBLISH_ENABLED", publish)
         self.assertIn("kivao-1.0.1-*", publish)
         self.assertIn("check-ci", publish)
+        self.assertIn("KIVAO_101_PUBLISH_APPROVAL", publish)
+        self.assertNotIn("environment:", publish)
+        self.assertIn("needs: [authorize, registry]", publish)
+        self.assertIn("packages: read", ci)
 
 
 if __name__ == "__main__":

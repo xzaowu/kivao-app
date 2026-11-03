@@ -2,6 +2,8 @@
 """KIVAO 1.0.1 source/image evidence and paired locks; never builds, pushes or deploys."""
 
 import argparse
+import base64
+from datetime import datetime, timedelta, timezone
 import hashlib
 import importlib.util
 import json
@@ -10,6 +12,9 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import urllib.error
+import urllib.parse
+import urllib.request
 
 sys.dont_write_bytecode = True
 
@@ -49,6 +54,90 @@ def release_name(sha, value=None):
     if not re.fullmatch(rf"kivao-1\.0\.1-{sha[:12]}-r[1-9][0-9]*", value):
         raise ValueError("release tag must identify this exact candidate; r1 baseline/latest/v* forbidden")
     return value
+
+
+def authorize_publish(sha, release, approval, context, now=None):
+    release_name(sha, release)
+    owner = POLICY["repository"].split("/")[0]
+    expected = {"GITHUB_REPOSITORY": POLICY["repository"], "GITHUB_EVENT_NAME": "push",
+                "GITHUB_ACTOR": owner, "GITHUB_TRIGGERING_ACTOR": owner,
+                "GITHUB_REF": "refs/tags/" + release, "GITHUB_SHA": sha, "GITHUB_RUN_ATTEMPT": "1",
+                "KIVAO_101_PUBLISH_ENABLED": "true"}
+    if any(context.get(key) != value for key, value in expected.items()):
+        raise ValueError("publish requires the owner tag push, first attempt and enabled switch")
+    if not isinstance(approval, dict) or any(approval.get(key) != value for key, value in {
+        "decision": "IMAGE_PUBLISH_APPROVED", "approved_by": owner, "sha": sha, "release": release,
+    }.items()):
+        raise ValueError("missing explicit owner authorization for this exact SHA and release")
+    if type(approval.get("ci_run_id")) is not int or approval["ci_run_id"] <= 0:
+        raise ValueError("authorization requires an exact CI run ID")
+    if not isinstance(approval.get("authorization_ref"), str) or not re.fullmatch(r"[A-Za-z0-9._/-]{1,120}", approval["authorization_ref"]):
+        raise ValueError("authorization requires an auditable human decision reference")
+    now = now or datetime.now(timezone.utc)
+    issued = datetime.fromisoformat(approval["approved_at"])
+    expires = datetime.fromisoformat(approval["expires_at"])
+    if issued.tzinfo is None or expires.tzinfo is None or not issued <= now < expires or not timedelta(0) < expires - issued <= timedelta(hours=24):
+        raise ValueError("authorization must be current, timezone-aware and valid for at most 24 hours")
+    return {**approval, "actor": owner, "tag_ref": context["GITHUB_REF"], "run_attempt": 1,
+            "run_id": context.get("GITHUB_RUN_ID"), "independent_review": False}
+
+
+def check_ci_run(run, sha, run_id):
+    if any(run.get(key) != value for key, value in {
+        "id": run_id, "head_sha": sha, "event": "push", "status": "completed", "conclusion": "success",
+        "path": ".github/workflows/kivao-1.0.1-ci.yml",
+    }.items()) or run.get("head_branch") not in ("dev/kivao-1.0.1-baseline", "release/kivao-1.0.1"):
+        raise ValueError("approved CI run must be successful dedicated CI on this exact SHA")
+    return {"ci_run_id": run_id, "source_commit": sha, "verified_ci_run": True}
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def registry_json(url, authorization):
+    request = urllib.request.Request(url, headers={"Authorization": authorization, "Accept":
+        "application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json, "
+        "application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json"})
+    opener = urllib.request.build_opener(NoRedirect)
+    try:
+        with opener.open(request, timeout=30) as response:
+            return response.status, dict(response.headers), json.loads(response.read(1048576))
+    except urllib.error.HTTPError as error:
+        # Never expose response bodies/headers from credential-bearing requests.
+        if error.code == 404:
+            try:
+                return 404, {}, json.loads(error.read(16384))
+            except (ValueError, OSError):
+                pass
+        raise ValueError(f"registry read failed with HTTP {error.code}; absence is unproven") from None
+
+
+def registry_preflight(sha, release, username, token, roles=ROLES):
+    release = release_name(sha, release)
+    if not username or not token:
+        raise ValueError("registry read credentials are required")
+    results = {}
+    basic = "Basic " + base64.b64encode(f"{username}:{token}".encode()).decode()
+    for role in roles:
+        repository = f"{POLICY['repository']}-{role}"
+        query = urllib.parse.urlencode({"service": "ghcr.io", "scope": f"repository:{repository}:pull"})
+        status, _, auth = registry_json("https://ghcr.io/token?" + query, basic)
+        if status != 200 or not isinstance(auth.get("token"), str) or not auth["token"]:
+            raise ValueError("registry pull authentication failed")
+        bearer = "Bearer " + auth["token"]
+        anchor = POLICY["rollback"][ROLES[role]].split("@", 1)[1]
+        base = f"https://ghcr.io/v2/{repository}/manifests/"
+        status, headers, _ = registry_json(base + anchor, bearer)
+        if status != 200 or {k.lower(): v for k, v in headers.items()}.get("docker-content-digest") != anchor:
+            raise ValueError("known r1 manifest is not readable; candidate absence is unproven")
+        status, _, body = registry_json(base + release, bearer)
+        if status != 404 or [e.get("code") for e in body.get("errors", [])] != ["MANIFEST_UNKNOWN"]:
+            raise ValueError("candidate revision exists or registry state is uncertain")
+        results[role] = {"repository": "ghcr.io/" + repository, "readable_anchor": anchor, "candidate_absent": True}
+    return {"source_commit": sha, "release": release, "checked_at": datetime.now(timezone.utc).isoformat(),
+            "registry_write": False, "roles": results}
 
 
 def source_report(sha, release=None):
@@ -177,6 +266,11 @@ def check_ci(report, sha):
         raise ValueError("CI report does not prove all checks passed on this candidate")
     if set(report.get("images", {})) != set(ROLES) or report.get("registry_publish") is not False:
         raise ValueError("not a complete build-only candidate CI report")
+    registry = report.get("registry_preflight", {})
+    if registry.get("source_commit") != sha or registry.get("registry_write") is not False or set(registry.get("roles", {})) != set(ROLES):
+        raise ValueError("CI requires authenticated read-only registry preflight for all roles")
+    if any(value.get("candidate_absent") is not True for value in registry["roles"].values()):
+        raise ValueError("CI does not prove candidate revisions absent")
     for role, value in report["images"].items():
         if value.get("source_commit") != sha or value.get("build_args", {}).get("BUILD_COMMIT") != sha or not value.get("embedded_commit_verified"):
             raise ValueError("CI source/build identity mismatch")
@@ -206,6 +300,20 @@ def main():
     ci.add_argument("--sha", required=True)
     ci.add_argument("--report", required=True, type=Path)
     ci.add_argument("--output", required=True, type=Path)
+    auth = sub.add_parser("authorize")
+    auth.add_argument("--sha", required=True)
+    auth.add_argument("--release", required=True)
+    auth.add_argument("--output", required=True, type=Path)
+    run = sub.add_parser("check-ci-run")
+    run.add_argument("--sha", required=True)
+    run.add_argument("--run-id", required=True, type=int)
+    run.add_argument("--report", required=True, type=Path)
+    run.add_argument("--output", required=True, type=Path)
+    registry = sub.add_parser("registry-preflight")
+    registry.add_argument("--sha", required=True)
+    registry.add_argument("--release")
+    registry.add_argument("--role", choices=ROLES)
+    registry.add_argument("--output", required=True, type=Path)
     apply = sub.add_parser("apply-lock")
     apply.add_argument("--bundle", required=True, type=Path)
     apply.add_argument("--env-file", required=True, type=Path)
@@ -222,12 +330,24 @@ def main():
         result = verify_image(args.sha, args.role, args.image, args.release, args.registry_digest)
     elif args.command == "check-ci":
         result = check_ci(json.loads(args.report.read_text()), args.sha)
+    elif args.command == "authorize":
+        result = authorize_publish(args.sha, args.release, json.loads(os.environ.get("KIVAO_101_PUBLISH_APPROVAL", "null")), os.environ)
+        if output := os.environ.get("GITHUB_OUTPUT"):
+            with open(output, "a") as stream:
+                stream.write(f"ci_run_id={result['ci_run_id']}\n")
+    elif args.command == "check-ci-run":
+        result = check_ci_run(json.loads(args.report.read_text()), args.sha, args.run_id)
+    elif args.command == "registry-preflight":
+        result = registry_preflight(args.sha, args.release, os.environ.get("GHCR_READ_USER"), os.environ.get("GHCR_READ_TOKEN"), [args.role] if args.role else ROLES)
     elif args.command in ("summary", "locks"):
         reports = read_reports(args.directory)
         if args.command == "summary":
+            registry = json.loads((args.directory / "registry.json").read_text())
             result = {"source_commit": reports[0]["source_commit"], "status": "PASS", "registry_publish": False,
                       "quality_result": args.quality_result, "images": {r["role"]: r for r in reports},
-                      "image_publish_ready": True, "ci_run": os.environ.get("GITHUB_RUN_ID")}
+                      "registry_preflight": registry, "human_publish_authorized": False,
+                      "ci_run": os.environ.get("GITHUB_RUN_ID")}
+            check_ci(result, reports[0]["source_commit"])
         else:
             result = paired_locks(reports)
             args.output.mkdir(parents=True, exist_ok=True)
