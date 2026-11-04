@@ -52,8 +52,8 @@ class ReleaseTest(unittest.TestCase):
                 for i, role in enumerate(release.ROLES, 1)]
 
     def test_tag_is_bound_to_exact_source_and_never_latest_or_r1(self):
-        self.assertEqual(release.release_name(SHA), "kivao-1.0.1-aaaaaaaaaaaa-r1")
-        for tag in ["latest", "v1.0.1", "kivao-1.0.0-eeccf718-r1", "kivao-1.0.1-bbbbbbbbbbbb-r1", "kivao-1.0.1-aaaaaaaaaaaa-r0"]:
+        self.assertEqual(release.release_name(SHA), "kivao-1.0.2-aaaaaaaaaaaa-r1")
+        for tag in ["latest", "v1.0.2", "kivao-1.0.0-eeccf718-r1", "kivao-1.0.1-6000d6061865-r1", "kivao-1.0.2-bbbbbbbbbbbb-r1", "kivao-1.0.2-aaaaaaaaaaaa-r0"]:
             with self.subTest(tag=tag), self.assertRaises(ValueError):
                 release.release_name(SHA, tag)
 
@@ -88,13 +88,18 @@ class ReleaseTest(unittest.TestCase):
         self.assertEqual(len(result["migration_binaries"]), 2)
         self.assertTrue(all(v["execution"] == "NOT_RUN" and not v["embedded_commit_verified"] for v in result["migration_binaries"].values()))
 
-    def test_rollback_is_current_kivao_r1_and_agent_init_required(self):
+    def test_rollback_is_running_kivao_101_and_agent_init_required(self):
         locks = release.paired_locks(self.reports())
-        manifest = json.loads((release.ROOT / "docs/operations/kivao-production-r1.json").read_text())
+        expected = {
+            "web": "sha256:c0c97c808c27b85546d40bcedccdb1f2c962e5ebe617f73b98531a62dd5cccba",
+            "backend": "sha256:bc91b5087c71794d495f11c052c5ff0f0692a7ddc49e87a429939c9fc174f8a9",
+            "agent": "sha256:2df7b8088fb3c1f89d7d9c9719ba7004d28d4c967c88a61662303089bd562877",
+        }
+        self.assertEqual(locks["rollback"]["CANVAS_IMAGE_TAG"], "kivao-1.0.1-6000d6061865-r1")
         self.assertTrue(locks["agent_init_required"])
         self.assertFalse(locks["migration_authorized"])
         for role, key in release.ROLES.items():
-            self.assertEqual(locks["rollback"][key], manifest["images"][role]["reference"])
+            self.assertEqual(locks["rollback"][key], f"ghcr.io/xzaowu/kivao-app-{role}@{expected[role]}")
             self.assertNotIn("ddcat-ai", locks["rollback"][key])
 
     def test_rejects_missing_roles_mixed_sources_or_unverified_image(self):
@@ -106,6 +111,14 @@ class ReleaseTest(unittest.TestCase):
             else: reports[1]["registry_digest"] = "latest"
             with self.subTest(change=change), self.assertRaises(ValueError):
                 release.paired_locks(reports)
+
+    def test_only_exact_approved_backend_paths_can_change(self):
+        approved = release.POLICY["approved_protected_changes"]["backend"]
+        self.assertTrue(release.approved_protected_delta("backend", approved))
+        for extra in ["backend/internal/database/schema.go", "backend/go.mod", "backend/internal/handler/model_catalog.go", "backend/internal/app/user_groups.go"]:
+            self.assertFalse(release.approved_protected_delta("backend", approved + [extra]))
+        self.assertFalse(release.approved_protected_delta("Dockerfile", ["Dockerfile"]))
+        self.assertFalse(release.approved_protected_delta("backend", []))
 
     def test_ci_requires_same_sha_quality_and_three_build_only_images(self):
         report = {"source_commit": SHA, "status": "PASS", "quality_result": "success", "registry_publish": False,
@@ -135,7 +148,7 @@ class ReleaseTest(unittest.TestCase):
 
     def test_ci_run_is_bound_to_approved_run_workflow_branch_and_sha(self):
         run = {"id": 123, "head_sha": SHA, "event": "push", "status": "completed", "conclusion": "success",
-               "path": ".github/workflows/kivao-1.0.1-ci.yml", "head_branch": "dev/kivao-1.0.1-baseline"}
+               "path": ".github/workflows/kivao-1.0.1-ci.yml", "head_branch": "release/kivao-1.0.2"}
         self.assertTrue(release.check_ci_run(run, SHA, 123)["verified_ci_run"])
         for key in run:
             with self.subTest(key=key), self.assertRaises(ValueError):
@@ -210,7 +223,7 @@ class ReleaseTest(unittest.TestCase):
         self.assertNotIn("workflow_dispatch:", publish)
         self.assertNotIn("branches:", publish)
         self.assertIn("KIVAO_101_PUBLISH_ENABLED", publish)
-        self.assertIn("kivao-1.0.1-*", publish)
+        self.assertIn("kivao-1.0.2-*", publish)
         self.assertIn("check-ci", publish)
         self.assertIn('gh run download "$APPROVED_CI_RUN" --repo "$GITHUB_REPOSITORY"', publish)
         self.assertIn("KIVAO_101_PUBLISH_APPROVAL", publish)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""KIVAO 1.0.1 source/image evidence and paired locks; never builds, pushes or deploys."""
+"""KIVAO source/image evidence and paired locks; never builds, pushes or deploys."""
 
 import argparse
 import base64
@@ -51,8 +51,9 @@ def digest(value):
 def release_name(sha, value=None):
     if not re.fullmatch(r"[0-9a-f]{40}", sha):
         raise ValueError("expected a complete candidate SHA")
-    value = value or f"kivao-1.0.1-{sha[:12]}-r1"
-    if not re.fullmatch(rf"kivao-1\.0\.1-{sha[:12]}-r[1-9][0-9]*", value):
+    prefix = "kivao-" + POLICY["release_version"] + "-" + sha[:12]
+    value = value or prefix + "-r1"
+    if not re.fullmatch(re.escape(prefix) + r"-r[1-9][0-9]*", value):
         raise ValueError("release tag must identify this exact candidate; r1 baseline/latest/v* forbidden")
     return value
 
@@ -87,7 +88,7 @@ def check_ci_run(run, sha, run_id):
     if any(run.get(key) != value for key, value in {
         "id": run_id, "head_sha": sha, "event": "push", "status": "completed", "conclusion": "success",
         "path": ".github/workflows/kivao-1.0.1-ci.yml",
-    }.items()) or run.get("head_branch") not in ("dev/kivao-1.0.1-baseline", "release/kivao-1.0.1"):
+    }.items()) or run.get("head_branch") != POLICY["ci_branch"]:
         raise ValueError("approved CI run must be successful dedicated CI on this exact SHA")
     return {"ci_run_id": run_id, "source_commit": sha, "verified_ci_run": True}
 
@@ -141,6 +142,11 @@ def registry_preflight(sha, release, username, token, roles=ROLES):
             "registry_write": False, "roles": results}
 
 
+def approved_protected_delta(path, changed):
+    allowed = POLICY.get("approved_protected_changes", {}).get(path, [])
+    return bool(changed) and bool(allowed) and set(changed).issubset(allowed)
+
+
 def source_report(sha, release=None):
     release = release_name(sha, release)
     if git("rev-parse", "HEAD") != sha or git("status", "--porcelain", "--untracked-files=no"):
@@ -159,7 +165,9 @@ def source_report(sha, release=None):
         before = git("rev-parse", f'{POLICY["production_commit"]}:{path}')
         after = git("rev-parse", f"{sha}:{path}")
         if before != after:
-            raise ValueError(f"protected schema/protocol/dependency/deployment path changed: {path}")
+            delta = git("diff", "--name-only", POLICY["production_commit"], sha, "--", path).splitlines()
+            if not approved_protected_delta(path, delta):
+                raise ValueError(f"protected schema/protocol/dependency/deployment path changed: {path}")
         fingerprints[path] = after
     if hashlib.sha256((ROOT / DOCKERFILES["agent"]).read_bytes()).hexdigest() != POLICY["agent_dockerfile_sha256"]:
         raise ValueError("Agent Dockerfile exceeds the approved build-metadata-only change")

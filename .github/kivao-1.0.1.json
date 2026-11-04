@@ -1,17 +1,26 @@
 {
   "repository": "xzaowu/kivao-app",
-  "product_commit": "42d3dd53620af5feff9165e79fc488dd5bad45b5",
-  "production_commit": "e19976f61bd08c271ae88d9921a20f8304d729f4",
+  "release_version": "1.0.2",
+  "ci_branch": "release/kivao-1.0.2",
+  "product_commit": "43d2909a2cb4d1cb2976e474d63b68f4765cee5c",
+  "production_commit": "6000d6061865772879e6fb72efe90a1ac29fc8cb",
   "production_source": "eeccf718e8ad78aee98ca49d142d0594ea7000b2",
   "excluded_main": "82fc5c03233c33380a5335146c50bb507deb5692",
   "schema": 77,
   "platform": "linux/amd64",
   "agent_dockerfile_sha256": "5faf22dc8756675bf4648414dc7d64b11aa365567d3ee696ea3eafb37edae481",
   "brand_sha256": "a4cca76e82c2b20294c6dfbd1bb1ded619288e2c0aa195b03b049d8080f67a1f",
+  "approved_protected_changes": {
+    "backend": [
+      "backend/internal/handler/workbench.go",
+      "backend/internal/handler/workbench_guest_test.go",
+      "backend/internal/handler/openapi.yaml"
+    ]
+  },
   "rollback": {
-    "CANVAS_IMAGE_TAG": "kivao-1.0.0-eeccf718-r1",
-    "CANVAS_WEB_IMAGE": "ghcr.io/xzaowu/kivao-app-web@sha256:e72091fcf0ea4388dd1c089ba0ea3445a9bfa0baf44b2949c01a916db5adcbba",
-    "CANVAS_BACKEND_IMAGE": "ghcr.io/xzaowu/kivao-app-backend@sha256:5a2d8b4ecf3153700d523b21547ae7049c45e898acaef18cda0bb2f66a02a21b",
-    "CANVAS_YINGCE_AGENT_IMAGE": "ghcr.io/xzaowu/kivao-app-agent@sha256:c4c1f5db0e5534340494533d1adc7edfdb136b5cac47aac0aef194a67470a70c"
+    "CANVAS_IMAGE_TAG": "kivao-1.0.1-6000d6061865-r1",
+    "CANVAS_WEB_IMAGE": "ghcr.io/xzaowu/kivao-app-web@sha256:c0c97c808c27b85546d40bcedccdb1f2c962e5ebe617f73b98531a62dd5cccba",
+    "CANVAS_BACKEND_IMAGE": "ghcr.io/xzaowu/kivao-app-backend@sha256:bc91b5087c71794d495f11c052c5ff0f0692a7ddc49e87a429939c9fc174f8a9",
+    "CANVAS_YINGCE_AGENT_IMAGE": "ghcr.io/xzaowu/kivao-app-agent@sha256:2df7b8088fb3c1f89d7d9c9719ba7004d28d4c967c88a61662303089bd562877"
   }
 }
