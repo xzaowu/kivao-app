@@ -13,7 +13,7 @@ description: 信封、错误码与 OpenAPI
 
 ## 视频工作台的生成模式
 
-图片和视频工作台页面允许游客浏览，但仍受后台 `imageWorkbenchEnabled` / `videoWorkbenchEnabled` 开关控制。`GET /api/workbench/tools?kind=image|video` 允许匿名读取已启用工具、预设及其展示素材，关闭对应功能时返回 403。模型目录、个人任务、素材上传及任务创建仍要求登录，游客点击生成或上传时打开登录弹窗，不发起任务或上传请求。
+图片和视频工作台页面允许游客浏览，但仍受后台 `imageWorkbenchEnabled` / `videoWorkbenchEnabled` 开关控制。`GET /api/features` 允许匿名读取功能布尔值，不返回修改人等管理元信息，管理员设置修改仍需鉴权。游客首页加载公开开关后同步侧栏入口。`GET /api/workbench/tools?kind=image|video` 允许匿名读取已启用工具、预设及其展示素材，关闭对应功能时返回 403。模型目录、个人任务、素材上传及任务创建仍要求登录，游客点击生成或上传时打开登录弹窗，不发起任务或上传请求。
 
 `POST /api/workbench/tasks` 的视频任务根据已校验的 `references` 推导操作类型，客户端不需要提交泛化的 `video` 操作：
 

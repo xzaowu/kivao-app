@@ -32,6 +32,14 @@ tags:
   - name: referral
     description: 推广中心：推广码、邀请记录与返佣
 paths:
+  /features:
+    get:
+      tags: [auth]
+      summary: 获取公开功能开关（允许游客，仅布尔值）
+      security: []
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
   /projects/{id}/assets/{assetId}/image:
     put:
       tags: [projects, assets]

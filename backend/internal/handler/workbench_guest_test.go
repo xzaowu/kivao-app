@@ -30,7 +30,7 @@ func TestWorkbenchGuestCatalogRespectsFeatureAndAuthentication(t *testing.T) {
 	if err := db.AutoMigrate(&model.SystemSetting{}, &model.WorkbenchTool{}, &model.WorkbenchPreset{}); err != nil {
 		t.Fatal(err)
 	}
-	setting := model.SystemSetting{Key: "feature_availability", ValueJSON: `{"imageWorkbenchEnabled":true,"videoWorkbenchEnabled":true}`}
+	setting := model.SystemSetting{Key: "feature_availability", ValueJSON: `{"imageWorkbenchEnabled":true,"videoWorkbenchEnabled":true}`, UpdatedBy: "private-admin"}
 	if err := db.Create(&setting).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -49,12 +49,32 @@ func TestWorkbenchGuestCatalogRespectsFeatureAndAuthentication(t *testing.T) {
 		}
 	}
 	router := gin.New()
-	RegisterWorkbenchRoutes(router.Group("/api"), app.New(repository.New(db), t.TempDir()))
+	svc := app.New(repository.New(db), t.TempDir())
+	api := router.Group("/api")
+	RegisterFeatureAvailabilityRoutes(api, svc)
+	RegisterWorkbenchRoutes(api, svc)
 	request := func(method, path string) *httptest.ResponseRecorder {
 		t.Helper()
 		r := httptest.NewRecorder()
 		router.ServeHTTP(r, httptest.NewRequest(method, path, strings.NewReader(`{}`)))
 		return r
+	}
+	r := request(http.MethodGet, "/api/features")
+	var flags struct {
+		Data struct {
+			Features map[string]any `json:"features"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(r.Body.Bytes(), &flags); err != nil {
+		t.Fatal(err)
+	}
+	if r.Code != http.StatusOK || flags.Data.Features["imageWorkbenchEnabled"] != true || flags.Data.Features["videoWorkbenchEnabled"] != true {
+		t.Fatalf("guest feature flags status=%d", r.Code)
+	}
+	for _, field := range []string{"updatedBy", "updatedAt"} {
+		if _, present := flags.Data.Features[field]; present {
+			t.Fatalf("public feature flags expose administration metadata: %s", field)
+		}
 	}
 	for _, kind := range []string{"image", "video"} {
 		r := request(http.MethodGet, "/api/workbench/tools?kind="+kind)
@@ -74,7 +94,7 @@ func TestWorkbenchGuestCatalogRespectsFeatureAndAuthentication(t *testing.T) {
 			t.Fatalf("guest %s catalog did not filter disabled tools and presets: status=%d", kind, r.Code)
 		}
 	}
-	for _, path := range []string{"/api/workbench/tasks?kind=image", "/api/admin/workbench/tools"} {
+	for _, path := range []string{"/api/workbench/tasks?kind=image", "/api/admin/workbench/tools", "/api/admin/settings/features"} {
 		if r := request(http.MethodGet, path); r.Code != http.StatusUnauthorized {
 			t.Fatalf("guest GET %s status=%d, want 401", path, r.Code)
 		}
