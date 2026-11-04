@@ -56,6 +56,7 @@ export function ModelPicker({
     modelFilter,
     modelDisabledReason,
 }: ModelPickerProps) {
+    const isGuest = useUserStore((state) => !state.user);
     const creditsEnabled = useUserStore((state) => state.features.creditsEnabled);
     const pickerId = useId();
     // 双保险：即使 store merge 写出非法 theme，这里也兜底到 dark，避免 "reading 'node'" 崩溃
@@ -289,7 +290,7 @@ export function ModelPicker({
                 </div>
             ) : (
                 <div className="canvas-model-picker-empty" style={{ color: theme.node.muted }}>
-                    {emptyModelLabel(config, capability)}
+                    {isGuest ? "登录后查看模型" : emptyModelLabel(config, capability)}
                 </div>
             )}
         </div>
