@@ -2,7 +2,7 @@
   "repository": "xzaowu/kivao-app",
   "release_version": "1.0.2",
   "ci_branch": "release/kivao-1.0.2",
-  "product_commit": "43d2909a2cb4d1cb2976e474d63b68f4765cee5c",
+  "product_commit": "3baf5d9b6e4406dfea850ea615a25ee245de2d91",
   "production_commit": "6000d6061865772879e6fb72efe90a1ac29fc8cb",
   "production_source": "eeccf718e8ad78aee98ca49d142d0594ea7000b2",
   "excluded_main": "82fc5c03233c33380a5335146c50bb507deb5692",
