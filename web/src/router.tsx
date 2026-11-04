@@ -128,19 +128,11 @@ export const router = createBrowserRouter([
             { path: "/create", element: deferred(<CreatePage />) },
             {
                 path: "/toolbox/image",
-                element: (
-                    <RequireAuth>
-                        <RequireFeature feature="imageWorkbenchEnabled">{deferred(<ImageWorkbenchPage />)}</RequireFeature>
-                    </RequireAuth>
-                ),
+                element: <RequireFeature feature="imageWorkbenchEnabled">{deferred(<ImageWorkbenchPage />)}</RequireFeature>,
             },
             {
                 path: "/toolbox/video",
-                element: (
-                    <RequireAuth>
-                        <RequireFeature feature="videoWorkbenchEnabled">{deferred(<VideoWorkbenchPage />)}</RequireFeature>
-                    </RequireAuth>
-                ),
+                element: <RequireFeature feature="videoWorkbenchEnabled">{deferred(<VideoWorkbenchPage />)}</RequireFeature>,
             },
             {
                 path: "/tasks",

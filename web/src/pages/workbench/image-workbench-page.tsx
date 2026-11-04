@@ -4,6 +4,7 @@ import { AntTooltip as Tooltip } from "@/components/ui/base/tooltip/ant-tooltip"
 import { Check, Camera, ChevronDown, ChevronUp, Clapperboard, Expand, FileImage, History, ImagePlus, Images, LoaderCircle, Mic, Palette, Plus, RotateCcw, Search, ShoppingBag, Upload, UserRound, Video, X, ArrowUp } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
+import { CreationLoginDialog } from "@/pages/create/creation-login-dialog";
 
 import { ImageSizePicker } from "@/components/image-size-picker";
 import { MediaPreview } from "@/components/media-preview";
@@ -166,6 +167,8 @@ function flowStepState(step: string, values: { tool: WorkbenchTool | null; refer
 
 export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
     const { message } = App.useApp();
+    const userId = useUserStore((state) => state.user?.id);
+    const [loginDialogOpen, setLoginDialogOpen] = useState(false);
     const config = useEffectiveConfig();
     const updateConfig = useConfigStore((state) => state.updateConfig);
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
@@ -354,7 +357,7 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
     );
 
     useEffect(() => {
-        if (!creditsEnabled || !selectedModel) {
+        if (!userId || !creditsEnabled || !selectedModel) {
             setEstimateCredits(null);
             setEstimateTone("unavailable");
             return;
@@ -396,27 +399,38 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                 setEstimateTone(localCredits === null ? "unavailable" : "local");
             });
         return () => controller.abort();
-    }, [capability, composerConfig, config, creditsEnabled, kind, quoteRequirements, seconds, selectedCount, selectedModel]);
+    }, [capability, composerConfig, config, creditsEnabled, kind, quoteRequirements, seconds, selectedCount, selectedModel, userId]);
 
-    const loadTasks = useCallback(async () => {
+    const loadTasks = useCallback(async (signal?: AbortSignal) => {
+        if (!userId) return [];
         try {
-            const result = await listWorkbenchTasks(kind, 100);
+            const result = await listWorkbenchTasks(kind, 100, false, signal);
+            if (signal?.aborted) return [];
             setTasks(result);
             return result;
         } catch (error) {
-            message.error(error instanceof Error ? error.message : "任务列表加载失败");
+            if (!signal?.aborted) message.error(error instanceof Error ? error.message : "任务列表加载失败");
             return [];
         } finally {
-            setTasksLoading(false);
+            if (!signal?.aborted) setTasksLoading(false);
         }
-    }, [kind, message]);
+    }, [kind, message, userId]);
 
     useEffect(() => {
+        if (!userId) {
+            detailRequestRef.current += 1;
+            setTasks([]);
+            setActiveTask(null);
+            setDetailTask(null);
+            setTasksLoading(false);
+            return;
+        }
+        const controller = new AbortController();
         let stopped = false;
         let timer = 0;
         const poll = async () => {
             const revision = workbenchRevisionRef.current;
-            const result = await loadTasks();
+            const result = await loadTasks(controller.signal);
             if (stopped) return;
             if (activeTask && revision === workbenchRevisionRef.current) {
                 const latest = result.find((item) => item.id === activeTask.id);
@@ -437,10 +451,11 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
         document.addEventListener("visibilitychange", onVisible);
         return () => {
             stopped = true;
+            controller.abort();
             window.clearTimeout(timer);
             document.removeEventListener("visibilitychange", onVisible);
         };
-    }, [activeTask?.id, loadTasks]);
+    }, [activeTask?.id, loadTasks, userId]);
 
     const resetWorkbench = () => {
         workbenchRevisionRef.current += 1;
@@ -537,6 +552,10 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
     };
 
     const addFiles = async (files: FileList | File[], targetSlotKey = uploadSlotKey) => {
+        if (!useUserStore.getState().user) {
+            setLoginDialogOpen(true);
+            return;
+        }
         const list = Array.from(files);
         const slot = tool?.inputContract?.slots.find((item) => item.key === targetSlotKey);
         const allowedTypes = slot?.mediaTypes || (kind === "image" ? ["image"] : ["image", "video", "audio"]);
@@ -578,6 +597,10 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
     };
 
     const submit = async () => {
+        if (!useUserStore.getState().user) {
+            setLoginDialogOpen(true);
+            return;
+        }
         const revision = workbenchRevisionRef.current;
         const submittedPrompt = normalizeCanvasNodeMentionTokens(prompt.trim(), promptReferences);
         if (tool?.inputContract?.promptRequired && !submittedPrompt) {
@@ -1131,6 +1154,10 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                                             const slotReferences = references.filter((reference) => reference.slotKey === slot.key);
                                             const mediaLabel = slot.mediaTypes.map((type) => (type === "image" ? "图片" : type === "video" ? "视频" : "音频")).join(" / ");
                                             const openSlotPicker = () => {
+                                                if (!userId) {
+                                                    setLoginDialogOpen(true);
+                                                    return;
+                                                }
                                                 setUploadSlotKey(slot.key);
                                                 fileRef.current?.click();
                                             };
@@ -1267,10 +1294,12 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                                     />
                                 ) : (
                                     <div className="workbench-model-empty">
-                                        <span>暂无可用的{kind === "image" ? "图片" : "视频"}模型</span>
-                                        <a href="/settings?section=models" target="_blank" rel="noreferrer">
-                                            模型设置
-                                        </a>
+                                        <span>{!userId ? "登录后查看模型" : `暂无可用的${kind === "image" ? "图片" : "视频"}模型`}</span>
+                                        {userId ? (
+                                            <a href="/settings?section=models" target="_blank" rel="noreferrer">
+                                                模型设置
+                                            </a>
+                                        ) : null}
                                     </div>
                                 )}
                                 <div className="workbench-submit-estimate" aria-live="polite">
@@ -1283,11 +1312,11 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                                     className="workbench-submit"
                                     type="primary"
                                     loading={busy}
-                                    disabled={(promptRequired && !prompt.trim()) || Boolean(missingInput) || !selectedModel || references.some((reference) => reference.uploading || Boolean(reference.error))}
+                                    disabled={Boolean(userId) && ((promptRequired && !prompt.trim()) || Boolean(missingInput) || !selectedModel || references.some((reference) => reference.uploading || Boolean(reference.error)))}
                                     onClick={() => void submit()}
                                 >
                                     <ArrowUp />
-                                    <span>{kind === "image" ? "生成图片" : "生成视频"}</span>
+                                    <span>{!userId ? "登录后生成" : kind === "image" ? "生成图片" : "生成视频"}</span>
                                 </Button>
                             </div>
                         </div>
@@ -1521,6 +1550,7 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
             >
                 {presetPending ? <p>将应用“{presetPending.name}”提示词。你可以替换当前内容，也可以追加到末尾。</p> : null}
             </Modal>
+            <CreationLoginDialog open={loginDialogOpen} onClose={() => setLoginDialogOpen(false)} />
         </WorkspacePage>
     );
 }

@@ -14,10 +14,6 @@ import (
 
 func RegisterWorkbenchRoutes(r *gin.RouterGroup, svc *service.Service) {
 	r.GET("/workbench/tools", func(c *gin.Context) {
-		if _, err := currentUser(c, svc); err != nil {
-			failService(c, err)
-			return
-		}
 		kind := c.Query("kind")
 		tools, err := svc.PublicWorkbenchTools(kind)
 		if err != nil {

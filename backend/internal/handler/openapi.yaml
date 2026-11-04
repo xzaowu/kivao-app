@@ -2311,7 +2311,8 @@ paths:
   /workbench/tools:
     get:
       tags: [workbench]
-      summary: 获取当前用户可用的工作台工具
+      summary: 获取后台已开放的工作台公开工具目录（允许游客）
+      security: []
       parameters:
         - in: query
           name: kind
@@ -2320,8 +2321,6 @@ paths:
       responses:
         "200":
           $ref: "#/components/responses/Envelope"
-        "401":
-          $ref: "#/components/responses/Error"
         "403":
           $ref: "#/components/responses/Error"
   /workbench/tasks:
