@@ -1,4 +1,4 @@
-import { lazy, Suspense, useLayoutEffect, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, type ReactNode } from "react";
 import { useLocation } from "react-router";
 import { ConfigProvider } from "antd";
 
@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { isSpatialWorkbenchPath } from "@/lib/workspace-routes";
 import { getWorkspaceAntThemeConfig } from "@/lib/app-theme";
 import { useUserStore } from "@/stores/use-user-store";
+import { refreshFeatureAvailability } from "@/lib/user-session";
 import "@/styles/workspace-product.css";
 import "@/styles/workspace-menus.css";
 
@@ -22,6 +23,10 @@ export default function UserLayout({ children }: { children: ReactNode }) {
     const canvasEditor = /^\/canvas\/[^/]+(?:\/|$)/.test(pathname);
     const productWorkspace = !adminWorkspace && !canvasEditor;
     const userId = useUserStore((state) => state.user?.id);
+    useEffect(() => {
+        // 匿名会话不带功能开关；读取失败时保留工作台入口默认关闭。
+        if (!userId) void refreshFeatureAvailability().catch(() => {});
+    }, [userId]);
     // Agent 停靠在画布右侧时，工作区让出同样的宽度，画布、顶栏和角落控件都不被遮挡。
     const agentDock = useAgentPanelDock();
     const agentDocked = Boolean(userId) && canvasEditor && agentDock.active;
