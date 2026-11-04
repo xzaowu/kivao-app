@@ -2,7 +2,7 @@
   "repository": "xzaowu/kivao-app",
   "release_version": "1.0.2",
   "ci_branch": "release/kivao-1.0.2",
-  "product_commit": "3baf5d9b6e4406dfea850ea615a25ee245de2d91",
+  "product_commit": "dc4ce2cf30f2b6f1913e23b2b14c05f9c0814087",
   "production_commit": "6000d6061865772879e6fb72efe90a1ac29fc8cb",
   "production_source": "eeccf718e8ad78aee98ca49d142d0594ea7000b2",
   "excluded_main": "82fc5c03233c33380a5335146c50bb507deb5692",
@@ -13,6 +13,7 @@
   "approved_protected_changes": {
     "backend": [
       "backend/internal/handler/workbench.go",
+      "backend/internal/handler/feature_availability.go",
       "backend/internal/handler/workbench_guest_test.go",
       "backend/internal/handler/openapi.yaml"
     ]
