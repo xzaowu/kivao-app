@@ -84,6 +84,8 @@ func agentMediaRun(t *testing.T, s *Service, a cloudAgentMediaArgs, permission s
 
 func approveAgentMediaDraft(t *testing.T, s *Service, runID string) {
 	t.Helper()
+	// These tests drive completion manually; the approval waiter would race the same canvas write.
+	s.closeApprovedCloudAgentMediaWaiters()
 	run, err := s.CloudAgentRun("user", runID)
 	if err != nil {
 		t.Fatal(err)
