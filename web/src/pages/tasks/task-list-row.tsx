@@ -1,3 +1,4 @@
+import { workbenchTaskLabel } from "@/lib/workbench-template";
 import { Button } from "antd";
 import { IconButton } from "@/components/ui/base/buttons";
 import { Tooltip } from "@/components/ui/base/tooltip";
@@ -49,8 +50,8 @@ export function TaskListRow({
                         <i className={statusDotClassName(task.status)} />
                         {generationTaskStatusLabel(task)}
                     </span>
-                    <button type="button" className="task-record-title" title={task.prompt} onClick={onOpen}>
-                        {task.prompt || "未命名任务"}
+                    <button type="button" className="task-record-title" title={workbenchTaskLabel(task)} onClick={onOpen}>
+                        {workbenchTaskLabel(task) || "未命名任务"}
                     </button>
                 </div>
                 <div className="task-record-meta">

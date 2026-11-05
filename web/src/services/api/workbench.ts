@@ -81,6 +81,7 @@ export type CreateWorkbenchTaskInput = {
     presetId?: string;
     workbench?: { kind: WorkbenchKind; toolId: string; presetId?: string };
     prompt: string;
+    userPrompt?: string;
     model: string;
     logicalModelId?: string;
     channelId?: string;

@@ -45,17 +45,22 @@ type TaskSummary struct {
 }
 
 type TaskClientContext struct {
-	NodeID           string `json:"nodeId,omitempty"`
-	ConversationID   string `json:"conversationId,omitempty"`
-	MessageID        string `json:"messageId,omitempty"`
-	BatchIndex       int    `json:"batchIndex,omitempty"`
-	BatchCount       int    `json:"batchCount,omitempty"`
-	DomainProjectID  string `json:"domainProjectId,omitempty"`
-	ChapterID        string `json:"chapterId,omitempty"`
-	ChapterOperation string `json:"chapterOperation,omitempty"`
-	ShotID           string `json:"shotId,omitempty"`
-	WorkflowStepID   string `json:"workflowStepId,omitempty"`
-	ArtifactType     string `json:"artifactType,omitempty"`
+	WorkbenchToolID         string `json:"workbenchToolId,omitempty"`
+	WorkbenchToolName       string `json:"workbenchToolName,omitempty"`
+	WorkbenchPresetID       string `json:"workbenchPresetId,omitempty"`
+	WorkbenchPresetName     string `json:"workbenchPresetName,omitempty"`
+	WorkbenchReferenceCount int    `json:"workbenchReferenceCount,omitempty"`
+	NodeID                  string `json:"nodeId,omitempty"`
+	ConversationID          string `json:"conversationId,omitempty"`
+	MessageID               string `json:"messageId,omitempty"`
+	BatchIndex              int    `json:"batchIndex,omitempty"`
+	BatchCount              int    `json:"batchCount,omitempty"`
+	DomainProjectID         string `json:"domainProjectId,omitempty"`
+	ChapterID               string `json:"chapterId,omitempty"`
+	ChapterOperation        string `json:"chapterOperation,omitempty"`
+	ShotID                  string `json:"shotId,omitempty"`
+	WorkflowStepID          string `json:"workflowStepId,omitempty"`
+	ArtifactType            string `json:"artifactType,omitempty"`
 }
 
 type TaskBillingSummary struct {
@@ -140,6 +145,13 @@ func taskSummaryForOutput(task model.Task) TaskSummary {
 func taskClientContext(raw string) *TaskClientContext {
 	var input struct {
 		Metadata struct {
+			WorkbenchToolID     string `json:"workbenchToolId"`
+			WorkbenchToolName   string `json:"workbenchToolName"`
+			WorkbenchPresetID   string `json:"workbenchPresetId"`
+			WorkbenchPresetName string `json:"workbenchPresetName"`
+			Workbench           struct {
+				References []json.RawMessage `json:"references"`
+			} `json:"workbench"`
 			Source          string `json:"source"`
 			NodeID          string `json:"nodeId"`
 			ConversationID  string `json:"conversationId"`
@@ -159,6 +171,12 @@ func taskClientContext(raw string) *TaskClientContext {
 	}
 	metadata := input.Metadata
 	context := &TaskClientContext{NodeID: metadata.NodeID}
+	if metadata.Source == "workbench" && metadata.WorkbenchToolID != "" && metadata.WorkbenchPresetID != "" {
+		context.WorkbenchToolID, context.WorkbenchToolName = metadata.WorkbenchToolID, metadata.WorkbenchToolName
+		context.WorkbenchPresetID, context.WorkbenchPresetName = metadata.WorkbenchPresetID, metadata.WorkbenchPresetName
+		context.WorkbenchReferenceCount = len(metadata.Workbench.References)
+		return context
+	}
 	if metadata.Source == "create-page" && metadata.ConversationID != "" && metadata.MessageID != "" {
 		context.ConversationID = metadata.ConversationID
 		context.MessageID = metadata.MessageID

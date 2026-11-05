@@ -6,6 +6,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"yingce/backend/internal/kernel"
 	"yingce/backend/internal/model"
@@ -17,6 +18,7 @@ type TaskInput struct {
 	PresetID       string          `json:"presetId,omitempty"`
 	Workbench      *TaskWorkbench  `json:"workbench,omitempty"`
 	Prompt         string          `json:"prompt"`
+	UserPrompt     *string         `json:"userPrompt,omitempty"`
 	Model          string          `json:"model,omitempty"`
 	LogicalModelID string          `json:"logicalModelId,omitempty"`
 	ChannelID      string          `json:"channelId,omitempty"`
@@ -58,6 +60,9 @@ type TaskResolution struct {
 }
 
 func (s *Service) ResolveTask(userID string, req TaskInput) (*TaskResolution, error) {
+	if req.UserPrompt != nil && utf8.RuneCountInString(*req.UserPrompt) > 32000 {
+		return nil, kernel.BadAuthRequest("补充要求过长")
+	}
 	toolID := strings.TrimSpace(req.ToolID)
 	presetID := strings.TrimSpace(req.PresetID)
 	if req.Workbench != nil && (req.Workbench.Kind != req.Kind || strings.TrimSpace(req.Workbench.ToolID) != toolID || (strings.TrimSpace(req.Workbench.PresetID) != "" && strings.TrimSpace(req.Workbench.PresetID) != presetID)) {
@@ -131,6 +136,13 @@ func (s *Service) ResolveTask(userID string, req TaskInput) (*TaskResolution, er
 		if err := validateTaskCapabilities(tool.Kind, capability, refs); err != nil {
 			return nil, err
 		}
+		catalog, err := parseCatalogConfig(tool.CapabilityJSON, tool.GuideJSON)
+		if err != nil {
+			return nil, errors.New("工具输入配置无效")
+		}
+		if preset != nil && catalog.InputContract.MinTextReferences > 0 && (req.UserPrompt == nil || strings.TrimSpace(*req.UserPrompt) == "") {
+			return nil, kernel.BadAuthRequest("请填写补充内容")
+		}
 	}
 	metadata := map[string]any{"source": "workbench", "workbenchKind": req.Kind}
 	operation := "image"
@@ -201,6 +213,9 @@ func (s *Service) ResolveTask(userID string, req TaskInput) (*TaskResolution, er
 		workbenchSnapshot := meta["workbench"].(map[string]any)
 		workbenchSnapshot["presetId"], workbenchSnapshot["presetName"], workbenchSnapshot["presetVersion"] = preset.ID, preset.Name, preset.Version
 		workbenchSnapshot["presetPrompt"] = preset.PromptTemplate
+		if req.UserPrompt != nil {
+			workbenchSnapshot["userPrompt"] = strings.TrimSpace(*req.UserPrompt)
+		}
 	}
 	return &TaskResolution{TaskType: map[string]string{KindImage: "canvas_image", KindVideo: "canvas_video"}[req.Kind], Operation: operation, Input: input, Parameters: parameters, Prompt: strings.TrimSpace(req.Prompt), Model: modelName, LogicalModelID: logicalModelID, ChannelID: channelID, Tool: tool, Preset: preset}, nil
 }

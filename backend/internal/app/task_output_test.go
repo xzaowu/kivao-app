@@ -124,6 +124,25 @@ func TestTaskClientContextPreservesCanvasNodeID(t *testing.T) {
 	}
 }
 
+func TestTaskClientContextProjectsWorkbenchSummary(t *testing.T) {
+	context := taskClientContext(`{"metadata":{"source":"workbench","workbenchToolId":"tool","workbenchToolName":"商品白底图","workbenchPresetId":"preset","workbenchPresetName":"标准主视觉","workbench":{"references":[{"resourceId":"image"}],"userPrompt":"supplement","presetPrompt":"template"}}}`)
+	if context == nil || context.WorkbenchToolName != "商品白底图" || context.WorkbenchPresetName != "标准主视觉" || context.WorkbenchReferenceCount != 1 {
+		t.Fatalf("missing workbench summary: %+v", context)
+	}
+	encoded, err := json.Marshal(context)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, hidden := range []string{"template", "supplement", "resourceId"} {
+		if strings.Contains(string(encoded), hidden) {
+			t.Fatalf("summary included %s", hidden)
+		}
+	}
+	if context := taskClientContext(`{"metadata":{"source":"other","workbenchToolId":"tool","workbenchPresetId":"preset"}}`); context != nil {
+		t.Fatal("unrelated tasks must not receive workbench context")
+	}
+}
+
 func TestTaskSummaryPreservesCanvasNodeWithoutExposingInput(t *testing.T) {
 	summary := taskSummaryForOutput(model.Task{
 		ID: "task-1", ProjectID: "project-1", Type: "canvas_image",

@@ -34,6 +34,19 @@ test("每次打开菜单都展开当前选中模型所属目录，无有效选�
     expect(opening).not.toContain("setActiveGroupKey(null)");
 });
 
+test("手机隐藏分组栏时提供可返回全部分组的入口", async () => {
+    const [component, styles] = await Promise.all([
+        Bun.file(new URL("../src/components/model-picker.tsx", import.meta.url)).text(),
+        Bun.file(new URL("../src/styles/shared/model-picker.css", import.meta.url)).text(),
+    ]);
+    const back = component.match(/<button[^>]*className="canvas-model-picker-back"([\s\S]*?)<\/button>/)?.[1] || "";
+    expect(back).toContain("全部模型分组");
+    expect(back).toContain("setActiveGroupKey(null)");
+    expect(back).toContain("focusMenuOption()");
+    expect(styles).toMatch(/\.canvas-model-picker-back\s*\{\s*display:\s*none;/);
+    expect(styles).toMatch(/@media \(max-width: 720px\)\s*\{\s*\.canvas-model-picker-back\s*\{\s*display:\s*flex;/);
+});
+
 test("选择模型保留菜单及行内焦点，仍可通过 Escape 和外部点击关闭", async () => {
     const component = await Bun.file(new URL("../src/components/model-picker.tsx", import.meta.url)).text();
     const selection = component.match(/onClick=\{\(\) => \{\s*if \(!model\) return;([\s\S]*?)\}\}/)?.[1] || "";

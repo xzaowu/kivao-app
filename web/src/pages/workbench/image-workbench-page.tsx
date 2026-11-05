@@ -12,7 +12,8 @@ import { ModelPicker } from "@/components/model-picker";
 import { SpotlightSurface } from "@/components/ui/aceternity/spotlight-surface";
 import { WorkspacePage } from "@/components/layout/workspace-page";
 import { CanvasResourceMentionTextarea } from "@/components/canvas/canvas-resource-mention-textarea";
-import { normalizeCanvasNodeMentionTokens, type CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
+import { canvasNodeMentionToken, normalizeCanvasNodeMentionTokens, type CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
+import { orderedWorkbenchReferences, renderWorkbenchTemplate, workbenchReferenceLabels, workbenchTaskInfo, workbenchTaskLabel } from "@/lib/workbench-template";
 import { imageResolutionUsesQuality } from "@/lib/image-size-presets";
 import { modelCapabilityConfigFor, normalizeImageValue, normalizeVideoValue } from "@/lib/model-capabilities";
 import { creationVideoConfig } from "@/pages/create/creation-generation-config";
@@ -76,6 +77,8 @@ type WorkbenchTaskSnapshot = {
     kind: WorkbenchKind;
     toolId?: string;
     presetId?: string;
+    userPrompt?: string;
+    presetPrompt?: string;
     parameters: Record<string, unknown>;
     references: WorkbenchTaskReferenceSnapshot[];
 };
@@ -106,6 +109,8 @@ export function workbenchTaskSnapshot(task: GenerationTask): WorkbenchTaskSnapsh
         ...(typeof snapshot.presetId === "string" ? { presetId: snapshot.presetId } : typeof metadata.workbenchPresetId === "string" ? { presetId: metadata.workbenchPresetId } : {}),
         parameters: rawParameters as Record<string, unknown>,
         references,
+        ...(typeof metadataSnapshot.userPrompt === "string" ? { userPrompt: metadataSnapshot.userPrompt } : {}),
+        ...(typeof metadataSnapshot.presetPrompt === "string" ? { presetPrompt: metadataSnapshot.presetPrompt } : {}),
     };
 }
 
@@ -181,6 +186,7 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
     const [toolCategory, setToolCategory] = useState("all");
     const [tool, setTool] = useState<WorkbenchTool | null>(null);
     const [prompt, setPrompt] = useState("");
+    const [userPrompt, setUserPrompt] = useState("");
     const [references, setReferencesState] = useState<WorkbenchReference[]>([]);
     const referencesRef = useRef<WorkbenchReference[]>([]);
     const setReferences = (update: WorkbenchReference[] | ((current: WorkbenchReference[]) => WorkbenchReference[])) => {
@@ -233,24 +239,36 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
         return (preferred.length ? preferred : tools).slice(0, 4);
     }, [tools]);
     const promptRequired = workbenchPromptRequired(tool);
+    const templateMode = Boolean(tool && preset);
+    const supplementRequired = templateMode && (tool?.inputContract?.minTextReferences || 0) > 0;
     const missingInput = missingWorkbenchInput(tool, references);
     const activeTasks = useMemo(() => tasks.filter((task) => task.status === "queued" || task.status === "running"), [tasks]);
     const historyTasks = useMemo(() => tasks.filter((task) => task.status !== "queued" && task.status !== "running"), [tasks]);
     const selectedCount = Number(count) || 1;
+    const orderedReferences = useMemo(() => orderedWorkbenchReferences(tool, references), [tool, references]);
+    const referenceLabels = useMemo(() => workbenchReferenceLabels(orderedReferences), [orderedReferences]);
     const promptReferences = useMemo<CanvasResourceReference[]>(
         () =>
-            references.map((reference) => ({
-                id: reference.id,
-                nodeId: reference.id,
-                kind: reference.kind,
-                label: reference.name,
-                title: reference.name,
-                previewUrl: reference.previewUrl,
-                ...(reference.resourceId ? { storageKey: resourceStorageKey(reference.resourceId) } : {}),
-                active: true,
-            })),
-        [references],
+            orderedReferences
+                .filter((reference) => reference.resourceId && !reference.uploading && !reference.error)
+                .map((reference) => ({
+                    id: reference.id,
+                    nodeId: reference.resourceId!,
+                    kind: reference.kind,
+                    label: referenceLabels.get(reference.id)!,
+                    title: reference.name,
+                    mentionToken: canvasNodeMentionToken(reference.resourceId!),
+                    previewUrl: reference.previewUrl,
+                    ...(reference.resourceId ? { storageKey: resourceStorageKey(reference.resourceId) } : {}),
+                    active: true,
+                })),
+        [orderedReferences, referenceLabels],
     );
+    const normalizedSupplement = normalizeCanvasNodeMentionTokens(userPrompt.trim(), promptReferences);
+    const templateResolution = templateMode && tool ? renderWorkbenchTemplate(prompt, tool, orderedReferences, normalizedSupplement) : null;
+    const effectivePrompt = templateResolution?.prompt ?? normalizeCanvasNodeMentionTokens(prompt.trim(), promptReferences);
+    const referenceLimits = kind === "image" ? { maxImages: imageProfile?.references.maxImages || 0, maxVideos: 0, maxAudios: 0 } : videoProfile?.references;
+    const referenceLimitExceeded = (["image", "video", "audio"] as const).some((type) => references.filter((ref) => ref.kind === type).length > (referenceLimits?.[type === "image" ? "maxImages" : type === "video" ? "maxVideos" : "maxAudios"] || 0));
     const composerConfig = useMemo(
         () => (kind === "video" && selectedModel ? creationVideoConfig(config, selectedModel, { ratio, seconds, videoQuality }) : { ...config, model: selectedModel, imageModel: selectedModel, size: ratio, quality, imageResolution, count }),
         [config, count, imageResolution, kind, quality, ratio, seconds, selectedModel, videoQuality],
@@ -344,7 +362,7 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
         () => ({
             capability,
             input: {
-                textCount: prompt.trim() ? 1 : 0,
+                textCount: effectivePrompt ? 1 : 0,
                 imageCount: references.filter((reference) => reference.kind === "image").length,
                 referenceImageCount: references.filter((reference) => reference.kind === "image" && reference.role !== "first_frame" && reference.role !== "last_frame").length,
                 videoCount: references.filter((reference) => reference.kind === "video").length,
@@ -355,7 +373,7 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                 ? { imageSize: ratio, options: { size: ratio, quality, ...(imageProfile?.resolution.supported ? { imageResolution } : {}), count: selectedCount } }
                 : { videoSeconds: seconds, options: { size: ratio, videoSeconds: Number(seconds), vquality: videoQuality } }),
         }),
-        [capability, imageProfile, imageResolution, kind, prompt, quality, ratio, references, seconds, selectedCount, videoQuality],
+        [capability, imageProfile, imageResolution, kind, effectivePrompt, quality, ratio, references, seconds, selectedCount, videoQuality],
     );
 
     useEffect(() => {
@@ -471,6 +489,7 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
         setPreset(null);
         setPresetPending(null);
         setPrompt("");
+        setUserPrompt("");
         setActiveTask(null);
         setResultHidden(true);
         detailRequestRef.current += 1;
@@ -490,18 +509,27 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
         message.success("工作台已重置");
     };
 
-    // 提示词为空，或仍是当前预设的原文（用户没改过），切换时可以直接替换；改过的内容先确认再动。
-    const promptReplaceable = () => !prompt.trim() || (preset !== null && prompt.trim() === preset.promptTemplate.trim());
+    // 预设模式只替换隐藏模板；直接创作的用户内容须先确认。
+    const promptReplaceable = () => !prompt.trim() || templateMode;
 
     // 切换工具后提示词必须跟着新工具走：未改动的模板直接换成新工具的预设（新工具没有预设则清空），
     // 用户改过的内容弹出"替换 / 追加 / 返回"确认，不能静默保留上一个工具的模板。
     const switchToolPrompt = (next: WorkbenchTool | null, preferredPresetId?: string | null) => {
         const replaceable = promptReplaceable();
+        const clearMentions = (value: string) => promptReferences.reduce((text, reference) => text.split(reference.mentionToken!).join(""), value);
+        const nextUserPrompt = clearMentions(userPrompt);
+        referencesRef.current.forEach(revokeReferencePreview);
+        setReferences([]);
+        setUploadSlotKey(undefined);
+        setUserPrompt(nextUserPrompt);
         const nextPreset = next?.presets.find((item) => item.id === preferredPresetId) || next?.presets[0] || null;
         setPresetPending(null);
         if (!nextPreset) {
             setPreset(null);
-            if (replaceable) setPrompt("");
+            if (replaceable) {
+                setPrompt(nextUserPrompt);
+                setUserPrompt("");
+            } else setPrompt(clearMentions(prompt));
             return;
         }
         if (replaceable) {
@@ -509,14 +537,12 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
             setPreset(nextPreset);
             return;
         }
+        setPrompt(clearMentions(prompt));
         setPreset(null);
         setPresetPending(nextPreset);
     };
 
     const chooseTool = (next: WorkbenchTool | null) => {
-        references.forEach(revokeReferencePreview);
-        setReferences([]);
-        setUploadSlotKey(undefined);
         setTool(next);
         setToolLibraryOpen(false);
         const params = new URLSearchParams(searchParams);
@@ -538,7 +564,8 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
 
     const applyPreset = (mode: "replace" | "append") => {
         if (!presetPending) return;
-        setPrompt((current) => (mode === "append" ? `${current.trimEnd()}\n${presetPending.promptTemplate}` : presetPending.promptTemplate));
+        setUserPrompt(mode === "append" ? prompt : "");
+        setPrompt(presetPending.promptTemplate);
         setPreset(presetPending);
         setPresetPending(null);
     };
@@ -566,10 +593,19 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
         const allowedTypes = slot?.mediaTypes || (kind === "image" ? ["image"] : ["image", "video", "audio"]);
         const accepted = list.filter((file) => allowedTypes.some((type) => file.type.startsWith(`${type}/`)));
         if (accepted.length !== list.length) message.warning(`该输入槽位仅支持${allowedTypes.map((type) => (type === "image" ? "图片" : type === "video" ? "视频" : "音频")).join("、")}`);
-        const currentCount = references.filter((reference) => reference.slotKey === targetSlotKey).length;
+        const current = referencesRef.current;
+        const currentCount = current.filter((reference) => reference.slotKey === targetSlotKey).length;
         const maxCount = slot?.maxCount || (kind === "image" ? imageProfile?.references.maxImages || 0 : (videoProfile?.references.maxImages || 0) + (videoProfile?.references.maxVideos || 0) + (videoProfile?.references.maxAudios || 0));
-        const picked = accepted.slice(0, Math.max(0, maxCount - currentCount));
-        if (picked.length < accepted.length) message.warning("部分素材超过当前输入槽位数量上限，未添加");
+        const counts = { image: current.filter((ref) => ref.kind === "image").length, video: current.filter((ref) => ref.kind === "video").length, audio: current.filter((ref) => ref.kind === "audio").length };
+        const picked: File[] = [];
+        for (const file of accepted) {
+            const type = file.type.startsWith("image/") ? "image" : file.type.startsWith("video/") ? "video" : "audio";
+            const limit = referenceLimits?.[type === "image" ? "maxImages" : type === "video" ? "maxVideos" : "maxAudios"] || 0;
+            if (picked.length + currentCount >= maxCount || picked.length + current.length >= 20 || counts[type] >= limit) continue;
+            counts[type]++;
+            picked.push(file);
+        }
+        if (picked.length < accepted.length) message.warning("部分素材超过输入区或当前模型数量上限，未添加");
         const pending: WorkbenchReference[] = picked.map((file) => ({
             id: createClientUUID(),
             name: file.name,
@@ -599,6 +635,8 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
     const removeReference = (reference: WorkbenchReference) => {
         revokeReferencePreview(reference);
         setReferences((current) => current.filter((item) => item.id !== reference.id));
+        setUserPrompt((current) => current.split(canvasNodeMentionToken(reference.resourceId || reference.id)).join(""));
+        if (!templateMode) setPrompt((current) => current.split(canvasNodeMentionToken(reference.resourceId || reference.id)).join(""));
     };
 
     const submit = async () => {
@@ -607,7 +645,11 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
             return;
         }
         const revision = workbenchRevisionRef.current;
-        const submittedPrompt = normalizeCanvasNodeMentionTokens(prompt.trim(), promptReferences);
+        const submittedPrompt = effectivePrompt;
+        if (templateResolution?.error || (supplementRequired && !userPrompt.trim()) || referenceLimitExceeded) {
+            message.warning(templateResolution?.error || (referenceLimitExceeded ? "素材超过当前模型支持的数量，请移除多余素材或更换模型" : "请填写补充内容"));
+            return;
+        }
         if (tool?.inputContract?.promptRequired && !submittedPrompt) {
             message.warning("当前工具需要填写提示词");
             return;
@@ -658,7 +700,7 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                 ...(imageRequest ? { imageModel: selectedModel, size: imageRequest.size, quality: imageRequest.quality, imageResolution: imageRequest.imageResolution, count: imageRequest.count } : {}),
                 ...(videoRequest ? { videoModel: selectedModel, size: videoRequest.ratio, videoSeconds: videoRequest.seconds, vquality: videoRequest.resolution.replace(/p$/i, "") } : {}),
             };
-            const readyReferences = references.filter((reference) => reference.resourceId);
+            const readyReferences = orderedReferences.filter((reference) => reference.resourceId);
             const videoOperation = kind === "video" ? workbenchVideoOperation(readyReferences) : undefined;
             const referenceSnapshot = readyReferences.map((reference) => ({ resourceId: reference.resourceId!, kind: reference.kind, role: reference.role, ...(reference.slotKey ? { slotKey: reference.slotKey } : {}) }));
             const createdTask =
@@ -668,6 +710,7 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                           ...(tool ? { toolId: tool.id } : {}),
                           ...(tool && preset ? { presetId: preset.id } : {}),
                           prompt: submittedPrompt,
+                          ...(templateMode ? { userPrompt: userPrompt.trim() } : {}),
                           model: modelOptionName(selectedModel),
                           ...(logicalModelId ? { logicalModelId } : { channelId: channel.id }),
                           parameters,
@@ -720,8 +763,8 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                                       .map((reference) => [reference.role === "first_frame" ? "videoStartFrameNodeId" : "videoEndFrameNodeId", reference.id]),
                               ),
                               ...(tool ? { workbenchToolId: tool.id, workbenchToolName: tool.name } : {}),
-                              ...(tool && preset ? { workbenchPresetId: preset.id } : {}),
-                              workbench: { kind, ...(tool ? { toolId: tool.id } : {}), ...(tool && preset ? { presetId: preset.id } : {}), parameters, references: referenceSnapshot },
+                              ...(tool && preset ? { workbenchPresetId: preset.id, workbenchPresetName: preset.name } : {}),
+                              workbench: { kind, ...(tool ? { toolId: tool.id } : {}), ...(tool && preset ? { presetId: preset.id, presetPrompt: prompt, userPrompt: userPrompt.trim() } : {}), parameters, references: referenceSnapshot },
                           },
                       }).then((taskInput) => createGenerationTask({ ...taskInput, ...(videoOperation ? { operation: videoOperation } : {}) }));
             const task = await queryGenerationTask(createdTask.id);
@@ -760,6 +803,10 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
         }
         const restoredTool = snapshot.toolId ? tools.find((item) => item.id === snapshot.toolId) || null : null;
         const restoredPreset = restoredTool && snapshot.presetId ? restoredTool.presets.find((item) => item.id === snapshot.presetId) || null : null;
+        if (snapshot.presetId && (!restoredTool || !restoredPreset)) {
+            message.warning("原工具或效果已下线，无法载入此任务");
+            return false;
+        }
         const parameters = snapshot.parameters;
         if (kind === "image") {
             const restoredRatio = typeof parameters.size === "string" ? parameters.size : ratio;
@@ -789,7 +836,9 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
         }
         setTool(restoredTool);
         setPreset(restoredPreset);
-        setPrompt(task.prompt || "");
+        // 旧任务未单独存补充要求，保留当时编辑后的全文，仍放在隐藏模板中。
+        setPrompt(restoredTool && restoredPreset ? (snapshot.userPrompt === undefined ? task.prompt || snapshot.presetPrompt || restoredPreset.promptTemplate : snapshot.presetPrompt || restoredPreset.promptTemplate) : task.prompt || "");
+        setUserPrompt(restoredTool && restoredPreset ? snapshot.userPrompt || "" : "");
         setUploadSlotKey(undefined);
         referencesRef.current.forEach(revokeReferencePreview);
         setReferences([]);
@@ -958,6 +1007,30 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
         ) : (
             <p className="workbench-list-empty">选择模型后，这里会显示该模型真正支持的参数。</p>
         );
+    const promptEditor = (
+        <div className="workbench-prompt-surface">
+            <CanvasResourceMentionTextarea
+                aria-label={templateMode ? "补充要求，可输入 @ 引用素材" : "生成提示词，可输入 @ 引用参考素材"}
+                className="workbench-prompt-input workbench-prompt-rich-editor"
+                containerClassName="workbench-prompt-mention-container"
+                value={templateMode ? userPrompt : prompt}
+                references={promptReferences}
+                onChange={templateMode ? setUserPrompt : setPrompt}
+                onSubmit={() => void submit()}
+                sendOnEnter={false}
+                style={{ color: "var(--wb-text)" }}
+                placeholder={templateMode ? tool?.inputHint || "可补充颜色、动作或其他要求，无需填写完整提示词" : kind === "image" ? "写下要生成的画面：主体、场景、构图、光线、风格" : "写下镜头里发生什么：主体、运动、光线、节奏、转场"}
+                maxLength={kind === "image" ? imageProfile?.references.promptMaxChars || 32000 : videoProfile?.references.promptMaxChars || 8000}
+            />
+            <div className="workbench-prompt-meta">
+                <span>
+                    {(templateMode ? userPrompt : prompt).length} / {kind === "image" ? imageProfile?.references.promptMaxChars || 32000 : videoProfile?.references.promptMaxChars || 8000}
+                </span>
+                <span>⌘ / Ctrl + Enter</span>
+            </div>
+        </div>
+    );
+
     const toolLibrary = (
         <div className="workbench-tool-library" id="workbench-tool-library">
             <div className="workbench-tool-library-heading">
@@ -1035,7 +1108,7 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                     {[
                         ["goal", "01", "选择出品目标", flowStepState("goal", { tool, references, prompt, selectedModel })],
                         ["reference", "02", "准备参考素材", flowStepState("reference", { tool, references, prompt, selectedModel })],
-                        ["prompt", "03", "描述商品画面", flowStepState("prompt", { tool, references, prompt, selectedModel })],
+                        ["prompt", "03", templateMode ? "选择生成效果" : "描述商品画面", flowStepState("prompt", { tool, references, prompt: effectivePrompt, selectedModel })],
                         ["settings", "04", "确认参数并生成", flowStepState("settings", { tool, references, prompt, selectedModel })],
                     ].map(([key, number, label, state], index) => (
                         <div className={`workbench-flow-step is-${state}`} key={key}>
@@ -1111,13 +1184,13 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                                 <div className="workbench-block-label">
                                     <span className="workbench-section-index">03</span>
                                     <div>
-                                        <strong>描述你想要的成品</strong>
-                                        <span>说清商品、场景、构图、光线和需要保留的细节</span>
+                                        <strong>{templateMode ? "上传素材，选择效果" : "描述你想要的成品"}</strong>
+                                        <span>{templateMode ? "补齐必填素材后即可生成，可选填补充要求" : "说清商品、场景、构图、光线和需要保留的细节"}</span>
                                     </div>
                                 </div>
                                 {tool?.presets.length ? (
-                                    <div className="workbench-preset-row" role="group" aria-label="工具提示词模板">
-                                        {tool.presets.slice(0, 5).map((item) => (
+                                    <div className="workbench-preset-row" role="group" aria-label="选择生成效果">
+                                        {tool.presets.map((item) => (
                                             <button
                                                 type="button"
                                                 key={item.id}
@@ -1131,38 +1204,27 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                                         ))}
                                     </div>
                                 ) : null}
-                                <div className="workbench-prompt-surface">
-                                    <CanvasResourceMentionTextarea
-                                        aria-label="生成提示词，可输入 @ 引用参考素材"
-                                        className="workbench-prompt-input workbench-prompt-rich-editor"
-                                        containerClassName="workbench-prompt-mention-container"
-                                        value={prompt}
-                                        references={promptReferences}
-                                        onChange={setPrompt}
-                                        onSubmit={() => void submit()}
-                                        sendOnEnter={false}
-                                        style={{ color: "var(--wb-text)" }}
-                                        placeholder={kind === "image" ? "写下要生成的画面：主体、场景、构图、光线、风格" : "写下镜头里发生什么：主体、运动、光线、节奏、转场"}
-                                        maxLength={kind === "image" ? imageProfile?.references.promptMaxChars || 32000 : videoProfile?.references.promptMaxChars || 8000}
-                                    />
-                                    <div className="workbench-prompt-meta">
-                                        <span>
-                                            {prompt.length} / {kind === "image" ? imageProfile?.references.promptMaxChars || 32000 : videoProfile?.references.promptMaxChars || 8000}
-                                        </span>
-                                        <span>⌘ / Ctrl + Enter</span>
-                                    </div>
-                                </div>
+                                {!templateMode ? promptEditor : null}
                                 <div className="workbench-composer-toolbar">
                                     <span className="workbench-ref-count">
                                         参考素材 {references.length} /{" "}
                                         {kind === "image" ? imageProfile?.references.maxImages || 0 : (videoProfile?.references.maxImages || 0) + (videoProfile?.references.maxVideos || 0) + (videoProfile?.references.maxAudios || 0)}
                                     </span>
                                     <div className="workbench-toolbar-actions">
-                                        <Tooltip title="添加参考素材">
-                                            <button type="button" aria-label="添加参考素材" onClick={() => fileRef.current?.click()}>
-                                                <Upload />
-                                            </button>
-                                        </Tooltip>
+                                        {!tool?.inputContract?.slots.length ? (
+                                            <Tooltip title="添加参考素材">
+                                                <button
+                                                    type="button"
+                                                    aria-label="添加参考素材"
+                                                    onClick={() => {
+                                                        setUploadSlotKey(undefined);
+                                                        fileRef.current?.click();
+                                                    }}
+                                                >
+                                                    <Upload />
+                                                </button>
+                                            </Tooltip>
+                                        ) : null}
                                         <Tooltip title="清空参考素材">
                                             <button type="button" aria-label="清空参考素材" onClick={() => references.forEach(removeReference)} disabled={!references.length}>
                                                 <X />
@@ -1209,6 +1271,7 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                                                             <ReferenceCard
                                                                 key={reference.id}
                                                                 reference={reference}
+                                                                label={referenceLabels.get(reference.id)}
                                                                 kind={kind}
                                                                 onRemove={removeReference}
                                                                 onRoleChange={(role) => setReferences((current) => current.map((item) => (item.id === reference.id ? { ...item, role } : item)))}
@@ -1236,6 +1299,7 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                                             <ReferenceCard
                                                 key={reference.id}
                                                 reference={reference}
+                                                label={referenceLabels.get(reference.id)}
                                                 kind={kind}
                                                 onRemove={removeReference}
                                                 onRoleChange={(role) => setReferences((current) => current.map((item) => (item.id === reference.id ? { ...item, role } : item)))}
@@ -1256,6 +1320,17 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                                         ) : null}
                                     </div>
                                 )}
+                                {templateMode ? (
+                                    <details className="workbench-tool-supplement" key={`${tool?.id}:${preset?.id}`} open={supplementRequired || Boolean(userPrompt) || undefined}>
+                                        <summary>补充要求（{supplementRequired ? "必填" : "选填"}）</summary>
+                                        {promptEditor}
+                                    </details>
+                                ) : null}
+                                {templateResolution?.error || referenceLimitExceeded ? (
+                                    <p className="workbench-list-empty" role="alert">
+                                        {templateResolution?.error || "素材超过当前模型数量上限，请移除多余素材或更换模型"}
+                                    </p>
+                                ) : null}
                                 <input
                                     ref={fileRef}
                                     type="file"
@@ -1293,7 +1368,7 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                                         requirements={{
                                             capability,
                                             input: {
-                                                textCount: prompt.trim() ? 1 : 0,
+                                                textCount: effectivePrompt ? 1 : 0,
                                                 imageCount: references.filter((reference) => reference.kind === "image").length,
                                                 referenceImageCount: references.filter((reference) => reference.kind === "image" && reference.role !== "first_frame" && reference.role !== "last_frame").length,
                                                 videoCount: references.filter((reference) => reference.kind === "video").length,
@@ -1334,11 +1409,20 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                                     className="workbench-submit"
                                     type="primary"
                                     loading={busy}
-                                    disabled={Boolean(userId) && ((promptRequired && !prompt.trim()) || Boolean(missingInput) || !selectedModel || references.some((reference) => reference.uploading || Boolean(reference.error)))}
+                                    disabled={
+                                        Boolean(userId) &&
+                                        ((promptRequired && !effectivePrompt) ||
+                                            (supplementRequired && !userPrompt.trim()) ||
+                                            Boolean(templateResolution?.error) ||
+                                            referenceLimitExceeded ||
+                                            Boolean(missingInput) ||
+                                            !selectedModel ||
+                                            references.some((reference) => reference.uploading || Boolean(reference.error) || !reference.resourceId))
+                                    }
                                     onClick={() => void submit()}
                                 >
                                     <ArrowUp />
-                                    <span>{!userId ? "登录后生成" : kind === "image" ? "生成图片" : "生成视频"}</span>
+                                    <span>{!userId ? "登录后生成" : templateMode ? "一键生成" : kind === "image" ? "生成图片" : "生成视频"}</span>
                                 </Button>
                             </div>
                         </div>
@@ -1482,7 +1566,7 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                                     <Spin size="small" />
                                 ) : (
                                     historyTasks
-                                        .filter((task) => !query.trim() || task.prompt.toLowerCase().includes(query.trim().toLowerCase()))
+                                        .filter((task) => !query.trim() || workbenchTaskLabel(task).toLowerCase().includes(query.trim().toLowerCase()))
                                         .slice(0, 30)
                                         .map((task) => <TaskRow key={task.id} task={task} kind={kind} modelLabel={taskModelLabel(task)} busy={taskBusyId === task.id} onOpen={() => void openDetail(task)} onRetry={() => void retryTask(task)} />)
                                 )}
@@ -1521,8 +1605,8 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                         <div className="workbench-detail-info">
                             <span className={`workbench-status is-${detailTask.status}`}>{displayTaskState(detailTask)}</span>
                             <h3>{taskModelLabel(detailTask)}</h3>
-                            <label>提示词</label>
-                            <p className="workbench-detail-prompt">{detailTask.prompt}</p>
+                            <label>{workbenchTaskInfo(detailTask) ? "创作设置" : "提示词"}</label>
+                            <p className="workbench-detail-prompt">{workbenchTaskLabel(detailTask)}</p>
                             <label>参数</label>
                             <pre>{detailLoading ? "正在加载任务参数…" : JSON.stringify(workbenchTaskSnapshot(detailTask)?.parameters || {}, null, 2)}</pre>
                             <dl>
@@ -1737,7 +1821,19 @@ function ToolCard({ tool, selected, onClick }: { tool: WorkbenchTool; selected: 
     );
 }
 
-function ReferenceCard({ reference, kind, onRemove, onRoleChange }: { reference: WorkbenchReference; kind: WorkbenchKind; onRemove: (reference: WorkbenchReference) => void; onRoleChange: (role: WorkbenchReference["role"]) => void }) {
+function ReferenceCard({
+    reference,
+    label,
+    kind,
+    onRemove,
+    onRoleChange,
+}: {
+    reference: WorkbenchReference;
+    label?: string;
+    kind: WorkbenchKind;
+    onRemove: (reference: WorkbenchReference) => void;
+    onRoleChange: (role: WorkbenchReference["role"]) => void;
+}) {
     return (
         <div className="workbench-reference">
             {reference.kind === "video" ? (
@@ -1750,6 +1846,9 @@ function ReferenceCard({ reference, kind, onRemove, onRoleChange }: { reference:
                 <img src={reference.previewUrl} alt={reference.name} />
             )}
             {reference.uploading ? <Progress type="circle" percent={Math.round(reference.progress)} size={34} /> : null}
+            <span className="workbench-reference-label" title={reference.name}>
+                {label}
+            </span>
             {reference.error ? (
                 <span className="workbench-reference-error" title={reference.error}>
                     上传失败
@@ -1782,7 +1881,7 @@ function TaskRow({ task, kind, modelLabel, busy, onOpen, onCancel, onRetry }: { 
                 <span className="workbench-task-thumb">{url && task.previewKind !== "video" ? <MediaPreview src={url} kind="image" alt="" className="size-full object-cover" /> : kind === "video" ? <Video /> : <FileImage />}</span>
                 <span className="workbench-task-copy">
                     <strong>{modelLabel}</strong>
-                    <small>{task.prompt}</small>
+                    <small>{workbenchTaskLabel(task)}</small>
                     <em>
                         {displayTaskState(task)} · {elapsedLabel(task)}
                     </em>

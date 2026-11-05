@@ -88,7 +88,20 @@ for (const kind of ["image", "video"] as const) {
                         ? { features: { ...defaultFeatureAvailability, imageWorkbenchEnabled: enabled, videoWorkbenchEnabled: enabled } }
                         : path === "/banner-announcements"
                           ? { banners: [] }
-                          : { tools: [{ id: kind, kind, name: `${kind} public tool`, subtitle: "将参考商品置于纯白无缝背景中央，保留完整轮廓、真实颜色、材质和包装细节。", categoryId: "general", enabled: true, sortOrder: 0, presets: [] }] }) as never,
+                          : {
+                                tools: [
+                                    {
+                                        id: kind,
+                                        kind,
+                                        name: `${kind} public tool`,
+                                        subtitle: "将参考商品置于纯白无缝背景中央，保留完整轮廓、真实颜色、材质和包装细节。",
+                                        categoryId: "general",
+                                        enabled: true,
+                                        sortOrder: 0,
+                                        presets: [{ id: `${kind}-preset`, name: "标准效果", promptTemplate: "ADMIN_ONLY_TEMPLATE", enabled: true }],
+                                    },
+                                ],
+                            }) as never,
             );
             post.mockClear();
             const host = document.createElement("div");
@@ -134,6 +147,10 @@ for (const kind of ["image", "video"] as const) {
                 expect(scenePicker.querySelector("strong")?.textContent).toBe(`${kind} public tool`);
                 expect(scenePicker.querySelector(".workbench-tool-change")?.textContent).toBe("更换");
                 expect(host.querySelector(".workbench-goal-picker")).toBeNull();
+                expect(host.textContent).not.toContain("ADMIN_ONLY_TEMPLATE");
+                expect(host.querySelector('[aria-label="生成提示词，可输入 @ 引用参考素材"]')).toBeNull();
+                expect(host.querySelector('[aria-label="补充要求，可输入 @ 引用素材"]')).not.toBeNull();
+                expect(host.querySelector('[aria-label="选择生成效果"]')?.textContent).toContain("标准效果");
                 await act(async () => scenePicker.click());
                 expect(scenePicker.getAttribute("aria-expanded")).toBe("true");
                 await act(async () => document.querySelector<HTMLButtonElement>(".workbench-picker-modal .ant-modal-close")!.click());

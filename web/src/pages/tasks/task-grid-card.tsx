@@ -1,3 +1,4 @@
+import { workbenchTaskLabel } from "@/lib/workbench-template";
 import { Button } from "antd";
 import { IconButton } from "@/components/ui/base/buttons";
 import { Tooltip } from "@/components/ui/base/tooltip";
@@ -51,8 +52,8 @@ export function TaskGridCard({ task, actingId, onOpen, onRetry }: { task: Genera
                 </div>
             </div>
             <div className="task-grid-body">
-                <button type="button" className="task-grid-title" title={task.prompt} onClick={onOpen}>
-                    {task.prompt || "未命名任务"}
+                <button type="button" className="task-grid-title" title={workbenchTaskLabel(task)} onClick={onOpen}>
+                    {workbenchTaskLabel(task) || "未命名任务"}
                 </button>
                 <div className="task-grid-meta">
                     <span className={`task-grid-status ${isFailed ? "is-failed" : isActive ? "is-active" : task.status === "succeeded" ? "is-success" : ""}`}>

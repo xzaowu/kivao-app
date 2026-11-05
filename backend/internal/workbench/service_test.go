@@ -110,6 +110,8 @@ func TestWorkbenchTaskRejectsForeignResourcesAndPreservesRoleAndPresetSnapshot(t
 		}
 	}
 	request := TaskInput{Kind: KindVideo, ToolID: "tool", PresetID: "preset", Prompt: "A woman walks", Model: "video-model", LogicalModelID: "logical", Parameters: map[string]any{"seconds": 6, "ratio": "16:9", "generateAudio": true}, References: []TaskReference{{ResourceID: "image", Kind: "image", Role: "first_frame", SlotKey: "subject"}}}
+	supplement := "保持 @[node:image] 的外观"
+	request.UserPrompt = &supplement
 	resolved, err := s.ResolveTask("user", request)
 	if err != nil {
 		t.Fatal(err)
@@ -122,6 +124,25 @@ func TestWorkbenchTaskRejectsForeignResourcesAndPreservesRoleAndPresetSnapshot(t
 		t.Fatalf("missing historical snapshot: %#v", metadata)
 	}
 	workbenchSnapshot := metadata["workbench"].(map[string]any)
+	if workbenchSnapshot["userPrompt"] != supplement || workbenchSnapshot["presetPrompt"] != preset.PromptTemplate {
+		t.Fatal("supplement and original preset were not preserved for restore")
+	}
+	for _, provided := range []bool{false, true} {
+		legacyRequest := request
+		legacyRequest.UserPrompt = nil
+		empty := ""
+		if provided {
+			legacyRequest.UserPrompt = &empty
+		}
+		legacy, err := s.ResolveTask("user", legacyRequest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, exists := legacy.Input["metadata"].(map[string]any)["workbench"].(map[string]any)["userPrompt"]
+		if exists != provided {
+			t.Fatal("absent and explicitly empty supplements must remain distinguishable")
+		}
+	}
 	parameters := workbenchSnapshot["parameters"].(map[string]any)
 	if parameters["seconds"] != 6 || parameters["ratio"] != "16:9" || parameters["generateAudio"] != true {
 		t.Fatalf("parameters not snapshotted: %#v", parameters)
@@ -144,6 +165,14 @@ func TestWorkbenchTaskRejectsForeignResourcesAndPreservesRoleAndPresetSnapshot(t
 	}
 }
 
+func TestWorkbenchTaskRejectsOversizedSupplement(t *testing.T) {
+	s, _, _ := newWorkbenchTest(t)
+	supplement := strings.Repeat("字", 32001)
+	if _, err := s.ResolveTask("user", TaskInput{Kind: KindImage, UserPrompt: &supplement}); err == nil {
+		t.Fatal("expected oversized supplement rejection")
+	}
+}
+
 func TestWorkbenchTaskRejectsUnknownParametersAndClientConfig(t *testing.T) {
 	s, db, _ := newWorkbenchTest(t)
 	tool := model.WorkbenchTool{ID: "tool", Kind: KindImage, Name: "Image", Enabled: true, CapabilityJSON: "{}"}
@@ -153,6 +182,26 @@ func TestWorkbenchTaskRejectsUnknownParametersAndClientConfig(t *testing.T) {
 	request := TaskInput{Kind: KindImage, ToolID: "tool", Prompt: "prompt", Model: "image-model", LogicalModelID: "logical", Parameters: map[string]any{"channelId": "attacker"}}
 	if _, err := s.ResolveTask("user", request); err == nil {
 		t.Fatal("expected arbitrary field rejection")
+	}
+}
+
+func TestWorkbenchPresetRequiresConfiguredSupplement(t *testing.T) {
+	s, db, _ := newWorkbenchTest(t)
+	tool := model.WorkbenchTool{ID: "supplement-tool", Kind: KindImage, Name: "Product", Enabled: true, CapabilityJSON: `{"inputContract":{"promptRequired":true,"minTextReferences":1}}`}
+	preset := model.WorkbenchPreset{ID: "supplement-preset", ToolID: tool.ID, Name: "Default", PromptTemplate: "template", Enabled: true}
+	for _, item := range []any{&tool, &preset} {
+		if err := db.Create(item).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	req := TaskInput{Kind: KindImage, ToolID: tool.ID, PresetID: preset.ID, Prompt: "template", LogicalModelID: "logical", Model: "image-model"}
+	if _, err := s.ResolveTask("user", req); err == nil {
+		t.Fatal("template alone must not satisfy required user input")
+	}
+	supplement := "白色"
+	req.UserPrompt = &supplement
+	if _, err := s.ResolveTask("user", req); err != nil {
+		t.Fatal(err)
 	}
 }
 

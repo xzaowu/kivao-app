@@ -1,5 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
-import { Check, ChevronDown, Coins } from "lucide-react";
+import { Check, ChevronDown, ChevronLeft, Coins } from "lucide-react";
 import { Popover } from "antd";
 import { usePopoverAnchorAlign } from "@/hooks/use-popover-anchor-align";
 
@@ -196,6 +196,12 @@ export function ModelPicker({
             onMouseDown={(event) => event.stopPropagation()}
             onPointerDown={(event) => event.stopPropagation()}
         >
+            {activeGroupKey !== null && optionGroups.length > 0 ? (
+                <button type="button" className="canvas-model-picker-back" onClick={() => { setActiveGroupKey(null); focusMenuOption(); }}>
+                    <ChevronLeft size={16} aria-hidden="true" />
+                    全部模型分组
+                </button>
+            ) : null}
             {optionGroups.length ? (
                 activeGroupKey === null ? (
                     <div className="canvas-model-picker-brands" aria-label="选择产品模型">

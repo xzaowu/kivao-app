@@ -11,9 +11,17 @@ description: 信封、错误码与 OpenAPI
 
 `invalidate` 在事务提交后发送，客户端通过 `GET /api/canvas-projects/:id/sync-status` 校验版本与租约，再按需读取正文；长连接不代表云端保存成功。正常且无活动 Agent 时每 30 秒补偿查询，断线或活动 Agent 期间使用原有轮询。未登录返回 401，画布缺失或不属于当前用户返回 404，不允许的来源返回 403，实时服务不可用返回 503。完整协议和部署边界见[画布操作同步](./canvas-operations-sync)。
 
-## 视频工作台的生成模式
+## 工作台工具预设与素材分组
+
+管理员在预设编辑器输入 `@` 选择素材输入区，保存为绑定输入区 `key` 的 `@[workbench-slot:...]` 标记。重命名不改变绑定；删除仍被引用的输入区时，编辑器阻止保存。前端提交前按输入区配置顺序排列素材，同组保持选择顺序，分别编号为图片、视频、音频；组引用展开为该组全部已上传素材，可选空组标记为「未提供」。必填数量、模型上限和上传就绪状态仍须通过校验。
+
+选用预设时用户界面显示效果名称、素材上传与补充要求，保留直接创作的完整提示词编辑器。这是界面简化，公开工具目录和任务详情仍可能包含模板，不能作为提示词保密措施。
+
+`POST /api/workbench/tasks` 接收可选 `userPrompt`（最多 32000 个字符），与原始模板一起保存在既有 `metadata.workbench` JSON 中供再次生成恢复；其中素材引用按资源 ID 绑定，执行提示词使用当前编号。配置 `minTextReferences > 0` 的预设要求补充内容非空。任务列表 `clientContext` 新增可选 `workbenchToolId`、`workbenchToolName`、`workbenchPresetId`、`workbenchPresetName`、`workbenchReferenceCount`，界面优先展示工具、效果及素材数量，直接创作仍显示原提示词。不变更数据库 Schema、资源归属或计费协议。
 
 图片和视频工作台页面允许游客浏览，但仍受后台 `imageWorkbenchEnabled` / `videoWorkbenchEnabled` 开关控制。`GET /api/features` 允许匿名读取功能布尔值，不返回修改人等管理元信息，管理员设置修改仍需鉴权。游客首页加载公开开关后同步侧栏入口。`GET /api/workbench/tools?kind=image|video` 允许匿名读取已启用工具、预设及其展示素材，关闭对应功能时返回 403。模型目录、个人任务、素材上传及任务创建仍要求登录，游客点击生成或上传时打开登录弹窗，不发起任务或上传请求。
+
+## 视频工作台的生成模式
 
 `POST /api/workbench/tasks` 的视频任务根据已校验的 `references` 推导操作类型，客户端不需要提交泛化的 `video` 操作：
 

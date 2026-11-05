@@ -4,6 +4,8 @@ import { AdminModal } from "@/pages/admin/ui/overlays";
 import type { ColumnsType } from "antd/es/table";
 import { CloudUpload, Edit3, Plus, RefreshCw, Search, Trash2, Shapes } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { CanvasResourceMentionTextarea } from "@/components/canvas/canvas-resource-mention-textarea";
+import { invalidWorkbenchSlot, workbenchSlotReferences } from "@/lib/workbench-template";
 
 import { AdminPageFrame } from "@/pages/admin/components/admin-shell";
 import { AdminDataTable, AdminStatusBadge } from "@/pages/admin/components/admin-ui";
@@ -221,6 +223,7 @@ export default function WorkbenchToolsPage() {
     const [saving, setSaving] = useState(false);
     const [uploadCount, setUploadCount] = useState(0);
     const [draft, setDraft] = useState<ToolDraft>(emptyDraft());
+    const slotReferences = useMemo(() => workbenchSlotReferences(draft.inputContract.slots), [draft.inputContract.slots]);
     const [form] = Form.useForm();
     const editorBusy = saving || uploadCount > 0;
 
@@ -288,6 +291,11 @@ export default function WorkbenchToolsPage() {
         }
         if (draft.presets.some((preset) => !preset.name.trim() || !preset.promptTemplate.trim())) {
             message.warning("请补齐预设名称和提示词");
+            return;
+        }
+        const referenceError = draft.presets.map((preset) => invalidWorkbenchSlot(preset.promptTemplate, slots)).find(Boolean);
+        if (referenceError) {
+            message.warning(referenceError);
             return;
         }
         setSaving(true);
@@ -492,6 +500,13 @@ export default function WorkbenchToolsPage() {
                     </div>
                     <div className="admin-workbench-contract-toolbar">
                         <label>
+                            补充内容必填{" "}
+                            <Switch
+                                checked={draft.inputContract.minTextReferences > 0}
+                                onChange={(required) => setDraft((current) => ({ ...current, inputContract: { ...current.inputContract, minTextReferences: required ? 1 : 0, ...(required ? { promptRequired: true } : {}) } }))}
+                            />
+                        </label>
+                        <label>
                             提示词必填{" "}
                             <Switch
                                 checked={draft.inputContract.promptRequired || draft.inputContract.minTextReferences > 0}
@@ -616,7 +631,7 @@ export default function WorkbenchToolsPage() {
                         <header>
                             <div>
                                 <strong>预设提示词</strong>
-                                <small>与工具一起保存；已保存的预设可停用，历史记录保留。</small>
+                                <small>用户只看到预设名称和简介。输入 @ 选择素材输入区，引用该组全部素材；重命名不会影响绑定。可选输入未上传时标记为未提供。</small>
                             </div>
                             <Button
                                 size="small"
@@ -631,7 +646,15 @@ export default function WorkbenchToolsPage() {
                             <div className="admin-workbench-preset-row" key={preset.id}>
                                 <Input aria-label={`预设 ${index + 1} 名称`} placeholder="预设名称" value={preset.name} onChange={(event) => updatePreset(preset.id, { name: event.target.value })} />
                                 <Input aria-label={`预设 ${index + 1} 简介`} placeholder="一句话说明" value={preset.summary} onChange={(event) => updatePreset(preset.id, { summary: event.target.value })} />
-                                <Input.TextArea aria-label={`预设 ${index + 1} 提示词`} rows={3} placeholder="提示词模板" value={preset.promptTemplate} onChange={(event) => updatePreset(preset.id, { promptTemplate: event.target.value })} />
+                                <CanvasResourceMentionTextarea
+                                    aria-label={`预设 ${index + 1} 提示词`}
+                                    containerClassName="admin-workbench-template"
+                                    references={slotReferences}
+                                    sendOnEnter={false}
+                                    placeholder="输入 @ 引用素材，例如商品原图"
+                                    value={preset.promptTemplate}
+                                    onChange={(promptTemplate) => updatePreset(preset.id, { promptTemplate })}
+                                />
                                 <Switch aria-label={`启用预设 ${index + 1}`} checked={preset.enabled} onChange={(enabled) => updatePreset(preset.id, { enabled })} />
                                 {!draft.savedPresetIds.includes(preset.id) && (
                                     <Button danger size="small" onClick={() => setDraft((current) => ({ ...current, presets: current.presets.filter((item) => item.id !== preset.id) }))}>

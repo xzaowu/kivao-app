@@ -224,6 +224,20 @@
     border-radius: 8px;
     background: var(--admin-layer-2);
 }
+.admin-workbench-template {
+    min-width: 0;
+    padding: 8px;
+    border: 1px solid var(--admin-border);
+    border-radius: 8px;
+    background: var(--admin-layer-1);
+}
+.admin-workbench-template [contenteditable="true"] {
+    min-height: 80px;
+    max-height: 240px;
+    overflow-y: auto;
+    color: var(--admin-text);
+    outline: none;
+}
 @media (max-width: 900px) {
     .admin-workbench-slot-fields {
         grid-template-columns: 1fr 1fr 1fr;
@@ -250,7 +264,7 @@
     .admin-workbench-preset-row {
         grid-template-columns: 1fr 1fr;
     }
-    .admin-workbench-preset-row textarea {
+    .admin-workbench-template {
         grid-column: 1/-1;
     }
 }

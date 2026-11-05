@@ -62,6 +62,11 @@ export type GenerationTask = {
         status: TaskBillingStatus;
     };
     clientContext?: {
+        workbenchToolId?: string;
+        workbenchToolName?: string;
+        workbenchPresetId?: string;
+        workbenchPresetName?: string;
+        workbenchReferenceCount?: number;
         conversationId?: string;
         messageId?: string;
         nodeId?: string;

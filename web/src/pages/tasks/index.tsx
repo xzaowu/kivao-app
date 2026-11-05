@@ -1,3 +1,4 @@
+import { workbenchTaskInfo, workbenchTaskLabel } from "@/lib/workbench-template";
 import { CollectionToolbar } from "@/components/layout/collection-toolbar";
 import { App, Button, Drawer, Form, Input, Modal, Typography } from "antd";
 import { Switch } from "@/components/ui/base/switch";
@@ -114,7 +115,7 @@ export default function TasksPage() {
         if (modelFilter !== "all" && formatModelName(effectiveConfig, task) !== modelFilter) return false;
         const query = keyword.trim().toLowerCase();
         const context = getTaskCanvasContext(task, canvasById, domainProjectNameById);
-        return !query || `${task.prompt} ${task.model || ""} ${formatTaskKind(task)} ${context.canvasName} ${context.projectName}`.toLowerCase().includes(query);
+        return !query || `${workbenchTaskLabel(task)} ${task.model || ""} ${formatTaskKind(task)} ${context.canvasName} ${context.projectName}`.toLowerCase().includes(query);
     }), [canvasById, domainProjectNameById, effectiveConfig, keyword, kindFilter, modelFilter, projectFilter, statusFilter, tasks]);
     const visibleTasks = useMemo(() => filteredTasks.slice((page - 1) * pageSize, page * pageSize), [filteredTasks, page, pageSize]);
     const taskStats = useMemo(() => {
@@ -174,7 +175,7 @@ export default function TasksPage() {
             actingId={actingId}
             onOpen={() => void openTaskDetail(task)}
             onRetry={() => void runAction(task.id)}
-            onPreview={() => task.previewUrl && setMediaPreview({ url: task.previewUrl, kind: task.previewKind === "video" ? "video" : "image", title: task.prompt || formatTaskKind(task) })}
+            onPreview={() => task.previewUrl && setMediaPreview({ url: task.previewUrl, kind: task.previewKind === "video" ? "video" : "image", title: workbenchTaskLabel(task) || formatTaskKind(task) })}
         />
     );
 
@@ -506,7 +507,7 @@ export default function TasksPage() {
                         </div>
                         {detailTask.error ? <pre className="task-detail-error max-h-28 overflow-auto whitespace-pre-wrap px-3 py-2 text-xs">{generationErrorMessage(detailTask.error)}</pre> : null}
                         <TaskResultMedia value={detailTask.resultJson} taskType={detailTask.type} />
-                        <DetailBlock title="提示词" value={detailLoading ? "详情加载中..." : detailTask.prompt || "无"} tall />
+                        <DetailBlock title={workbenchTaskInfo(detailTask) ? "创作设置" : "提示词"} value={detailLoading ? "详情加载中..." : workbenchTaskLabel(detailTask) || "无"} tall />
                         <TaskParameters inputJson={detailLoading ? undefined : detailTask.inputJson} />
                         <DetailBlock title="结果" value={detailLoading ? "详情加载中..." : formatTaskJson(detailTask.resultJson)} />
                         <div>

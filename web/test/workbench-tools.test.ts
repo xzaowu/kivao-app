@@ -39,6 +39,14 @@ describe("workbenchTaskSnapshot", () => {
     test("does not treat a task-list summary as loaded restore data", () => {
         expect(workbenchTaskSnapshot({ id: "summary" } as GenerationTask)).toBeNull();
     });
+
+    test("restores original slot template and resource-bound supplement from metadata", () => {
+        const snapshot = workbenchTaskSnapshot({
+            inputJson: JSON.stringify({ workbench: { kind: "image", references: [] }, metadata: { workbench: { presetPrompt: "@[workbench-slot:product]", userPrompt: "保留 @[node:resource-1] 的颜色" } } }),
+        } as GenerationTask);
+        expect(snapshot?.presetPrompt).toBe("@[workbench-slot:product]");
+        expect(snapshot?.userPrompt).toBe("保留 @[node:resource-1] 的颜色");
+    });
 });
 
 describe("filterWorkbenchTools", () => {

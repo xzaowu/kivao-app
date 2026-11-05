@@ -5,6 +5,12 @@ description: 从产品功能快速定位主要代码入口
 
 # 代码功能地图
 
+## 工作台素材分组与一键生成
+
+- `web/src/lib/workbench-template.ts`：按输入区 key 生成 `@` 引用、展开整组素材、统一各媒体类型编号，以及安全的任务展示摘要。
+- `pages/admin/workbench-tools/workbench-tools-page.tsx` 复用画布引用编辑器维护模板；`pages/workbench/image-workbench-page.tsx` 同时负责图片/视频的素材表单、执行提示词拼装和再次生成；`pages/tasks/` 复用摘要展示。
+- `backend/internal/workbench/tasks.go` 保留原模板和补充要求快照，继续校验资源归属、输入数量及角色；`internal/app/task_output.go` 投影任务列表所需的工具名称、效果和素材数量。不新增数据表或迁移。
+
 ## 短剧自动制作
 
 - 纯逻辑：`backend/internal/production/`（作品圣经、分集与剧本提示词 `prompts.go`，模型输出解析 `parse.go`，分镜规则与时长 `storyboard.go` / `timing.go`，按视频模型上限切剧情段 `SegmentShotsForVideo`，段提示词素材稿 `segment_prompt.go` 与撰写要求 `segment_writer.go`，参考图方案 `assets.go`，用户分镜表直接导入 `storyboard_import.go`，原文台词逐句核对 `dialogue_check.go`）。
