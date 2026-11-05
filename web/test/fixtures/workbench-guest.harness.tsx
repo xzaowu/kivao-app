@@ -88,7 +88,7 @@ for (const kind of ["image", "video"] as const) {
                         ? { features: { ...defaultFeatureAvailability, imageWorkbenchEnabled: enabled, videoWorkbenchEnabled: enabled } }
                         : path === "/banner-announcements"
                           ? { banners: [] }
-                          : { tools: [{ id: kind, kind, name: `${kind} public tool`, categoryId: "general", enabled: true, sortOrder: 0, presets: [] }] }) as never,
+                          : { tools: [{ id: kind, kind, name: `${kind} public tool`, subtitle: "将参考商品置于纯白无缝背景中央，保留完整轮廓、真实颜色、材质和包装细节。", categoryId: "general", enabled: true, sortOrder: 0, presets: [] }] }) as never,
             );
             post.mockClear();
             const host = document.createElement("div");
@@ -123,11 +123,25 @@ for (const kind of ["image", "video"] as const) {
                 expect(host.textContent).toContain(`${kind} public tool`);
                 expect(host.querySelector(".workbench-model-empty")?.textContent).toContain("登录后查看模型");
                 expect(host.querySelector('a[href="/settings?section=models"]')).toBeNull();
+                const scenePicker = host.querySelector<HTMLButtonElement>(".workbench-tool-choice")!;
+                expect(scenePicker.textContent).toContain("选择创作场景（可选）");
+                await act(async () => scenePicker.click());
+                expect(scenePicker.getAttribute("aria-expanded")).toBe("true");
+                const scene = document.querySelector<HTMLButtonElement>(".workbench-picker-modal .workbench-tool-card")!;
+                expect(scene.textContent).toContain(`${kind} public tool`);
+                await act(async () => scene.click());
+                expect(scenePicker.getAttribute("aria-expanded")).toBe("false");
+                expect(scenePicker.querySelector("strong")?.textContent).toBe(`${kind} public tool`);
+                expect(scenePicker.querySelector(".workbench-tool-change")?.textContent).toBe("更换");
+                expect(host.querySelector(".workbench-goal-picker")).toBeNull();
+                await act(async () => scenePicker.click());
+                expect(scenePicker.getAttribute("aria-expanded")).toBe("true");
+                await act(async () => document.querySelector<HTMLButtonElement>(".workbench-picker-modal .ant-modal-close")!.click());
                 const generate = host.querySelector<HTMLButtonElement>(".workbench-submit")!;
                 expect(generate.textContent).toContain("登录后生成");
                 expect(generate.disabled).toBe(false);
                 await act(async () => generate.click());
-                expect(document.querySelector('[role="dialog"]')?.textContent).toContain("登录后开始创作");
+                expect(Array.from(document.querySelectorAll('[role="dialog"]')).some((dialog) => dialog.textContent?.includes("登录后开始创作"))).toBe(true);
                 expect(get.mock.calls.length).toBeGreaterThan(0);
                 expect(get.mock.calls.every(([path]) => path === "/workbench/tools" || path === "/features" || path === "/banner-announcements")).toBe(true);
                 expect(post).not.toHaveBeenCalled();

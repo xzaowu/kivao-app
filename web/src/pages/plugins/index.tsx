@@ -126,6 +126,11 @@ export default function PluginsPage() {
         return [...byId.values()];
     }, [builtinPlugins, remotePlugins]);
     const backendPluginById = useMemo(() => new Map(backendPlugins.map((plugin) => [plugin.manifest.id, plugin])), [backendPlugins]);
+    const showSystemPlugins = user?.role === "admin" || features.systemPluginsVisibleToUsers;
+    const visiblePlugins = useMemo(
+        () => registeredPlugins.filter((plugin) => showSystemPlugins || backendPluginById.get(plugin.manifest.id)?.management.kind === "application" || isOfficialApplicationPluginId(plugin.manifest.id)),
+        [backendPluginById, registeredPlugins, showSystemPlugins],
+    );
 
     const eagle = installations.find((item) => item.manifest.id === EAGLE_PLUGIN_ID);
 
@@ -140,10 +145,8 @@ export default function PluginsPage() {
 
     const filteredPlugins = useMemo(() => {
         const normalizedSearch = search.trim().toLocaleLowerCase();
-        return registeredPlugins.filter((plugin) => {
+        return visiblePlugins.filter((plugin) => {
             const state = pluginStates[plugin.manifest.id];
-            const isApplicationPlugin = backendPluginById.get(plugin.manifest.id)?.management.kind === "application" || isOfficialApplicationPluginId(plugin.manifest.id);
-            if (user?.role !== "admin" && !features.systemPluginsVisibleToUsers && !isApplicationPlugin) return false;
             const installation = installations.find((item) => item.manifest.id === plugin.manifest.id);
             const enabled = state?.effectiveEnabled ?? Boolean(installation?.enabled);
             const manifest = plugin.manifest;
@@ -156,15 +159,15 @@ export default function PluginsPage() {
             if (statusFilter === "disabled" && enabled) return false;
             return true;
         });
-    }, [backendPluginById, categoryFilter, features.systemPluginsVisibleToUsers, installations, pluginStates, registeredPlugins, search, statusFilter, trustFilter, user?.role]);
+    }, [categoryFilter, installations, pluginStates, search, statusFilter, trustFilter, visiblePlugins]);
 
     const pluginSections = useMemo(
         () =>
             [
                 ...protocolSectionMeta.map((section) => ({ ...section, plugins: filteredPlugins.filter((plugin) => pluginMatchesCategory(plugin.manifest, section.key)) })),
                 { key: "other", label: "应用插件", description: "画布、素材与工作流扩展", icon: PlugZap, plugins: filteredPlugins.filter((plugin) => pluginMatchesCategory(plugin.manifest, "other")) },
-            ].filter((section) => categoryFilter === "all" || section.key === categoryFilter),
-        [categoryFilter, filteredPlugins],
+            ].filter((section) => (categoryFilter === "all" || section.key === categoryFilter) && (showSystemPlugins || section.plugins.length > 0)),
+        [categoryFilter, filteredPlugins, showSystemPlugins],
     );
 
     const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -177,7 +180,6 @@ export default function PluginsPage() {
     };
 
     const categoryCounts = useMemo(() => {
-        const visiblePlugins = registeredPlugins.filter((plugin) => user?.role === "admin" || features.systemPluginsVisibleToUsers || isOfficialApplicationPluginId(plugin.manifest.id));
         const counts: Record<string, number> = { all: visiblePlugins.length, text: 0, image: 0, video: 0, audio: 0, payment: 0, other: 0 };
         for (const plugin of visiblePlugins) {
             for (const section of protocolSectionMeta) {
@@ -186,7 +188,15 @@ export default function PluginsPage() {
             if (pluginMatchesCategory(plugin.manifest, "other")) counts.other += 1;
         }
         return counts;
-    }, [features.systemPluginsVisibleToUsers, registeredPlugins, user?.role]);
+    }, [visiblePlugins]);
+
+    const visibleProtocolSections = protocolSectionMeta.filter((section) => showSystemPlugins || categoryCounts[section.key] > 0);
+
+    useEffect(() => {
+        if (showSystemPlugins || categoryFilter === "all" || categoryFilter === "other" || categoryCounts[categoryFilter] > 0) return;
+        setCategoryFilter("all");
+        if (scrollContainerRef.current) scrollContainerRef.current.scrollTop = 0;
+    }, [categoryCounts, categoryFilter, showSystemPlugins]);
 
     const settingsPlugin = settingsPluginId ? registeredPlugins.find((plugin) => plugin.manifest.id === settingsPluginId) : undefined;
     const settingsInstallation = settingsPlugin ? installations.find((item) => item.manifest.id === settingsPlugin.manifest.id) : undefined;
@@ -252,7 +262,7 @@ export default function PluginsPage() {
                                 </span>
                                 <span>{categoryCounts.all}</span>
                             </button>
-                            {protocolSectionMeta.map((section) => {
+                            {visibleProtocolSections.map((section) => {
                                 const SectionIcon = section.icon;
                                 return (
                                     <button
@@ -280,16 +290,21 @@ export default function PluginsPage() {
                         </nav>
                     </aside>
                     <div className="plugins-page-content">
-                        <CollectionToolbar label="插件筛选" trailing={<div className="plugins-toolbar-actions">
-                                <Button icon={<RefreshCw className="size-4" />} loading={backendPluginsLoading} onClick={() => void reloadBackendPlugins()}>
-                                    刷新插件
-                                </Button>
-                                {user?.role === "admin" ? (
-                                    <Button type="primary" onClick={() => navigate("/admin/plugins")}>
-                                        管理员插件管理
+                        <CollectionToolbar
+                            label="插件筛选"
+                            trailing={
+                                <div className="plugins-toolbar-actions">
+                                    <Button icon={<RefreshCw className="size-4" />} loading={backendPluginsLoading} onClick={() => void reloadBackendPlugins()}>
+                                        刷新插件
                                     </Button>
-                                ) : null}
-                            </div>}>
+                                    {user?.role === "admin" ? (
+                                        <Button type="primary" onClick={() => navigate("/admin/plugins")}>
+                                            管理员插件管理
+                                        </Button>
+                                    ) : null}
+                                </div>
+                            }
+                        >
                             <Input
                                 className="plugins-search"
                                 prefix={<Search className="size-4 text-foreground/38" aria-hidden="true" />}

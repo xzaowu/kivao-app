@@ -351,7 +351,9 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                 audioCount: references.filter((reference) => reference.kind === "audio").length,
                 characterCount: 0,
             },
-            ...(kind === "image" ? { imageSize: ratio, options: { size: ratio, quality, ...(imageProfile?.resolution.supported ? { imageResolution } : {}), count: selectedCount } } : { videoSeconds: seconds, options: { size: ratio, videoSeconds: Number(seconds), vquality: videoQuality } }),
+            ...(kind === "image"
+                ? { imageSize: ratio, options: { size: ratio, quality, ...(imageProfile?.resolution.supported ? { imageResolution } : {}), count: selectedCount } }
+                : { videoSeconds: seconds, options: { size: ratio, videoSeconds: Number(seconds), vquality: videoQuality } }),
         }),
         [capability, imageProfile, imageResolution, kind, prompt, quality, ratio, references, seconds, selectedCount, videoQuality],
     );
@@ -401,20 +403,23 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
         return () => controller.abort();
     }, [capability, composerConfig, config, creditsEnabled, kind, quoteRequirements, seconds, selectedCount, selectedModel, userId]);
 
-    const loadTasks = useCallback(async (signal?: AbortSignal) => {
-        if (!userId) return [];
-        try {
-            const result = await listWorkbenchTasks(kind, 100, false, signal);
-            if (signal?.aborted) return [];
-            setTasks(result);
-            return result;
-        } catch (error) {
-            if (!signal?.aborted) message.error(error instanceof Error ? error.message : "任务列表加载失败");
-            return [];
-        } finally {
-            if (!signal?.aborted) setTasksLoading(false);
-        }
-    }, [kind, message, userId]);
+    const loadTasks = useCallback(
+        async (signal?: AbortSignal) => {
+            if (!userId) return [];
+            try {
+                const result = await listWorkbenchTasks(kind, 100, false, signal);
+                if (signal?.aborted) return [];
+                setTasks(result);
+                return result;
+            } catch (error) {
+                if (!signal?.aborted) message.error(error instanceof Error ? error.message : "任务列表加载失败");
+                return [];
+            } finally {
+                if (!signal?.aborted) setTasksLoading(false);
+            }
+        },
+        [kind, message, userId],
+    );
 
     useEffect(() => {
         if (!userId) {
@@ -1001,7 +1006,15 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
             ) : (
                 <div className="workbench-tool-grid">
                     {filteredTools.map((item) => (
-                        <ToolCard key={item.id} tool={item} selected={item.id === tool?.id} onClick={() => { chooseTool(item); setToolLibraryOpen(false); }} />
+                        <ToolCard
+                            key={item.id}
+                            tool={item}
+                            selected={item.id === tool?.id}
+                            onClick={() => {
+                                chooseTool(item);
+                                setToolLibraryOpen(false);
+                            }}
+                        />
                     ))}
                     {!filteredTools.length ? <div className="workbench-picker-state">没有找到匹配的创作工具</div> : null}
                 </div>
@@ -1053,19 +1066,24 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                                     <span className="workbench-tool-choice-mark">{tool?.iconUrl ? <img src={tool.iconUrl} alt="" /> : kind === "image" ? <FileImage /> : <Video />}</span>
                                     <span className="workbench-tool-choice-copy">
                                         <small>{tool ? (isModelIdLike(tool.subtitle) ? tool.description || "创作工具" : tool.subtitle || tool.description || "创作工具") : "直接创作"}</small>
-                                        <strong>{tool?.name || "选择创作工具"}</strong>
+                                        <strong>
+                                            {tool ? (
+                                                tool.name
+                                            ) : (
+                                                <>
+                                                    <span className="workbench-tool-placeholder-desktop">选择创作工具</span>
+                                                    <span className="workbench-tool-placeholder-mobile">选择创作场景（可选）</span>
+                                                </>
+                                            )}
+                                        </strong>
+                                    </span>
+                                    <span className="workbench-tool-change" aria-hidden="true">
+                                        {tool ? "更换" : "选择"}
                                     </span>
                                     <ChevronDown className={toolLibraryOpen ? "is-open" : ""} />
                                 </button>
                             </div>
-                            <Modal
-                                title="选择创作工具"
-                                open={toolLibraryOpen}
-                                onCancel={() => setToolLibraryOpen(false)}
-                                footer={null}
-                                width="min(1120px, calc(100vw - 32px))"
-                                className="workbench-picker-modal"
-                            >
+                            <Modal title="选择创作工具" open={toolLibraryOpen} onCancel={() => setToolLibraryOpen(false)} footer={null} width="min(1120px, calc(100vw - 32px))" className="workbench-picker-modal">
                                 {toolLibrary}
                             </Modal>
                             {!tool && tools.length ? (
@@ -1078,10 +1096,14 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                                                 <span>选择一个出品目标，参数和提示词会更快就位</span>
                                             </div>
                                         </div>
-                                        <button type="button" onClick={() => setToolLibraryOpen(true)}>查看更多 <ChevronDown /></button>
+                                        <button type="button" onClick={() => setToolLibraryOpen(true)}>
+                                            查看更多 <ChevronDown />
+                                        </button>
                                     </div>
                                     <div className="workbench-goal-grid">
-                                        {quickTools.map((item) => <QuickGoalCard key={item.id} tool={item} kind={kind} onClick={() => chooseTool(item)} />)}
+                                        {quickTools.map((item) => (
+                                            <QuickGoalCard key={item.id} tool={item} kind={kind} onClick={() => chooseTool(item)} />
+                                        ))}
                                     </div>
                                 </section>
                             ) : null}
@@ -1278,7 +1300,9 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                                                 audioCount: references.filter((reference) => reference.kind === "audio").length,
                                                 characterCount: 0,
                                             },
-                                            ...(kind === "image" ? { imageSize: ratio, options: { size: ratio, quality, ...(imageProfile?.resolution.supported ? { imageResolution } : {}), count: selectedCount } } : { videoSeconds: seconds, options: { size: ratio, videoSeconds: Number(seconds), vquality: videoQuality } }),
+                                            ...(kind === "image"
+                                                ? { imageSize: ratio, options: { size: ratio, quality, ...(imageProfile?.resolution.supported ? { imageResolution } : {}), count: selectedCount } }
+                                                : { videoSeconds: seconds, options: { size: ratio, videoSeconds: Number(seconds), vquality: videoQuality } }),
                                         }}
                                         variant="creation"
                                         fullWidth
@@ -1304,9 +1328,7 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                                 )}
                                 <div className="workbench-submit-estimate" aria-live="polite">
                                     <span className="workbench-submit-estimate-label">{estimateLabel || "预估可用积分"}</span>
-                                    {selectedModel ? (
-                                        <span className="workbench-submit-estimate-model">使用 {modelDisplayName(config, selectedModel)}</span>
-                                    ) : null}
+                                    {selectedModel ? <span className="workbench-submit-estimate-model">使用 {modelDisplayName(config, selectedModel)}</span> : null}
                                 </div>
                                 <Button
                                     className="workbench-submit"
@@ -1574,7 +1596,7 @@ function CountPicker({ value, max, onChange }: { value: string; max: number; onC
 
     const handleStepUp = (e: React.MouseEvent) => {
         e.stopPropagation();
-        const base = current >= 4 ? current : (parseInt(draftValue, 10) || 4);
+        const base = current >= 4 ? current : parseInt(draftValue, 10) || 4;
         const next = Math.min(limit, base + 1);
         setDraftValue(String(next));
         onChange(String(next));
@@ -1582,7 +1604,7 @@ function CountPicker({ value, max, onChange }: { value: string; max: number; onC
 
     const handleStepDown = (e: React.MouseEvent) => {
         e.stopPropagation();
-        const base = current >= 4 ? current : (parseInt(draftValue, 10) || 4);
+        const base = current >= 4 ? current : parseInt(draftValue, 10) || 4;
         const next = Math.max(1, base - 1);
         setDraftValue(String(next));
         onChange(String(next));
@@ -1603,13 +1625,13 @@ function CountPicker({ value, max, onChange }: { value: string; max: number; onC
             e.currentTarget.blur();
         } else if (e.key === "ArrowUp") {
             e.preventDefault();
-            const base = current >= 4 ? current : (parseInt(draftValue, 10) || 4);
+            const base = current >= 4 ? current : parseInt(draftValue, 10) || 4;
             const next = Math.min(limit, base + 1);
             setDraftValue(String(next));
             onChange(String(next));
         } else if (e.key === "ArrowDown") {
             e.preventDefault();
-            const base = current >= 4 ? current : (parseInt(draftValue, 10) || 4);
+            const base = current >= 4 ? current : parseInt(draftValue, 10) || 4;
             const next = Math.max(1, base - 1);
             setDraftValue(String(next));
             onChange(String(next));
@@ -1621,21 +1643,12 @@ function CountPicker({ value, max, onChange }: { value: string; max: number; onC
             <span>生成张数</span>
             <div>
                 {Array.from({ length: Math.min(3, limit) }, (_, index) => index + 1).map((item) => (
-                    <button
-                        key={item}
-                        type="button"
-                        aria-pressed={current === item}
-                        className={current === item ? "is-active" : ""}
-                        onClick={() => onChange(String(item))}
-                    >
+                    <button key={item} type="button" aria-pressed={current === item} className={current === item ? "is-active" : ""} onClick={() => onChange(String(item))}>
                         {item}
                     </button>
                 ))}
                 {limit >= 4 ? (
-                    <div
-                        className={`workbench-count-stepper ${isSelected ? "is-active" : ""}`}
-                        onClick={handleSelectStepper}
-                    >
+                    <div className={`workbench-count-stepper ${isSelected ? "is-active" : ""}`} onClick={handleSelectStepper}>
                         <input
                             type="text"
                             inputMode="numeric"
@@ -1652,26 +1665,10 @@ function CountPicker({ value, max, onChange }: { value: string; max: number; onC
                             }}
                         />
                         <div className="workbench-count-stepper-controls">
-                            <button
-                                type="button"
-                                tabIndex={-1}
-                                onClick={handleStepUp}
-                                disabled={current >= limit && isSelected}
-                                className="workbench-count-stepper-btn"
-                                title="增加 1 张"
-                                aria-label="增加 1 张"
-                            >
+                            <button type="button" tabIndex={-1} onClick={handleStepUp} disabled={current >= limit && isSelected} className="workbench-count-stepper-btn" title="增加 1 张" aria-label="增加 1 张">
                                 <ChevronUp className="size-2.5" />
                             </button>
-                            <button
-                                type="button"
-                                tabIndex={-1}
-                                onClick={handleStepDown}
-                                disabled={current <= 1 && isSelected}
-                                className="workbench-count-stepper-btn"
-                                title="减少 1 张"
-                                aria-label="减少 1 张"
-                            >
+                            <button type="button" tabIndex={-1} onClick={handleStepDown} disabled={current <= 1 && isSelected} className="workbench-count-stepper-btn" title="减少 1 张" aria-label="减少 1 张">
                                 <ChevronDown className="size-2.5" />
                             </button>
                         </div>
