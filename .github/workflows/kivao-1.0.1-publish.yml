@@ -1,9 +1,9 @@
-name: KIVAO 1.0.3 authorized image publish
+name: KIVAO 1.0.4 authorized image publish
 
 on:
   push:
     tags:
-      - kivao-1.0.3-*
+      - kivao-1.0.4-*
 
 permissions:
   contents: read
