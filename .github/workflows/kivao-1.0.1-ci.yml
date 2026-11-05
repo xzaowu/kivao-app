@@ -1,9 +1,9 @@
-name: KIVAO 1.0.2 CI
+name: KIVAO 1.0.3 CI
 
 on:
   push:
     branches:
-      - release/kivao-1.0.2
+      - release/kivao-1.0.3
 
 permissions:
   contents: read
