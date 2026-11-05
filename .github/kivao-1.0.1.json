@@ -2,7 +2,7 @@
   "repository": "xzaowu/kivao-app",
   "release_version": "1.0.4",
   "ci_branch": "release/kivao-1.0.4",
-  "product_commit": "736cb3b4e5cb061bc32d79eaf77a5e8cd6f2a875",
+  "product_commit": "a647c9e327c6803b119e931f838b366b67fdd610",
   "production_commit": "31ef5e6986fdcdb295c398fd948b89f52a933aa7",
   "production_source": "eeccf718e8ad78aee98ca49d142d0594ea7000b2",
   "excluded_main": "82fc5c03233c33380a5335146c50bb507deb5692",
@@ -14,6 +14,7 @@
     "backend": [
       "backend/internal/app/task_output.go",
       "backend/internal/app/task_output_test.go",
+      "backend/internal/app/cloud_agent_media_test.go",
       "backend/internal/workbench/tasks.go",
       "backend/internal/workbench/service_test.go"
     ],
