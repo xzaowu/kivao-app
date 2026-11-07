@@ -179,7 +179,7 @@ def source_report(sha, release=None):
     return {
         "format_version": 1, "source_commit": sha, "source_tree": git("rev-parse", f"{sha}^{{tree}}"),
         "product_commit": POLICY["product_commit"], "release": release, "application_version": version,
-        "platform": POLICY["platform"], "schema": POLICY["schema"], "schema_changed": False,
+        "platform": POLICY["platform"], "schema": POLICY["schema"], "schema_changed": POLICY["schema_changed"],
         "excluded_main_commits": 14, "source_scope_verified": True, "registry_publish": False,
         "protected_fingerprints": fingerprints,
         "build_args": {"BUILD_VERSION": version, "BUILD_COMMIT": sha, "BUILD_TIME": git("show", "-s", "--format=%cI", sha)},
@@ -261,7 +261,8 @@ def paired_locks(reports):
             raise ValueError("release lock requires verified published registry identities")
         values[ROLES[report["role"]]] = f"ghcr.io/{POLICY['repository']}-{report['role']}@{digest(report.get('registry_digest'))}"
     return {"source_commit": sha, "release": values, "rollback": POLICY["rollback"], "agent_init_required": True,
-            "migrate_image_key": "CANVAS_BACKEND_IMAGE", "schema": 77, "migration_authorized": False,
+            "migrate_image_key": "CANVAS_BACKEND_IMAGE", "schema": POLICY["schema"],
+            "migration_authorized": POLICY["migration_authorized"],
             "preserve": ["yingce", "PostgreSQL 17", "Redis", "existing bind mounts", "127.0.0.1:13100"]}
 
 
@@ -370,7 +371,8 @@ def main():
         bundle = json.loads(args.bundle.read_text())
         # Reconstruct and validate both locks before allowing the existing atomic writer.
         expected = (bundle["rollback"] == POLICY["rollback"] and bundle.get("agent_init_required") is True
-                    and bundle.get("schema") == 77 and bundle.get("migration_authorized") is False)
+                    and bundle.get("schema") == POLICY["schema"]
+                    and bundle.get("migration_authorized") is POLICY["migration_authorized"])
         release_name(bundle["source_commit"], bundle["release"]["CANVAS_IMAGE_TAG"])
         if not expected or set(bundle["release"]) != set(POLICY["rollback"]):
             raise ValueError("bundle lacks the fixed KIVAO r1 rollback or Agent init requirement")

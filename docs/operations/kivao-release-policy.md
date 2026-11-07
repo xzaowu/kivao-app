@@ -4,6 +4,14 @@
 
 下一版产品批次正在 `dev/kivao-next` 收束，见[部署准备](../plans/kivao-next-release-preparation.md)。本批次需要 Schema 77→79；下文 1.0.4 的免迁移操作不能套用，迁移与数据回退验证完成前不放行生产。本轮只提交准备，不发布或部署。
 
+## 当前 1.0.5 部署准备
+
+- 发布配置已从 1.0.4 切到 1.0.5：`.github/kivao-1.0.1.json` 固定 `release_version` 1.0.5、`ci_branch` `release/kivao-1.0.5`、产品冻结提交 `befeefa4cbb8`、上一生产提交 `aae0d4aa4590`（在跑的 1.0.4）、`schema` 79，回滚锁指向已运行成功的 1.0.4 三个 digest。文件名与 `KIVAO_101_*` 变量名保持不变，不新增审批体系。
+- `schema_changed` 为 true，`migration_authorized` 仍为 false。脚本与锁文件里的 Schema、迁移标志改由配置驱动：77→79 演练与授权完成前，锁里记录的仍然是“未授权迁移”，`apply-lock` 也按该值校验，不能靠改环境变量绕过。
+- 本轮允许的受保护路径变更收敛为 `backend` 101 个、`plugin-packages` 19 个、`web/src/services/api` 7 个、`web/src/lib/plugins` 3 个文件；`VERSION`、`web/package.json`、`web/bun.lock`、两个 Dockerfile、`docker-compose.deploy.yml`、`nginx.conf`、`yingce-agent/server.mjs` 指纹必须与 1.0.4 一致，Agent Dockerfile 与品牌资源哈希沿用原值。
+- 专用 CI 只在 push 到 `release/kivao-1.0.5` 时构建三个 linux/amd64 候选镜像并验证来源，不登录 registry、不推送；镜像发布仍只由 `kivao-1.0.5-*` 注解标签触发，需要启用开关、24 小时内的所有者授权记录和同一 SHA 的成功 CI。
+- 本轮仍未创建标签、未推送镜像、未连接生产、未执行迁移；构建产物只作为候选证据。
+
 ## 当前 1.0.4 发布增量
 
 - 从已运行的生产 `31ef5e6986fdcdb295c398fd948b89f52a933aa7` 开始，产品冻结提交 `a647c9e327c6803b119e931f838b366b67fdd610`：工作台命名素材组与一键生成、任务摘要和历史恢复，以及手机模型选择器返回全部分组。

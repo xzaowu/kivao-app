@@ -1,6 +1,6 @@
 # KIVAO 下一版部署准备
 
-本文件随 `dev/kivao-next` 本轮产品提交保存，仅记录候选准备，不构成镜像发布、生产备份、迁移或部署授权。建议版本为 1.0.5；尚未创建发布分支、标签或候选镜像。实际候选 SHA 使用提交后的完整 Git SHA，不能用旧版 CI 代替。
+本文件随 `dev/kivao-next` 本轮产品提交保存，仅记录候选准备，不构成镜像发布、生产备份、迁移或部署授权。版本为 1.0.5；本轮已把发布配置、脚本和 CI 切到该候选（见下文“已完成的部署准备”），尚未创建标签、候选镜像或执行迁移。实际候选 SHA 使用提交后的完整 Git SHA，不能用旧版 CI 代替。
 
 ## 基线与范围
 
@@ -39,10 +39,29 @@ agent   ghcr.io/xzaowu/kivao-app-agent@sha256:833cf05370c098030a562942b9b3a10b26
 
 备份遵循已约定的一个完整恢复点：制作并验证新恢复点期间先保留旧点，只有新恢复点可恢复且上线验收通过后才清理旧点。本轮不创建或清理任何生产备份。数据库、data 隐藏文件和 `.settings-key`、媒体/插件、Web 静态资源、Redis 一致性持久化副本、部署配置和原镜像锁应配套保留；密钥及业务副本只保存在受控加密归档，不进 Git/CI Artifact。
 
+## 已完成的部署准备（1.0.5）
+
+本轮把发布配置、脚本、CI 与发布工作流一起切到 1.0.5，仍未产生标签、镜像或生产动作：
+
+```text
+release_version   1.0.5
+ci_branch         release/kivao-1.0.5
+product_commit    befeefa4cbb8ae94629a93cd3da673049fb7e737
+production_commit aae0d4aa45902540497edb0042fe901fd736e0e1   (在跑的 1.0.4)
+schema            79（schema_changed=true，migration_authorized=false）
+rollback          kivao-1.0.4-aae0d4aa4590-r1 + 上方三个 digest
+```
+
+- 允许的受保护路径变更取自 `aae0d4aa..befeefa4` 的真实差异：`backend` 101、`plugin-packages` 19、`web/src/services/api` 7、`web/src/lib/plugins` 3 个文件。`VERSION`、`web/package.json`、`web/bun.lock`、`Dockerfile`、`backend/Dockerfile`、`yingce-agent/Dockerfile`、`docker-compose.deploy.yml`、`nginx.conf`、`yingce-agent/server.mjs` 均未变，Agent Dockerfile 与品牌资源哈希沿用原值。
+- `scripts/kivao-release.py` 里的 Schema、`schema_changed` 与 `migration_authorized` 不再硬编码，改由配置读取；`apply-lock` 用同一份配置复校锁文件，因此迁移未授权时锁文件无法伪装成已授权。
+- 专用 CI 只在 push `release/kivao-1.0.5` 时构建并验证三个 linux/amd64 候选镜像，不登录 registry、不推送；镜像发布仍只由 `kivao-1.0.5-*` 注解标签触发。
+- 本地可验证部分：`test_kivao_build_baseline.py` 4 项通过；`test_kivao_release.py` 13/14 通过、`test_kivao_apply_image_lock.py` 4/5 通过，唯一失败项是 `os.geteuid()` 在 Windows 上不存在，属本机环境限制，需在 CI 的 ubuntu-24.04 上取得最终结论。
+- 仍未做：候选 SHA 的完整 CI、标签、镜像推送、PG17 迁移/回退演练、生产只读复核与维护窗口。
+
 ## 发布前剩余工作
 
 1. 确认本次提交范围后，再单独授权推送和候选镜像发布。复用现有发布机制，更新精确 SHA、版本、允许变更范围及回滚基线，不新增审批体系。
-2. 现有 `.github/kivao-1.0.1.json` 和 `scripts/kivao-release.py` 仍固定 1.0.4、Schema 77 和 `migration_authorized: false`；首发 `kivao-apply-image-lock.py` 也只接受首发版本。它们当前不能用于本候选，禁止绕过校验或只修改环境中的镜像地址。
+2. 发布配置与脚本已切到 1.0.5、Schema 79 和 `migration_authorized: false`（见上节）；`kivao-apply-image-lock.py` 保持通用写入器，由 `apply-lock` 用同一配置复校。禁止绕过校验或只修改环境中的镜像地址。
 3. 完成新 SHA 的完整 CI、三个 AMD64 镜像构建和来源验证；经发布授权后才取得 Registry digest，生成候选 release lock 和指向上方 1.0.4 的 rollback lock。本轮不填造候选 digest。
 4. 完成上述 PG17 备份恢复、迁移及回退演练；重新只读核实生产空闲任务、订单与回调、空间和原镜像，再申请维护窗口与迁移/切换授权。
 5. 真正切换前保留旧 Web 目录，核对入口脚本和静态挂载；只操作三个应用服务，不升级 PG/Redis、不改 Nginx。新服务启动前确认 Schema、迁移账本及 `CANVAS_AUTO_MIGRATE=false` 的实际生效值，禁止入口自动迁移或无意启动 Compose 的 migrate 服务。
