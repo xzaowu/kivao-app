@@ -10,6 +10,8 @@ export type PaymentProvider = {
     pluginEnabled: boolean;
     configured: boolean;
     closeAfterMinutes: number;
+    paymentMethods?: Array<{ id: string; label: string }>;
+    defaultPaymentMethod?: string;
 };
 
 export type TopupSaleStrategy = "unlimited" | "periodic" | "inventory" | "timed";
@@ -55,6 +57,7 @@ export type PaymentOrder = {
     productName: string;
     productKind: TopupProductKind;
     providerId: string;
+    paymentMethod?: string;
     amountFen: number;
     currency: "CNY" | string;
     creditsMicrocredits: number;
@@ -78,6 +81,7 @@ export type PaymentOrder = {
 };
 
 export type PaymentConfigField = {
+    values?: string[];
     name: string;
     type: "string" | "password" | "textarea" | "url" | string;
     label?: string;
@@ -105,7 +109,7 @@ export function listTopupProducts() {
     return http.get<{ products: TopupProduct[] }>("/payments/products");
 }
 
-export function createPaymentOrder(input: { productId: string; providerId: string; idempotencyKey: string }) {
+export function createPaymentOrder(input: { productId: string; providerId: string; paymentMethod?: string; idempotencyKey: string }) {
     return http.post<{ order: PaymentOrder }>("/payments/orders", input);
 }
 

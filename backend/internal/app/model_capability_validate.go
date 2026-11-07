@@ -193,6 +193,18 @@ func validateVideoCapabilityConfig(value *VideoCapabilityConfig) error {
 	if len(value.Operations) == 0 || strings.TrimSpace(value.DefaultOperation) == "" || !containsCapabilityString(value.Operations, value.DefaultOperation) {
 		return BadAuthRequest("请至少配置一个生成模式，并选择默认模式")
 	}
+	if value.DefaultOperation == VideoProcessingOperationDepthCapture && value.Processing != nil {
+		if value.Processing.FPSPolicy != VideoProcessingFPSKeepSource || len(value.Processing.FPSOptions) > 0 {
+			return BadAuthRequest("深度动作捕捉不支持选择输出帧率")
+		}
+		if len(value.Resolutions) != 0 || len(value.Ratios) != 0 {
+			return BadAuthRequest("深度动作捕捉不支持设置输出尺寸或画幅")
+		}
+		if value.Processing.MaxSourceSeconds < 1 || value.Processing.MaxSourceSeconds > MaxVideoDepthCaptureSeconds {
+			return BadAuthRequest("深度动作捕捉源视频时长上限须为 1-600 秒")
+		}
+		return nil
+	}
 	return validateVideoProcessingConfig(value.Processing)
 }
 

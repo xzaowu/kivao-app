@@ -43,7 +43,7 @@ func newWorkbenchTest(t *testing.T) (*Service, *gorm.DB, *allowAdmin) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = sqlDB.Close() })
-	if err := db.AutoMigrate(&model.WorkbenchTool{}, &model.WorkbenchPreset{}, &model.Resource{}); err != nil {
+	if err := db.AutoMigrate(&model.WorkbenchTool{}, &model.WorkbenchPreset{}, &model.Resource{}, &model.SystemSetting{}); err != nil {
 		t.Fatal(err)
 	}
 	admin := &allowAdmin{}

@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
+import { memo, useMemo, useRef, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
 import { Link2 } from "lucide-react";
 import { CANVAS_CONNECTION_STROKE_WIDTH, canvasThemes } from "@/lib/canvas-theme";
 import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
@@ -17,6 +17,7 @@ import type { CanvasNodeRenderLOD } from "@/lib/canvas/canvas-node-lod";
 import type { CanvasSpatialBounds } from "@/lib/canvas/canvas-spatial-index";
 import { useCanvasProgressiveNodeMount } from "./use-canvas-progressive-node-mount";
 import type { CanvasDisplayConnection, CanvasFolderStyle, CanvasFolderTheme, CanvasNodeData, Position, SelectionBox } from "@/types/canvas";
+import { CanvasNodeType } from "@/types/canvas";
 
 type DragPreview = { x: number; y: number; nodeIds: Set<string> } | null;
 type NodeBounds = { left: number; top: number; width: number; height: number; count: number } | null;
@@ -65,6 +66,7 @@ type CanvasProjectWorldLayersProps = {
     onConnectionSelect: (connectionId: string) => void;
     onConnectionContextMenu: (event: ReactMouseEvent<SVGPathElement>, connectionId: string) => void;
     onNodeMouseDown: (event: ReactMouseEvent, nodeId: string) => void;
+    onMediaPlayRequest: (nodeId: string) => void;
     onNodeHoverStart: (nodeId: string) => void;
     onNodeHoverEnd: (nodeId: string) => void;
     onConnectStart: (event: ReactPointerEvent, nodeId: string, handleType: "source" | "target", handleId?: string, anchorRatio?: number) => void;
@@ -93,10 +95,8 @@ const EMPTY_CANVAS_NODES: CanvasNodeData[] = [];
 
 export const CanvasProjectWorldLayers = memo(function CanvasProjectWorldLayers(props: CanvasProjectWorldLayersProps) {
     const { viewportScale } = props;
-    const [activeMediaNodeId, setActiveMediaNodeId] = useState<string | null>(null);
-    useEffect(() => {
-        if (activeMediaNodeId && !props.nodeById.has(activeMediaNodeId)) setActiveMediaNodeId(null);
-    }, [activeMediaNodeId, props.nodeById]);
+    const selectedNode = props.selectedNodeIds.size === 1 ? props.nodeById.get(props.selectedNodeIds.values().next().value!) : undefined;
+    const activeMediaNodeId = selectedNode?.type === CanvasNodeType.Video ? selectedNode.id : null;
     const visibleNodes = useCanvasProgressiveNodeMount(props.candidateNodes, props.immediateRenderNodeIds, props.renderViewBounds);
     const orderedVisibleNodes = useMemo(() => [
         ...visibleNodes.filter(isFrameNode),
@@ -179,7 +179,7 @@ export const CanvasProjectWorldLayers = memo(function CanvasProjectWorldLayers(p
                         scale={viewportScale}
                         isSelected={props.selectedNodeIds.has(node.id)}
                         mediaActive={activeMediaNodeId === node.id}
-                        onMediaPlayRequest={setActiveMediaNodeId}
+                        onMediaPlayRequest={props.onMediaPlayRequest}
                         isRelated={props.relatedNodeIds.has(node.id)}
                         isFocusRelated={props.activeNodeId === node.id}
                         isConnectionTarget={props.connectionTargetNodeId === node.id || props.batchConnectionPreview?.targetNodeId === node.id}

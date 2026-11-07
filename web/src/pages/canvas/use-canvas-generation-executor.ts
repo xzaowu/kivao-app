@@ -104,6 +104,10 @@ export function useCanvasGenerationExecutor({
                 nodeId,
                 async () => {
                     const sourceNode = nodesRef.current.find((node) => node.id === nodeId);
+                    if (sourceNode?.metadata?.videoDepthCapture) {
+                        setDialogNodeId(sourceNode.id);
+                        return;
+                    }
                     if (isCanvasNodeGenerating(sourceNode)) {
                         message.info("该节点的生成任务仍在进行中，请等待完成后再生成");
                         return;

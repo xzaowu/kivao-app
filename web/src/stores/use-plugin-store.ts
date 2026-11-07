@@ -47,7 +47,13 @@ export const usePluginStore = create<PluginStore>()(
                     installations: state.installations.map((item) => item.manifest.id === pluginId ? { ...item, enabled, updatedAt: now(), lastError: undefined } : item),
                 })),
             setRuntimeStatuses: (runtimeStatuses) => set({ runtimeStatuses }),
-            setPluginStates: (pluginStates) => set({ pluginStates }),
+            setPluginStates: (pluginStates) => set((state) => {
+                const installations = state.installations.map((item) => {
+                    const enabled = pluginStates[item.manifest.id]?.effectiveEnabled === true;
+                    return item.enabled === enabled ? item : { ...item, enabled };
+                });
+                return { pluginStates, installations: installations.every((item, index) => item === state.installations[index]) ? state.installations : installations };
+            }),
             updateConfig: (pluginId, config) =>
                 set((state) => ({
                     installations: state.installations.map((item) => item.manifest.id === pluginId ? { ...item, config: { ...item.config, ...config }, updatedAt: now() } : item),
@@ -69,11 +75,6 @@ export const usePluginStore = create<PluginStore>()(
     ),
 );
 
-export function isPluginEffectivelyEnabled(pluginId: string, fallbackEnabled?: boolean) {
-    const state = usePluginStore.getState();
-    const serverState = state.pluginStates[pluginId];
-    if (serverState) return serverState.effectiveEnabled;
-    if (pluginId in state.runtimeStatuses) return state.runtimeStatuses[pluginId] === "enabled";
-    if (fallbackEnabled !== undefined) return fallbackEnabled;
-    return Boolean(state.installations.find((item) => item.manifest.id === pluginId)?.enabled);
+export function isPluginEffectivelyEnabled(pluginId: string) {
+    return usePluginStore.getState().pluginStates[pluginId]?.effectiveEnabled === true;
 }

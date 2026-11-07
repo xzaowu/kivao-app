@@ -70,7 +70,7 @@ export function VerificationFields({ purpose, method, value, onChange, disabled 
             const result = await startVerification({ purpose, method, email: email ? value.email.trim() : undefined, phone: sms ? value.phone.trim() : undefined, password });
             onChange({ ...value, email: email ? value.email.trim().toLowerCase() : "", phone: sms ? value.phone.trim() : "", emailCode: "", smsCode: "", ticket: result.ticket });
             setRemaining(result.retryAfter);
-            message.success(purpose === "login" ? "如该联系方式已验证且账号可用，验证码将发送至该联系方式" : "验证码已发送，10 分钟内有效");
+            message.success((purpose === "login" ? "如该联系方式已验证且账号可用，验证码将发送至该联系方式" : "验证码已发送，10 分钟内有效") + (email ? "。未收到请检查垃圾邮件。" : ""));
         } catch (error) { message.error(error instanceof Error ? error.message : "发送失败，请稍后重试"); }
         finally { setSending(false); inFlight.current = false; }
     };
@@ -100,6 +100,7 @@ export function VerificationFields({ purpose, method, value, onChange, disabled 
                 sendLabel={sendLabel}
             />
         )}
+        {email && <p className="auth-scene-muted m-0 text-xs leading-5">未收到验证码？请检查垃圾邮件或广告邮件文件夹。</p>}
         {method === "sms_email" && <p className="auth-scene-muted m-0 text-xs leading-5">两项验证必须在本次注册中同时通过；修改联系方式后需要重新获取。</p>}
     </div>;
 }

@@ -3,9 +3,10 @@ import { App, Button, Form, Input, InputNumber, Select, Switch, Upload } from "a
 import { AdminModal } from "@/pages/admin/ui/overlays";
 import type { ColumnsType } from "antd/es/table";
 import { CloudUpload, Edit3, Plus, RefreshCw, Search, Trash2, Shapes } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CanvasResourceMentionTextarea } from "@/components/canvas/canvas-resource-mention-textarea";
 import { invalidWorkbenchSlot, workbenchSlotReferences } from "@/lib/workbench-template";
+import { workbenchSlots } from "@/lib/workbench-inputs";
 
 import { AdminPageFrame } from "@/pages/admin/components/admin-shell";
 import { AdminDataTable, AdminStatusBadge } from "@/pages/admin/components/admin-ui";
@@ -17,18 +18,22 @@ import {
     normalizeWorkbenchGuide,
     resolveWorkbenchResourceURL,
     saveAdminWorkbenchTool,
+    saveDefaultWorkbenchExamples,
     setAdminWorkbenchToolEnabled,
+    workbenchExamples,
     type WorkbenchInputContract,
     type WorkbenchKind,
     type WorkbenchReferenceSlot,
     type WorkbenchTool,
     type WorkbenchPromptPreset,
     type WorkbenchResultExample,
+    type WorkbenchResultExampleItem,
 } from "@/services/api/workbench";
 
 import "./workbench-tools.css";
 
 type ToolDraft = {
+    processingOperation: "" | "depth_capture";
     id?: string;
     kind: WorkbenchKind;
     categoryId: string;
@@ -60,6 +65,7 @@ type MediaValue = { id?: string; url?: string };
 type UploadMedia = (file: File, kind: "image" | "video") => Promise<MediaValue>;
 
 const emptyDraft = (kind: WorkbenchKind = "image"): ToolDraft => ({
+    processingOperation: "",
     kind,
     categoryId: "recommended",
     name: "",
@@ -77,7 +83,7 @@ const emptyDraft = (kind: WorkbenchKind = "image"): ToolDraft => ({
     capability: {},
     guideConfig: {},
     inputContract: { promptRequired: true, minTextReferences: 0, slots: [] },
-    resultExample: { imageResourceIds: [], imageUrls: [] },
+    resultExample: { items: [] },
     presets: [],
     savedPresetIds: [],
 });
@@ -99,6 +105,7 @@ function makeDraft(tool: WorkbenchTool): ToolDraft {
     return {
         ...emptyDraft(tool.kind),
         ...tool,
+        processingOperation: tool.processingOperation || "",
         capability,
         guideConfig: record(tool.guide),
         guideText: normalizeWorkbenchGuide(tool.guide),
@@ -109,7 +116,7 @@ function makeDraft(tool: WorkbenchTool): ToolDraft {
         recommended: Boolean(tool.recommended),
         recommendationOrder: tool.recommendationOrder || 0,
         inputContract: { ...contract, slots: contract.slots.map((slot) => ({ ...slot })) },
-        resultExample: { ...tool.resultExample, imageResourceIds: tool.resultExample?.imageResourceIds || [] },
+        resultExample: { items: workbenchExamples(tool.resultExample).map((item) => ({ ...item })) },
         presets: tool.presets.map((preset) => ({ ...preset })),
         savedPresetIds: tool.presets.map((preset) => preset.id),
     };
@@ -201,15 +208,76 @@ function SlotEditor({
                     必填
                     <Switch aria-label={`输入 ${index + 1} 必填`} checked={slot.required} onChange={(required) => onChange({ required, minCount: required ? Math.max(1, slot.minCount) : 0 })} />
                 </label>
+                <label>
+                    所有效果通用
+                    <Switch aria-label={`输入 ${index + 1} 所有效果通用`} checked={slot.common !== false} onChange={(common) => onChange({ common })} />
+                </label>
                 <Button disabled={disabled} danger type="text" size="small" onClick={onRemove}>
                     移除输入
                 </Button>
             </div>
+            <label>
+                素材说明（显示在上传框内）
+                <Input.TextArea
+                    aria-label={`输入 ${index + 1} 素材说明`}
+                    value={slot.description || ""}
+                    maxLength={1000}
+                    rows={2}
+                    placeholder="如：可选，上传后参考镜头运动，不上传则使用默认效果"
+                    onChange={(event) => onChange({ description: event.target.value })}
+                />
+            </label>
             <div className="admin-workbench-resource-grid">
                 <ResourceUpload label={`${slot.name || "输入"}封面`} value={{ id: slot.coverResourceId, url: slot.coverUrl }} disabled={disabled} upload={upload} onChange={(value) => onChange({ coverResourceId: value.id, coverUrl: value.url })} />
-                <ResourceUpload label={`${slot.name || "输入"}示例`} value={{ id: slot.sampleResourceId, url: slot.sampleUrl }} disabled={disabled} upload={upload} onChange={(value) => onChange({ sampleResourceId: value.id, sampleUrl: value.url })} />
+                <ResourceUpload
+                    label={`${slot.name || "输入"}注意事项图片`}
+                    value={{ id: slot.sampleResourceId, url: slot.sampleUrl }}
+                    disabled={disabled}
+                    upload={upload}
+                    onChange={(value) => onChange({ sampleResourceId: value.id, sampleUrl: value.url })}
+                />
             </div>
         </div>
+    );
+}
+
+function ResultExamplesEditor({ items, disabled, upload, onChange }: { items: WorkbenchResultExampleItem[]; disabled: boolean; upload: UploadMedia; onChange: (items: WorkbenchResultExampleItem[]) => void }) {
+    const update = (index: number, patch: Partial<WorkbenchResultExampleItem>) => onChange(items.map((item, i) => (i === index ? { ...item, ...patch } : item)));
+    return (
+        <>
+            <div className="admin-workbench-result-examples">
+                {items.map((item, index) => (
+                    <div className="admin-workbench-result-example" key={index}>
+                        <ResourceUpload
+                            label={`示例 ${index + 1} ${item.kind === "video" ? "视频" : "图片"}`}
+                            kind={item.kind}
+                            value={{ id: item.resourceId, url: item.url }}
+                            disabled={disabled}
+                            upload={upload}
+                            onChange={(value) => update(index, { resourceId: value.id || "", url: value.url })}
+                        />
+                        <label>
+                            示例标题
+                            <Input disabled={disabled} aria-label={`示例 ${index + 1} 标题`} maxLength={120} value={item.title || ""} onChange={(event) => update(index, { title: event.target.value })} />
+                        </label>
+                        <label>
+                            示例说明
+                            <Input.TextArea disabled={disabled} aria-label={`示例 ${index + 1} 说明`} rows={2} maxLength={2000} value={item.description || ""} onChange={(event) => update(index, { description: event.target.value })} />
+                        </label>
+                        <Button disabled={disabled} danger size="small" aria-label={`移除示例 ${index + 1}`} onClick={() => onChange(items.filter((_, i) => i !== index))}>
+                            移除示例
+                        </Button>
+                    </div>
+                ))}
+            </div>
+            <div className="admin-workbench-resource-grid">
+                {(["image", "video"] as const).map((kind) => (
+                    <Button key={kind} disabled={disabled || items.length >= 20} icon={<Plus className="size-3.5" />} onClick={() => onChange([...items, { resourceId: "", kind, title: "", description: "" }])}>
+                        添加{kind === "image" ? "图片" : "视频"}示例
+                    </Button>
+                ))}
+            </div>
+        </>
     );
 }
 
@@ -223,19 +291,26 @@ export default function WorkbenchToolsPage() {
     const [saving, setSaving] = useState(false);
     const [uploadCount, setUploadCount] = useState(0);
     const [draft, setDraft] = useState<ToolDraft>(emptyDraft());
-    const slotReferences = useMemo(() => workbenchSlotReferences(draft.inputContract.slots), [draft.inputContract.slots]);
+    const [defaultExamples, setDefaultExamples] = useState<WorkbenchResultExampleItem[]>([]);
+    const [defaultDraft, setDefaultDraft] = useState<WorkbenchResultExampleItem[]>([]);
+    const [defaultsOpen, setDefaultsOpen] = useState(false);
+    const [defaultsSaving, setDefaultsSaving] = useState(false);
+    const loadVersion = useRef(0);
     const [form] = Form.useForm();
     const editorBusy = saving || uploadCount > 0;
 
     const reload = useCallback(async () => {
+        const version = ++loadVersion.current;
         setLoading(true);
         try {
             const result = await listWorkbenchTools(kind, undefined, true);
+            if (version !== loadVersion.current) return;
             setTools(result.tools.sort((a, b) => a.sortOrder - b.sortOrder));
+            setDefaultExamples(workbenchExamples(result.defaultExamples));
         } catch (error) {
-            message.error(error instanceof Error ? error.message : "工作台工具加载失败");
+            if (version === loadVersion.current) message.error(error instanceof Error ? error.message : "工作台工具加载失败");
         } finally {
-            setLoading(false);
+            if (version === loadVersion.current) setLoading(false);
         }
     }, [kind, message]);
     useEffect(() => {
@@ -248,12 +323,11 @@ export default function WorkbenchToolsPage() {
         if (tool) {
             [next.iconUrl, next.coverUrl] = await Promise.all([resolveWorkbenchResourceURL(next.iconResourceId), resolveWorkbenchResourceURL(next.coverResourceId)]);
             next.inputContract.slots = await Promise.all(next.inputContract.slots.map(async (slot) => ({ ...slot, coverUrl: await resolveWorkbenchResourceURL(slot.coverResourceId), sampleUrl: await resolveWorkbenchResourceURL(slot.sampleResourceId) })));
-            next.resultExample.imageUrls = await Promise.all((next.resultExample.imageResourceIds || []).map(async (id) => (await resolveWorkbenchResourceURL(id)) || ""));
-            next.resultExample.videoUrl = await resolveWorkbenchResourceURL(next.resultExample.videoResourceId);
+            next.resultExample.items = await Promise.all(workbenchExamples(next.resultExample).map(async (item) => ({ ...item, url: await resolveWorkbenchResourceURL(item.resourceId, "original") })));
         }
         setDraft(next);
         form.resetFields();
-        form.setFieldsValue({ ...next, resultTitle: next.resultExample.title || "", resultDescription: next.resultExample.description || "" });
+        form.setFieldsValue(next);
         setEditorOpen(true);
     };
 
@@ -278,13 +352,17 @@ export default function WorkbenchToolsPage() {
 
     const save = async () => {
         if (editorBusy) return;
-        let values: ToolDraft & { resultTitle?: string; resultDescription?: string };
+        let values: ToolDraft;
         try {
             values = await form.validateFields();
         } catch {
             return;
         }
         const slots = draft.inputContract.slots;
+        if (workbenchExamples(draft.resultExample).some((item) => !item.resourceId)) {
+            message.warning("请为每个作品示例上传文件，或移除空白示例");
+            return;
+        }
         if (slots.some((slot) => !slot.name.trim() || !slot.mediaTypes.length || slot.minCount > slot.maxCount)) {
             message.warning("请补齐输入名称、媒体类型和有效数量范围");
             return;
@@ -293,7 +371,7 @@ export default function WorkbenchToolsPage() {
             message.warning("请补齐预设名称和提示词");
             return;
         }
-        const referenceError = draft.presets.map((preset) => invalidWorkbenchSlot(preset.promptTemplate, slots)).find(Boolean);
+        const referenceError = draft.presets.map((preset) => invalidWorkbenchSlot(preset.promptTemplate, workbenchSlots(draft, preset))).find(Boolean);
         if (referenceError) {
             message.warning(referenceError);
             return;
@@ -313,6 +391,7 @@ export default function WorkbenchToolsPage() {
                 enabled: values.enabled,
                 capability: {
                     ...draft.capability,
+                    processingOperation: draft.processingOperation,
                     supportedModes: values.supportedModes,
                     searchKeywords: values.searchKeywords,
                     surfaces: values.surfaces,
@@ -324,7 +403,7 @@ export default function WorkbenchToolsPage() {
                     ...draft.guideConfig,
                     lines: values.guideText.trim().split("\n").filter(Boolean),
                     inputHint: values.inputHint.trim(),
-                    resultExample: { title: values.resultTitle?.trim() || "", description: values.resultDescription?.trim() || "", imageResourceIds: draft.resultExample.imageResourceIds || [], videoResourceId: draft.resultExample.videoResourceId || "" },
+                    resultExample: { items: workbenchExamples(draft.resultExample).map(({ url: _url, ...item }) => ({ ...item, title: item.title?.trim() || "", description: item.description?.trim() || "" })) },
                 },
                 presets: draft.presets.map((preset, index) => ({ ...preset, id: draft.savedPresetIds.includes(preset.id) ? preset.id : "", sortOrder: index })),
             });
@@ -347,9 +426,49 @@ export default function WorkbenchToolsPage() {
             message.error(error instanceof Error ? error.message : "工具状态更新失败");
         }
     };
-    const updateSlot = (key: string, patch: Partial<WorkbenchReferenceSlot>) =>
-        setDraft((current) => ({ ...current, inputContract: { ...current.inputContract, slots: current.inputContract.slots.map((slot) => (slot.key === key ? { ...slot, ...patch } : slot)) } }));
+    const updateSlot = (key: string, patch?: Partial<WorkbenchReferenceSlot>) =>
+        setDraft((current) => {
+            const slots = patch ? current.inputContract.slots.map((slot) => (slot.key === key ? { ...slot, ...patch } : slot)) : current.inputContract.slots.filter((slot) => slot.key !== key);
+            return {
+                ...current,
+                inputContract: { ...current.inputContract, slots },
+                presets: current.presets.map((preset) => {
+                    const settings = preset.defaultParameters?.workbenchInputs;
+                    if (!settings) return preset;
+                    const activeSlots = workbenchSlots({ inputContract: { ...current.inputContract, slots } }, preset);
+                    return {
+                        ...preset,
+                        defaultParameters: {
+                            ...preset.defaultParameters,
+                            workbenchInputs: {
+                                ...settings,
+                                slotKeys: settings.slotKeys?.filter((key) => slots.some((slot) => slot.key === key)),
+                                noticeSlotKeys: (settings.noticeSlotKeys || []).filter((key) => activeSlots.some((slot) => slot.key === key && slot.sampleResourceId)),
+                            },
+                        },
+                    };
+                }),
+            };
+        });
     const updatePreset = (id: string, patch: Partial<WorkbenchPromptPreset>) => setDraft((current) => ({ ...current, presets: current.presets.map((preset) => (preset.id === id ? { ...preset, ...patch } : preset)) }));
+    const saveDefaults = async () => {
+        if (defaultsSaving || uploadCount) return;
+        if (defaultDraft.some((item) => !item.resourceId)) {
+            message.warning("请上传示例文件或移除空白示例");
+            return;
+        }
+        setDefaultsSaving(true);
+        try {
+            const saved = await saveDefaultWorkbenchExamples(kind, defaultDraft);
+            setDefaultExamples(workbenchExamples(saved));
+            setDefaultsOpen(false);
+            message.success("默认状态示例已保存");
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "保存默认示例失败");
+        } finally {
+            setDefaultsSaving(false);
+        }
+    };
     const columns: ColumnsType<WorkbenchTool> = [
         {
             title: "工具",
@@ -397,9 +516,20 @@ export default function WorkbenchToolsPage() {
             description="管理生图与视频的工具、场景输入和示例素材"
             scroll
             actions={
-                <Button type="primary" icon={<Plus className="size-4" />} onClick={() => void openEditor()}>
-                    新建工具
-                </Button>
+                <>
+                    <Button
+                        disabled={loading}
+                        onClick={() => {
+                            setDefaultDraft(defaultExamples.map((item) => ({ ...item })));
+                            setDefaultsOpen(true);
+                        }}
+                    >
+                        默认状态示例
+                    </Button>
+                    <Button type="primary" icon={<Plus className="size-4" />} onClick={() => void openEditor()}>
+                        新建工具
+                    </Button>
+                </>
             }
         >
             <div className="admin-workbench-tools">
@@ -423,6 +553,24 @@ export default function WorkbenchToolsPage() {
                     empty={<div className="admin-workbench-tools-empty">当前类型还没有工具，使用“新建工具”创建首个目录项。</div>}
                 />
             </div>
+            <AdminModal
+                title={`默认${kind === "image" ? "图片生成" : "视频生成"}示例`}
+                open={defaultsOpen}
+                onCancel={() => !defaultsSaving && !uploadCount && setDefaultsOpen(false)}
+                onOk={() => void saveDefaults()}
+                okText="保存"
+                confirmLoading={defaultsSaving}
+                okButtonProps={{ disabled: uploadCount > 0 }}
+                cancelButtonProps={{ disabled: defaultsSaving || uploadCount > 0 }}
+                closable={!defaultsSaving && !uploadCount}
+                maskClosable={!defaultsSaving && !uploadCount}
+                keyboard={!defaultsSaving && !uploadCount}
+                width={900}
+                destroyOnHidden
+            >
+                <p>未选择创作场景时展示，图片生成和视频生成分别配置。最多 20 项，每项可单独设置标题和说明。</p>
+                <ResultExamplesEditor items={defaultDraft} disabled={defaultsSaving || uploadCount > 0} upload={upload} onChange={setDefaultDraft} />
+            </AdminModal>
             <AdminModal
                 title={draft.id ? "编辑工作台工具" : "新建工作台工具"}
                 open={editorOpen}
@@ -453,12 +601,46 @@ export default function WorkbenchToolsPage() {
                                     setDraft((current) => ({
                                         ...current,
                                         kind: value,
+                                        processingOperation: "",
                                         inputContract: { ...current.inputContract, slots: value === "image" ? current.inputContract.slots.map((slot) => ({ ...slot, mediaTypes: ["image"] })) : current.inputContract.slots },
                                     }));
                                     form.setFieldValue("supportedModes", [value]);
                                 }}
                             />
                         </Form.Item>
+                        {draft.kind === "video" ? (
+                            <Form.Item label="执行方式">
+                                <Select
+                                    aria-label="工具执行方式"
+                                    disabled={Boolean(draft.id)}
+                                    value={draft.processingOperation}
+                                    options={[
+                                        { value: "", label: "普通视频生成" },
+                                        { value: "depth_capture", label: "深度动作捕捉", disabled: draft.presets.length > 0 },
+                                    ]}
+                                    onChange={(value: "" | "depth_capture") => {
+                                        setDraft((current) => ({
+                                            ...current,
+                                            processingOperation: value,
+                                            ...(value
+                                                ? {
+                                                      supportedModes: ["video"],
+                                                      inputContract: {
+                                                          promptRequired: false,
+                                                          minTextReferences: 0,
+                                                          slots: [{ key: "source_video", name: "源视频", resourceKind: "asset", mediaTypes: ["video"], required: true, minCount: 1, maxCount: 1, common: true }],
+                                                      },
+                                                  }
+                                                : {}),
+                                        }));
+                                        if (value) {
+                                            form.setFieldValue("supportedModes", ["video"]);
+                                            if (!form.getFieldValue("name")) form.setFieldValue("name", "深度动作捕捉");
+                                        }
+                                    }}
+                                />
+                            </Form.Item>
+                        ) : null}
                         <Form.Item name="categoryId" label="业务分类" rules={[{ required: true }]}>
                             <Select options={workbenchCategories} />
                         </Form.Item>
@@ -502,6 +684,7 @@ export default function WorkbenchToolsPage() {
                         <label>
                             补充内容必填{" "}
                             <Switch
+                                disabled={draft.processingOperation === "depth_capture"}
                                 checked={draft.inputContract.minTextReferences > 0}
                                 onChange={(required) => setDraft((current) => ({ ...current, inputContract: { ...current.inputContract, minTextReferences: required ? 1 : 0, ...(required ? { promptRequired: true } : {}) } }))}
                             />
@@ -509,6 +692,7 @@ export default function WorkbenchToolsPage() {
                         <label>
                             提示词必填{" "}
                             <Switch
+                                disabled={draft.processingOperation === "depth_capture"}
                                 checked={draft.inputContract.promptRequired || draft.inputContract.minTextReferences > 0}
                                 onChange={(promptRequired) => setDraft((current) => ({ ...current, inputContract: { ...current.inputContract, promptRequired, minTextReferences: 0 } }))}
                             />
@@ -529,16 +713,7 @@ export default function WorkbenchToolsPage() {
                     </div>
                     <div className="admin-workbench-slots">
                         {draft.inputContract.slots.map((slot, index) => (
-                            <SlotEditor
-                                key={slot.key}
-                                slot={slot}
-                                index={index}
-                                kind={draft.kind}
-                                disabled={editorBusy}
-                                upload={upload}
-                                onChange={(patch) => updateSlot(slot.key, patch)}
-                                onRemove={() => setDraft((current) => ({ ...current, inputContract: { ...current.inputContract, slots: current.inputContract.slots.filter((item) => item.key !== slot.key) } }))}
-                            />
+                            <SlotEditor key={slot.key} slot={slot} index={index} kind={draft.kind} disabled={editorBusy} upload={upload} onChange={(patch) => updateSlot(slot.key, patch)} onRemove={() => updateSlot(slot.key)} />
                         ))}
                     </div>
                     <div className="admin-workbench-section-title">
@@ -569,101 +744,85 @@ export default function WorkbenchToolsPage() {
                     </div>
                     <div className="admin-workbench-section-title">
                         <strong>结果示例</strong>
-                        <small>上传实际效果图片或视频，帮助用户了解工具用途。</small>
+                        <small>最多 20 个图片或视频示例；标题叠加在作品上方，说明显示在作品下方。</small>
                     </div>
-                    <div className="admin-workbench-tool-grid">
-                        <Form.Item name="resultTitle" label="示例标题">
-                            <Input maxLength={120} />
-                        </Form.Item>
-                        <Form.Item name="resultDescription" label="示例说明">
-                            <Input.TextArea rows={2} maxLength={500} />
-                        </Form.Item>
-                    </div>
-                    <div className="admin-workbench-example-previews">
-                        {draft.resultExample.imageResourceIds?.map((id, index) => (
-                            <ResourceUpload
-                                key={id}
-                                label={`图片示例 ${index + 1}`}
-                                value={{ id, url: draft.resultExample.imageUrls?.[index] }}
-                                disabled={editorBusy}
-                                upload={upload}
-                                onChange={(value) =>
-                                    setDraft((current) => ({
-                                        ...current,
-                                        resultExample: {
-                                            ...current.resultExample,
-                                            imageResourceIds: current.resultExample.imageResourceIds?.flatMap((item, i) => (i === index ? (value.id ? [value.id] : []) : [item])),
-                                            imageUrls: current.resultExample.imageResourceIds?.flatMap((_, i) => (i === index ? (value.id ? [value.url || ""] : []) : [current.resultExample.imageUrls?.[i] || ""])),
-                                        },
-                                    }))
-                                }
-                            />
-                        ))}
-                    </div>
-                    <div className="admin-workbench-resource-grid">
-                        {(draft.resultExample.imageResourceIds?.length || 0) < 8 && (
-                            <ResourceUpload
-                                label="添加图片示例"
-                                value={{}}
-                                disabled={editorBusy}
-                                upload={upload}
-                                onChange={(value) =>
-                                    value.id &&
-                                    setDraft((current) => ({
-                                        ...current,
-                                        resultExample: { ...current.resultExample, imageResourceIds: [...(current.resultExample.imageResourceIds || []), value.id!], imageUrls: [...(current.resultExample.imageUrls || []), value.url || ""] },
-                                    }))
-                                }
-                            />
-                        )}
-                        {draft.kind === "video" && (
-                            <ResourceUpload
-                                label="视频示例"
-                                kind="video"
-                                value={{ id: draft.resultExample.videoResourceId, url: draft.resultExample.videoUrl }}
-                                disabled={editorBusy}
-                                upload={upload}
-                                onChange={(value) => setDraft((current) => ({ ...current, resultExample: { ...current.resultExample, videoResourceId: value.id, videoUrl: value.url } }))}
-                            />
-                        )}
-                    </div>
-                    <section className="admin-workbench-presets">
-                        <header>
-                            <div>
-                                <strong>预设提示词</strong>
-                                <small>用户只看到预设名称和简介。输入 @ 选择素材输入区，引用该组全部素材；重命名不会影响绑定。可选输入未上传时标记为未提供。</small>
-                            </div>
-                            <Button
-                                size="small"
-                                disabled={draft.presets.length >= 50}
-                                icon={<Plus className="size-3.5" />}
-                                onClick={() => setDraft((current) => ({ ...current, presets: [...current.presets, { id: createClientUUID(), name: "", promptTemplate: "", summary: "", enabled: true }] }))}
-                            >
-                                添加预设
-                            </Button>
-                        </header>
-                        {draft.presets.map((preset, index) => (
-                            <div className="admin-workbench-preset-row" key={preset.id}>
-                                <Input aria-label={`预设 ${index + 1} 名称`} placeholder="预设名称" value={preset.name} onChange={(event) => updatePreset(preset.id, { name: event.target.value })} />
-                                <Input aria-label={`预设 ${index + 1} 简介`} placeholder="一句话说明" value={preset.summary} onChange={(event) => updatePreset(preset.id, { summary: event.target.value })} />
-                                <CanvasResourceMentionTextarea
-                                    aria-label={`预设 ${index + 1} 提示词`}
-                                    containerClassName="admin-workbench-template"
-                                    references={slotReferences}
-                                    sendOnEnter={false}
-                                    placeholder="输入 @ 引用素材，例如商品原图"
-                                    value={preset.promptTemplate}
-                                    onChange={(promptTemplate) => updatePreset(preset.id, { promptTemplate })}
-                                />
-                                <Switch aria-label={`启用预设 ${index + 1}`} checked={preset.enabled} onChange={(enabled) => updatePreset(preset.id, { enabled })} />
-                                {!draft.savedPresetIds.includes(preset.id) && (
-                                    <Button danger size="small" onClick={() => setDraft((current) => ({ ...current, presets: current.presets.filter((item) => item.id !== preset.id) }))}>
-                                        移除
-                                    </Button>
-                                )}
-                            </div>
-                        ))}
-                    </section>
+                    <ResultExamplesEditor items={workbenchExamples(draft.resultExample)} disabled={editorBusy} upload={upload} onChange={(items) => setDraft((current) => ({ ...current, resultExample: { items } }))} />
+                    {draft.processingOperation !== "depth_capture" ? (
+                        <section className="admin-workbench-presets">
+                            <header>
+                                <div>
+                                    <strong>预设提示词</strong>
+                                    <small>用户只看到预设名称和简介。输入 @ 选择素材输入区，引用该组全部素材；重命名不会影响绑定。可选输入未上传时标记为未提供。</small>
+                                </div>
+                                <Button
+                                    size="small"
+                                    disabled={draft.presets.length >= 50}
+                                    icon={<Plus className="size-3.5" />}
+                                    onClick={() => setDraft((current) => ({ ...current, presets: [...current.presets, { id: createClientUUID(), name: "", promptTemplate: "", summary: "", enabled: true }] }))}
+                                >
+                                    添加预设
+                                </Button>
+                            </header>
+                            {draft.presets.map((preset, index) => (
+                                <div className="admin-workbench-preset-row" key={preset.id}>
+                                    <Input aria-label={`预设 ${index + 1} 名称`} placeholder="预设名称" value={preset.name} onChange={(event) => updatePreset(preset.id, { name: event.target.value })} />
+                                    <Input aria-label={`预设 ${index + 1} 简介`} placeholder="一句话说明" value={preset.summary} onChange={(event) => updatePreset(preset.id, { summary: event.target.value })} />
+                                    <CanvasResourceMentionTextarea
+                                        aria-label={`预设 ${index + 1} 提示词`}
+                                        containerClassName="admin-workbench-template"
+                                        references={workbenchSlotReferences(workbenchSlots(draft, preset))}
+                                        sendOnEnter={false}
+                                        placeholder="输入 @ 引用素材，例如商品原图"
+                                        value={preset.promptTemplate}
+                                        onChange={(promptTemplate) => updatePreset(preset.id, { promptTemplate })}
+                                    />
+                                    <Switch aria-label={`启用预设 ${index + 1}`} checked={preset.enabled} onChange={(enabled) => updatePreset(preset.id, { enabled })} />
+                                    <div className="admin-workbench-preset-inputs">
+                                        <label>
+                                            本效果使用的专用素材（通用素材始终显示）
+                                            <Select
+                                                mode="multiple"
+                                                aria-label={`预设 ${index + 1} 专用素材`}
+                                                value={workbenchSlots(draft, preset)
+                                                    .filter((slot) => slot.common === false)
+                                                    .map((slot) => slot.key)}
+                                                options={draft.inputContract.slots.filter((slot) => slot.common === false).map((slot) => ({ value: slot.key, label: slot.name || "未命名素材" }))}
+                                                onChange={(slotKeys: string[]) =>
+                                                    updatePreset(preset.id, {
+                                                        defaultParameters: {
+                                                            ...preset.defaultParameters,
+                                                            workbenchInputs: {
+                                                                slotKeys,
+                                                                noticeSlotKeys: (preset.defaultParameters?.workbenchInputs?.noticeSlotKeys || []).filter((key) =>
+                                                                    draft.inputContract.slots.some((slot) => slot.key === key && (slot.common !== false || slotKeys.includes(key))),
+                                                                ),
+                                                            },
+                                                        },
+                                                    })
+                                                }
+                                            />
+                                        </label>
+                                        <label>
+                                            显示“查看注意事项”的素材
+                                            <Select
+                                                mode="multiple"
+                                                aria-label={`预设 ${index + 1} 注意事项`}
+                                                value={preset.defaultParameters?.workbenchInputs?.noticeSlotKeys || []}
+                                                options={workbenchSlots(draft, preset).map((slot) => ({ value: slot.key, label: slot.name || "未命名素材", disabled: !slot.sampleResourceId }))}
+                                                onChange={(noticeSlotKeys: string[]) => updatePreset(preset.id, { defaultParameters: { ...preset.defaultParameters, workbenchInputs: { ...preset.defaultParameters?.workbenchInputs, noticeSlotKeys } } })}
+                                            />
+                                        </label>
+                                        <small>关闭“所有效果通用”后，可在这里按效果选择素材。先上传素材的注意事项图片，再开启对应按钮。</small>
+                                    </div>
+                                    {!draft.savedPresetIds.includes(preset.id) && (
+                                        <Button danger size="small" onClick={() => setDraft((current) => ({ ...current, presets: current.presets.filter((item) => item.id !== preset.id) }))}>
+                                            移除
+                                        </Button>
+                                    )}
+                                </div>
+                            ))}
+                        </section>
+                    ) : null}
                 </Form>
             </AdminModal>
         </AdminPageFrame>

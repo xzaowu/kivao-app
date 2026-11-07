@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { App, Button, Skeleton } from "antd";
 import { Switch } from "@/pages/admin/ui/controls";
-import { AlertTriangle, Clapperboard, Coins, ListChecks, MonitorCog, PlugZap, RadioTower, RefreshCw, ShieldCheck, Boxes, ImageIcon, Quote } from "lucide-react";
+import { AlertTriangle, ArrowRightLeft, Clapperboard, Coins, Folder, Layers, ListChecks, MonitorCog, Pencil, PlugZap, RadioTower, RefreshCw, Boxes, ImageIcon } from "lucide-react";
 
 import { Link } from "react-router";
 
@@ -12,7 +12,20 @@ import { AdminStatusBadge } from "./admin-ui";
 import "./feature-availability-panel.css";
 
 type FeatureKey =
-    "shortDramaEnabled" | "taskCenterEnabled" | "creditsEnabled" | "customChannelsEnabled" | "inspirationSourcesVisible" | "frontendModelsEnabled" | "pluginCenterEnabled" | "systemPluginsVisibleToUsers" | "imageWorkbenchEnabled" | "videoWorkbenchEnabled";
+    | "shortDramaEnabled"
+    | "taskCenterEnabled"
+    | "creditsEnabled"
+    | "customChannelsEnabled"
+    | "inspirationSourcesVisible"
+    | "frontendModelsEnabled"
+    | "pluginCenterEnabled"
+    | "systemPluginsVisibleToUsers"
+    | "imageWorkbenchEnabled"
+    | "videoWorkbenchEnabled"
+    | "canvasConversionEnabled"
+    | "canvasDrawingEnabled"
+    | "canvasFolderEnabled"
+    | "canvasFrameEnabled";
 type FeatureRow = {
     key: FeatureKey;
     title: string;
@@ -32,6 +45,10 @@ const editableFeatureKeys: FeatureKey[] = [
     "frontendModelsEnabled",
     "pluginCenterEnabled",
     "systemPluginsVisibleToUsers",
+    "canvasConversionEnabled",
+    "canvasDrawingEnabled",
+    "canvasFolderEnabled",
+    "canvasFrameEnabled",
 ];
 
 const workspaceFeatureRows: FeatureRow[] = [
@@ -60,12 +77,6 @@ const workspaceFeatureRows: FeatureRow[] = [
         icon: <RadioTower className="size-4" aria-hidden="true" />,
     },
     {
-        key: "inspirationSourcesVisible",
-        title: "素材来源署名",
-        description: "显示创作首页的素材来源说明；关闭后隐藏该面板。",
-        icon: <Quote className="size-4" aria-hidden="true" />,
-    },
-    {
         key: "imageWorkbenchEnabled",
         title: "图片生成",
         description: "开放生图入口并允许创建新的工作台图片任务；关闭不删除结果和历史。",
@@ -82,16 +93,9 @@ const workspaceFeatureRows: FeatureRow[] = [
 const pluginFeatureRows: FeatureRow[] = [
     {
         key: "pluginCenterEnabled",
-        title: "插件中心",
-        description: "开放插件中心及插件调用能力。",
+        title: "插件能力",
+        description: "开放插件调用能力；应用和协议插件由后台插件管理统一启停。",
         icon: <PlugZap className="size-4" aria-hidden="true" />,
-    },
-    {
-        key: "systemPluginsVisibleToUsers",
-        title: "系统插件可见性",
-        description: "向普通用户展示系统协议插件和管理员上传插件。",
-        icon: <ShieldCheck className="size-4" aria-hidden="true" />,
-        dependsOn: "pluginCenterEnabled",
     },
 ];
 
@@ -104,7 +108,14 @@ const modelFeatureRows: FeatureRow[] = [
     },
 ];
 
-const allFeatureRows = [...workspaceFeatureRows, ...pluginFeatureRows, ...modelFeatureRows];
+const canvasFeatureRows: FeatureRow[] = [
+    { key: "canvasConversionEnabled", title: "转换节点", description: "开放转换节点的创建入口，AI 转换仍需本机运行时及模型。", icon: <ArrowRightLeft className="size-4" aria-hidden="true" /> },
+    { key: "canvasDrawingEnabled", title: "绘图节点", description: "开放绘图节点的创建入口。", icon: <Pencil className="size-4" aria-hidden="true" /> },
+    { key: "canvasFolderEnabled", title: "文件夹节点", description: "开放画布文件夹的创建入口，不影响素材库文件夹。", icon: <Folder className="size-4" aria-hidden="true" /> },
+    { key: "canvasFrameEnabled", title: "背板节点", description: "开放背板、分镜组及引用组的创建入口。", icon: <Layers className="size-4" aria-hidden="true" /> },
+];
+
+const allFeatureRows = [...workspaceFeatureRows, ...pluginFeatureRows, ...modelFeatureRows, ...canvasFeatureRows];
 const featureByKey = new Map(allFeatureRows.map((item) => [item.key, item]));
 
 export default function FeatureAvailabilityPanel() {
@@ -288,12 +299,11 @@ export default function FeatureAvailabilityPanel() {
 
                 <FeatureDomainPanel
                     title="2. 插件开放范围"
-                    description="先开放插件中心，再决定系统插件是否可见"
+                    description="前台不提供插件管理入口，所有插件由管理员统一控制"
                     icon={<PlugZap className="size-4" aria-hidden="true" />}
                     status={<AdminStatusBadge label={`${enabledPluginFeatures}/${pluginFeatureRows.length} 生效`} tone={enabledPluginFeatures === pluginFeatureRows.length ? "success" : "neutral"} />}
                 >
                     <FeatureSettingRow row={pluginFeatureRows[0]} saved={savedFeatures} draft={draftFeatures} saving={saving} onChange={requestFeatureChange} step={1} />
-                    {draftFeatures.pluginCenterEnabled ? <FeatureSettingRow row={pluginFeatureRows[1]} saved={savedFeatures} draft={draftFeatures} saving={saving} onChange={requestFeatureChange} step={2} /> : null}
                 </FeatureDomainPanel>
 
                 <FeatureDomainPanel
@@ -303,6 +313,17 @@ export default function FeatureAvailabilityPanel() {
                     status={<AdminStatusBadge label={draftFeatures.frontendModelsEnabled ? "前台模型目录" : "系统渠道"} tone="info" />}
                 >
                     <FeatureSourceRow row={modelFeatureRows[0]} saved={savedFeatures} draft={draftFeatures} saving={saving} onChange={requestFeatureChange} />
+                </FeatureDomainPanel>
+
+                <FeatureDomainPanel
+                    title="4. 画布节点"
+                    description="对全站账号控制新建入口；关闭不删除或隐藏已有节点"
+                    icon={<Layers className="size-4" aria-hidden="true" />}
+                    status={<AdminStatusBadge label={`${canvasFeatureRows.filter((row) => draftFeatures[row.key]).length}/${canvasFeatureRows.length} 开放`} tone="neutral" />}
+                >
+                    {canvasFeatureRows.map((row) => (
+                        <FeatureSettingRow key={row.key} row={row} saved={savedFeatures} draft={draftFeatures} saving={saving} onChange={requestFeatureChange} />
+                    ))}
                 </FeatureDomainPanel>
             </div>
         </div>
@@ -394,6 +415,10 @@ function toEditablePayload(features: FeatureAvailability) {
         frontendModelsEnabled: features.frontendModelsEnabled,
         pluginCenterEnabled: features.pluginCenterEnabled,
         systemPluginsVisibleToUsers: features.systemPluginsVisibleToUsers,
+        canvasConversionEnabled: features.canvasConversionEnabled,
+        canvasDrawingEnabled: features.canvasDrawingEnabled,
+        canvasFolderEnabled: features.canvasFolderEnabled,
+        canvasFrameEnabled: features.canvasFrameEnabled,
     };
 }
 
@@ -419,6 +444,10 @@ function parseFeatureAvailability(value: unknown): FeatureAvailability {
         frontendModelsEnabled: record.frontendModelsEnabled as boolean,
         pluginCenterEnabled: record.pluginCenterEnabled as boolean,
         systemPluginsVisibleToUsers: record.systemPluginsVisibleToUsers as boolean,
+        canvasConversionEnabled: record.canvasConversionEnabled as boolean,
+        canvasDrawingEnabled: record.canvasDrawingEnabled as boolean,
+        canvasFolderEnabled: record.canvasFolderEnabled as boolean,
+        canvasFrameEnabled: record.canvasFrameEnabled as boolean,
         configured: typeof record.configured === "boolean" ? record.configured : undefined,
         updatedBy: typeof record.updatedBy === "string" ? record.updatedBy : undefined,
         updatedAt: typeof record.updatedAt === "string" ? record.updatedAt : undefined,

@@ -374,6 +374,7 @@ type (
 	WorkbenchToolView                      = app.WorkbenchToolView
 	WorkbenchPresetView                    = app.WorkbenchPresetView
 	WorkbenchTaskInput                     = app.WorkbenchTaskInput
+	WorkbenchExampleInput                  = app.WorkbenchExampleInput
 	UserAnnouncementFeed                   = app.UserAnnouncementFeed
 	UserAssetPage                          = app.UserAssetPage
 	UserAssetPageFilter                    = app.UserAssetPageFilter

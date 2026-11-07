@@ -64,6 +64,7 @@ type CanvasNodeToolbarProps = {
     onExtractAudioFromVideo: (node: CanvasNodeData) => void;
     onTrimVideoSegments: (node: CanvasNodeData) => void;
     onEnhanceVideo?: (node: CanvasNodeData) => void;
+    onDepthCapture?: (node: CanvasNodeData) => void;
     onSubtitles: (node: CanvasNodeData) => void;
     onTimeline: (node: CanvasNodeData) => void;
     onVersions?: (node: CanvasNodeData) => void;
@@ -138,6 +139,7 @@ export function CanvasNodeToolbar({
     onExtractAudioFromVideo,
     onTrimVideoSegments,
     onEnhanceVideo,
+    onDepthCapture,
     onSubtitles,
     onTimeline,
     onVersions,
@@ -289,7 +291,7 @@ export function CanvasNodeToolbar({
         onNodeSaveAsset: onSaveAsset, onNodeRegionEdit: onRegionEdit, onNodeRemoveBackground: onRemoveBackground, onNodeEmotion: onEmotion, onNodePortraitTexture: onPortraitTexture, onNodeCrop: onCrop,
         onNodeCreateEditCopy: onCreateEditCopy, onNodeRotateImage: onRotateImage,
         onNodeSplit: (target) => onSplit(target, { rows: 2, columns: 2 }), onNodeUpscale: onUpscale, onNodeSuperResolve: onSuperResolve, onNodeAngle: onAngle, onNodeViewImage: onViewImage,
-        onNodeExtractVideoFrames: onExtractVideoFrames, onNodeExtractAudioFromVideo: onExtractAudioFromVideo, onNodeTrimVideoSegments: onTrimVideoSegments, onNodeEnhanceVideo: onEnhanceVideo, onNodeReversePrompt: onReversePrompt, onNodeToggleFreeResize: onToggleFreeResize,
+        onNodeExtractVideoFrames: onExtractVideoFrames, onNodeExtractAudioFromVideo: onExtractAudioFromVideo, onNodeTrimVideoSegments: onTrimVideoSegments, onNodeEnhanceVideo: onEnhanceVideo, onNodeDepthCapture: onDepthCapture, onNodeReversePrompt: onReversePrompt, onNodeToggleFreeResize: onToggleFreeResize,
         onNodeSubtitles: onSubtitles, onNodeTimeline: onTimeline, onNodeVersions: onVersions, onNodeToggleLocked: onToggleLocked, onNodeCopyPrompt: copyImagePrompt,
         onNodeAdoptToDrama: onAdoptToDrama, onNodeRefreshFromDrama: onRefreshFromDrama,
     } as Partial<ToolbarHandlers> as ToolbarHandlers;
@@ -379,7 +381,7 @@ export function CanvasNodeToolbar({
                 className="canvas-node-toolbar-dock flex h-11 max-w-full items-center gap-0.5 overflow-visible rounded-[var(--dock-radius-tight)] border px-2 backdrop-blur-2xl"
                 style={{ ...dockStyle, borderColor: "color-mix(in srgb, currentColor 8%, transparent)" }}
             >
-                {primaryTools.map((tool) => <NodeDockToolButton key={tool.id} tool={tool} iconOnly={narrow} />)}
+                {primaryTools.map((tool) => <NodeDockToolButton key={tool.id} tool={tool} iconOnly={narrow && tool.id !== "depthCapture"} />)}
                 {/* 直接编辑类（primary）与生成/调整菜单分组，长工具条更易扫读。 */}
                 {primaryTools.length > 0 && (adjustTools.length || cameraTools.length || sheetTools.length || processTools.length) ? <span aria-hidden className="aceternity-dock-separator mx-1 h-5 w-px shrink-0" /> : null}
                 {adjustTools.length ? <NodeDockMenuButton menuId="adjust" label="画面调整" icon={<Palette className="size-3.5" />} tools={adjustTools} openMenuId={openMenuId} onOpenChange={handleMenuOpenChange} /> : null}

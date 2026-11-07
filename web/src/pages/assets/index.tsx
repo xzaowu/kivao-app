@@ -580,7 +580,6 @@ export default function AssetsPage() {
                                             <Button type="primary" icon={<Plus />} onClick={openCreate}>新增素材</Button>
                                             <Button icon={<Images />} onClick={() => setBatchUploadOpen(true)}>上传图片</Button>
                                             <Dropdown trigger={["click"]} menu={{ items: [
-                                                { key: "eagle", icon: <FolderOpen />, label: "Eagle 素材库", onClick: () => navigate("/plugins/eagle") },
                                                 { key: "package", icon: <FileUp />, label: "导入素材包", onClick: () => assetInputRef.current?.click() },
                                                 { key: "model", icon: <Upload />, label: "上传 3D 模型", onClick: () => modelInputRef.current?.click() },
                                                 { key: "export", icon: <Download />, label: "导出全部素材", onClick: () => void exportAllAssets() },

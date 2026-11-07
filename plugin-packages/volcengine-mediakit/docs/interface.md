@@ -1,6 +1,10 @@
-# Volcengine AI MediaKit 接口字段
+# Volcengine AI MediaKit 画质增强接口
 
 ## 画质增强（大模型版）
+
+### 响应映射
+
+创建响应的 `task_id` 用于轮询；`success:false` 与 `error.code` 表示失败。轮询完成后提取 `result.video_url`，并将输出时长、帧率和分辨率映射到 usage。协议请求与响应映射保持原样。
 
 - Provider ID：`volcengine-mediakit-enhance-video`，`kind: processing`，能力 `video`。
 - 默认 Base URL：`https://mediakit.cn-beijing.volces.com`。
@@ -28,19 +32,21 @@
 - 上游计费：输出时长（分钟）× 系数 × 2.5 元/分钟；系数由输出分辨率（按短边判定）与帧率档（≤30 / ≤60 / ≤120）决定，720p≤30fps 为 1，每升一档分辨率或帧率翻倍。
 - 平台计费：价格档按 `vquality` × `fpsBand`（`le30` / `le60` / `le120`）配置，支持按次或按秒；按秒时先按源视频时长预扣，成功后按实际输出时长和帧率档结算。
 
+深度动作捕捉已拆为独立插件 `volcengine-mediakit-video-depth`，本插件的启停仅控制画质增强。
+
 <!-- YINGCE_MANIFEST_CONTRACT_START -->
 ## Manifest 完整接口定义
 
-以下 JSON 与插件包内实际 `manifest.json` 逐字段一致，覆盖插件身份、权限、配置、鉴权、参数、校验、创建、Agent、查询、取消、结果下载、响应和 Agent 响应映射。`documentation` 字段的值就是当前完整文档；为避免文档在自身内部无限递归，JSON 中仅用等义占位文本表示正文。
+以下清单与包内 manifest 一致；documentation 正文省略以避免递归。
 
 ```json
 {
   "apiVersion": "yingce.plugin/v2",
   "id": "volcengine-mediakit",
   "name": "Volcengine AI MediaKit",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "author": "Volcengine / 影策",
-  "description": "火山引擎 AI MediaKit 媒体处理工具协议插件，当前提供画质增强（大模型版）。",
+  "description": "火山引擎 AI MediaKit 画质增强（大模型版）独立协议插件。",
   "permissions": [
     "generation.run",
     "media.read"

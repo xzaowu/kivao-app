@@ -143,8 +143,8 @@ export function SkillEditorDrawer({ open, skill, onClose, onSaved }: { open: boo
                     <Form.Item name="markdownUrl" label={isPackageSkill ? "来源地址" : "Markdown 地址"} rules={[{ type: "url", message: "请输入有效的 HTTP(S) 链接" }]}>
                         <Input type="url" inputMode="url" spellCheck={false} placeholder="https://example.com/SKILL.md" />
                     </Form.Item>
-                    <Form.Item name="is_public" label="公开状态" valuePropName="checked" extra="公开后其他用户可以加入使用。">
-                        <Switch checkedChildren="公开" unCheckedChildren="私有" />
+                    <Form.Item name="is_public" label="申请公开" valuePropName="checked" extra="管理员审核通过后其他用户才能查看和加入；公开技能修改后需要重新审核。">
+                        <Switch checkedChildren="申请公开" unCheckedChildren="私有" />
                     </Form.Item>
                 </div>
 

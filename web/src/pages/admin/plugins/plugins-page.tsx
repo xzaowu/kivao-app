@@ -3,7 +3,7 @@ import { Switch } from "@/pages/admin/ui/controls";
 import { AlipayCircleFilled, WechatFilled } from "@ant-design/icons";
 import { ZHIFUFM_LOGO_SRC } from "@/components/payment-brand-icons";
 import type { ColumnsType } from "antd/es/table";
-import { CloudUpload, PlugZap, RefreshCw, Search, Trash2, UsersRound } from "lucide-react";
+import { CloudUpload, PlugZap, RefreshCw, Search, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { PaginationBar } from "@/pages/admin/components/admin-ui";
@@ -176,21 +176,12 @@ export default function AdminPluginsPage() {
             key: "scope",
             width: 180,
             align: "center",
-            render: (_, item) =>
-                item.management.activationScope === "user" ? (
-                    <div>
-                        <div className="font-medium text-foreground/78">用户自主启用</div>
-                        <div className="mt-1 inline-flex items-center gap-1 text-xs text-foreground/48">
-                            <UsersRound className="size-3.5" aria-hidden="true" />
-                            {states[item.manifest.id]?.enabledUserCount || 0} 位已启用
-                        </div>
-                    </div>
-                ) : (
-                    <div>
-                        <div className="font-medium text-foreground/78">全局生效</div>
-                        <div className="mt-1 text-xs text-foreground/48">管理员统一控制</div>
-                    </div>
-                ),
+            render: () => (
+                <div>
+                    <div className="font-medium text-foreground/78">全局生效</div>
+                    <div className="mt-1 text-xs text-foreground/48">管理员统一控制</div>
+                </div>
+            ),
         },
         {
             title: "平台状态",
@@ -232,7 +223,7 @@ export default function AdminPluginsPage() {
     return (
         <AdminPageFrame
             title="插件管理"
-            description="管理平台级可用性、自定义插件安装与用户启用范围"
+            description="统一启停全站应用与协议插件，管理自定义插件安装"
             actions={
                 <>
                     <Button icon={<RefreshCw className="size-4" />} loading={loading} onClick={() => void reload()}>
@@ -376,7 +367,7 @@ function mergePlugins(remote: BackendPlugin[]): AdminPluginItem[] {
             management: {
                 origin: "official",
                 kind: application ? "application" : "protocol",
-                activationScope: application ? "user" : "system",
+                activationScope: "system",
                 configurationScope: application ? (plugin.manifest.id === EAGLE_PLUGIN_ID || plugin.manifest.id === RUNNINGHUB_PLUGIN_ID ? "user" : "none") : "system",
             },
         });

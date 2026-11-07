@@ -5,9 +5,54 @@ description: 从产品功能快速定位主要代码入口
 
 # 代码功能地图
 
+## 易支付多支付方式
+
+- `backend/payment-sdk/methods.go`：开放方式与默认值校验；`payment-plugins/epay.go`：选择映射到单个上游 `type` 并签名。`internal/app/payment.go`：订单固定方式、幂等检查与刷新；`internal/database/migrations.go`：Schema 79。
+- `web/src/pages/admin/payments/payments-page.tsx`：配置多选；`components/layout/workspace-wallet-topup.tsx` 与 `workspace-wallet-modal.tsx`：用户选择；`components/payment/use-payment-order-flow.tsx`：提交方式及重置幂等键。
+
+## 视频深度动作捕捉
+
+- `plugin-packages/volcengine-mediakit-video-depth/`：独立深度协议、幂等提交和异步结果映射；同名 `.yingce-plugin` 为后端加载包。原 `volcengine-mediakit/` 仅提供画质增强。
+- `backend/internal/app/video_processing.go`：按资源归属、就绪状态、实测时长与尺寸准入，隔离增强参数；`model_capability*.go` 和 `model_router.go`：独立能力、上限和 `depth_capture` 计价选择；`logical_models.go` 只为声明了分辨率的模型投影清晰度默认值，避免隐藏无清晰度选项的处理模型。
+- `web/src/components/canvas/canvas-video-depth-panel.tsx`、`lib/canvas/canvas-video-depth.ts`：节点下方确认面板、源校验、报价与任务参数；`pages/canvas/use-canvas-media-tools.ts` 和 `use-canvas-generation-retry.ts`：草稿连线、开始后消费到同一节点及重试；`use-canvas-generation-executor.ts` 阻止专用节点误入普通生成。
+- `web/src/pages/canvas/canvas-project-world-layers.tsx`：从单选状态派生唯一活动视频，`project.tsx` 承接静态预览播放按钮的选中动作；现有 `components/video-player.tsx` 保持单次自动播放尝试及手动暂停语义。
+- `backend/internal/workbench/catalog.go`、`service.go`、`tasks.go`：工作台执行方式与单视频合同、管理及请求约束；`app/workbench_bridge.go` 在选价前按资源记录准入。`web/src/pages/admin/workbench-tools/workbench-tools-page.tsx` 配置执行方式；`pages/workbench/image-workbench-page.tsx` 复用视频工作台上传/素材库、专用模型、实测时长报价及结果/任务展示。
+
+## 插件统一管理与导出
+
+- `backend/internal/app/plugin_management.go`：所有插件的后台全局状态、管理员权限、审计及旧个人启停接口拒绝；不迁移历史用户配置。
+- `web/src/components/layout/client-root-init.tsx` 与 `web/src/stores/use-plugin-store.ts`：初始化内置应用、同步服务端开关、窗口激活与定期刷新，状态缺失时不启用。
+- `web/src/pages/admin/plugins/plugins-page.tsx`：唯一插件启停页面；路由、侧栏和素材选择器不再开放前台插件及 Eagle 入口。
+- `web/src/lib/canvas/canvas-export.ts`、`web/src/types/canvas-export.ts` 和 `web/src/pages/assets/asset-transfer.ts`：原生 ZIP 导出标识 `kivao` 及素材包导入校验。
+
+## 统一认证弹窗
+
+- `web/src/components/auth/auth-dialog-layout.tsx`：路由根节点的唯一弹窗、登录/注册/找回密码切换、旧链接承接；`require-auth.tsx` 保留权限门禁并在当前页面请求登录。
+- `web/src/pages/auth/login.tsx`、`register.tsx`、`forgot-password.tsx`：复用正式表单、验证码、协议及认证 API，支持成功回调；`lib/auth-navigation.ts` 校验站内返回目标。
+- `web/src/stores/use-auth-dialog-store.ts`：共享弹窗状态，以及只在内存中、按确认账号和路径读取的游客文本草稿；首页与工作台恢复后清除。旧 `CreationLoginDialog` 简化登录实现已移除。
+
+## 公告、个人存储与画布助手
+
+- `components/layout/system-announcement-center.tsx`：用户系统公告入口；账户卡片与侧栏已移除独立更新公告，`pages/admin/settings/appearance-settings-page.tsx` 不再编辑旧更新公告但保存时保留历史配置，后台品牌入口返回首页。
+- `web/src/lib/oss-settings.ts`、`components/layout/user-oss-settings-form.tsx` 与 `backend/internal/app/settings.go`、`storage_location.go`：个人对象存储默认前缀及保存/测试的统一回退，旧配置保持原值。
+- `web/src/layouts/user-layout.tsx`、`components/canvas/canvas-cloud-agent-panel.tsx`：单一实例与画布可见性；`lib/canvas/agent-panel-dock.ts`：默认右侧停靠，保留已有偏好和窄屏回退。
+
+## 技能公开审核与上下架
+
+- `backend/internal/skills/skill_review.go`、`repository/skill_review.go`：管理员审核、版本并发检查、审计事务与审核列表；`skills.go`、`skills_agent.go` 的共享可见性约束覆盖目录、运行时和原文件读取。
+- `backend/internal/database/skill_publication_migration.go`：v78 将历史用户公开技能纳入审核，复用状态列，不删除技能或用户关系。
+- `web/src/pages/admin/skill-review-page.tsx`：审核列表和阅读器操作；`services/api/skills.ts`：审核 API，`pages/skills/`：申请公开和作者状态提示。
+
+## 技能阅读预览
+
+- `web/src/lib/skills/skill-markdown.ts`：仅为预览提取 Markdown 正文；`web/src/pages/skills/skill-detail-drawer.tsx` 的 `SkillMarkdown` 同时供技能详情和技能工作台使用，源码与文件 API 保持原样。
+
 ## 工作台素材分组与一键生成
 
 - `web/src/lib/workbench-template.ts`：按输入区 key 生成 `@` 引用、展开整组素材、统一各媒体类型编号，以及安全的任务展示摘要。
+- `web/src/pages/workbench/workbench-references.ts`：上传和素材库共用的数量、类型与去重校验，以及旧本地素材的资源保存；页面复用 `AssetLibraryPickerModal` 选择远端分页和本地缓存素材。
+- `web/src/lib/workbench-inputs.ts` 与 `backend/internal/workbench/inputs.go`：效果专用/通用素材与注意事项设置，前端显示、预设引用和后台校验共享既有 JSON 配置；后端按效果校验任务素材，不新增数据库结构。
+- `backend/internal/workbench/default_examples.go`：按图片/视频分类读写默认作品示例，复用已有系统设置、资源归属校验、展示 URL 及审计；未选择场景时由工具目录一并返回。
 - `pages/admin/workbench-tools/workbench-tools-page.tsx` 复用画布引用编辑器维护模板；`pages/workbench/image-workbench-page.tsx` 同时负责图片/视频的素材表单、执行提示词拼装和再次生成；`pages/tasks/` 复用摘要展示。
 - `backend/internal/workbench/tasks.go` 保留原模板和补充要求快照，继续校验资源归属、输入数量及角色；`internal/app/task_output.go` 投影任务列表所需的工具名称、效果和素材数量。不新增数据表或迁移。
 
@@ -102,7 +147,7 @@ description: 从产品功能快速定位主要代码入口
 | 功能 | 页面入口 | 主要协作模块 |
 | --- | --- | --- |
 | 首页与导航 | `web/src/pages/home/`、`web/src/layouts/user-layout.tsx` | `components/layout/workspace-sidebar-nav.tsx`、`workspace-sidebar-checkin.tsx`、`workspace-sidebar-storage-meter.tsx`、`router.tsx` |
-| 创作工作台 | `web/src/pages/create/index.tsx` | `creation-workspace.tsx`、`creation-conversations.ts`、`creation-types.ts`、`creation-assets.ts`、`creation-references.ts` |
+| 创作工作台 | `web/src/pages/create/index.tsx` | `creation-workspace.tsx`（输入区扩大/缩小、按断点放置会话工具栏）、`creation-conversations.ts`（视频镜头索引）、`creation-types.ts`、`creation-assets.ts`、`creation-references.ts` |
 | 登录注册 | `web/src/pages/auth/` | `stores/use-user-store.ts`、`services/api/auth.ts`、后端 `internal/auth/` |
 | 积分与计费 | `web/src/components/layout/workspace-wallet-modal.tsx`、`pages/admin/components/platform-finance-panel.tsx` | `services/api/wallet.ts`、`services/api/payments.ts`、后端 `internal/app/finance.go`、`internal/app/payment.go`、`payment-plugins/`、`plugin-packages/official-payment-*` |
 | 推广中心 | `web/src/pages/referral/`、`pages/admin/referral/referral-admin-page.tsx`、`pages/admin/users/users-drawer.tsx`（推广人开关） | `services/api/referral.ts`、后端 `internal/handler/referral.go`、`internal/app/referral.go`（设置、资格、绑定、返佣）、`internal/repository/referral.go` |
@@ -262,14 +307,15 @@ HTTP 请求 -> handler -> service（稳定导入面 / 别名）-> app（组合�
 
 `skill_curation_roots.go` 扩展动态根维护、有效根查询和空表回落；数据库迁移 47 接续 46。
 
-## 创作首页纵深画廊与灵感库
+## 创作首页灵感大厅
 
-- `web/src/pages/create/creation-inspiration-tunnel.tsx`、`creation-inspiration-tunnel.css`：纵深画廊的排布、随机取样、封面就绪门控与样式。
-- `web/src/pages/inspirations/`：灵感页（`index.tsx`）、详情弹窗、编辑弹窗与 `inspirations.css`。
-- `web/src/lib/inspirations/catalog.ts`、`resolve.ts`、`source-revisions.ts`：来源登记表、条目类型与解析、原创条目、上游版本号。
-- `web/src/services/inspiration-catalog.ts`：全量目录与画廊池的运行时加载、内存缓存与失败退回。
-- `web/src/stores/use-inspiration-store.ts`：自建／覆盖／隐藏／收藏的本地持久化与导入导出。
-- `web/scripts/import-inspirations.mjs`：外部来源同步、等距抽取、缩略图生成与画廊池落盘；产物在 `web/public/inspirations/` 与 `web/public/inspiration-thumbs/`。
+- 创作首页快捷入口：`app/appearance_creation.go` 校验分组、数量、图标与站内路由，复用外观设置和权限审计；`web/src/lib/creation-shortcuts.ts` 定义展示合同和默认入口，`creation-workspace-empty.tsx` 按分组渲染；后台 `creation-shortcuts-editor.tsx` 与外观草稿统一保存。手机隐藏最近画布的规则限定在 `creation-product.css`，不影响桌面画布列表。
+- `web/src/pages/inspirations/index.tsx`、`inspirations.css`：后台发布目录、类型/搜索/分类/排序、提示词详情和工具直达。
+- 卡片以 CSS 多列保留原始比例；整张卡片按实际鼠标事件和任一精确悬停指针触发预览，不按窗口宽度判断手机。「悬停播放」开关默认遵从系统减少动态效果偏好，支持主动开启。`InspirationMedia` 在移开/隐藏/关闭预览/指针策略变化时停止，悬停不缩放。后台上传队列按选择顺序保存最多 10 个示例，支持重排封面、移除及重新读取。
+- `web/src/pages/admin/inspirations-page.tsx`：管理员 CRUD、上下架、排序和示例上传；工具条目只保存关联，不复制工具配置。
+- `web/src/services/api/inspirations.ts`、`web/src/lib/inspiration-hall.ts`：接口边界及纯筛选函数。
+- `backend/internal/handler/inspirations.go` → `service/aliases_inspirations.go` → `app/inspirations.go` → `workbench/inspirations.go` → `repository/inspirations.go`：权限、入口开关、版本、数据和事务审计。
+- `repository/resource_reference.go`：将灵感示例纳入资源删除/清理检查。旧静态目录、同步脚本与本地灵感存储保留为历史资料，当前大厅不再加载或展示。
 
 ## 画布外观
 

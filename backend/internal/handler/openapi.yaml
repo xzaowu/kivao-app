@@ -31,11 +31,113 @@ tags:
     description: 用户反馈与管理员收件箱
   - name: referral
     description: 推广中心：推广码、邀请记录与返佣
+  - name: payments
 paths:
+  /payments/providers:
+    get:
+      tags: [payments]
+      summary: 获取已启用且已配置的支付渠道
+      description: 支持多支付方式的渠道返回 paymentMethods（id、label）与 defaultPaymentMethod；不返回商户密钥。未配置多选的旧易支付渠道只开放原默认方式。
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+  /payments/orders:
+    post:
+      tags: [payments]
+      summary: 创建固定支付方式的充值订单
+      description: paymentMethod 必须在对应渠道开放列表内；省略时使用默认方式。与商品和渠道一起绑定幂等键，刷新收银台沿用创建时的配置与方式，不使用最新默认值替换已有选择。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [productId, providerId, idempotencyKey]
+              properties:
+                productId: {type: string}
+                providerId: {type: string}
+                paymentMethod: {type: string, maxLength: 40}
+                idempotencyKey: {type: string, maxLength: 120}
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+        "400":
+          description: 无效或未开放的支付方式
+        "409":
+          description: 同一幂等键用于不同的商品、渠道或支付方式
+  /inspirations:
+    get:
+      tags: [workbench]
+      summary: 获取后台已上架灵感及关联工具（允许游客，不加载旧静态目录）
+      security: []
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+  /admin/inspirations:
+    get:
+      tags: [admin, workbench]
+      summary: 管理员查询所有灵感，包括草稿和下架条目
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+        "403":
+          $ref: "#/components/responses/Error"
+    post:
+      tags: [admin, workbench]
+      summary: 管理员新增提示词灵感或工具关联；version 必须为 0
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, description: "type=prompt|tool, version, title, description, mode=image|video|text, category, prompt, resourceId, mediaKind=image|video, additionalExamples=[{resourceId,mediaKind}] (最多9个，含首个合计最多10个), toolId, sortOrder, enabled" }
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+  /admin/inspirations/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+    patch:
+      tags: [admin, workbench]
+      summary: 管理员编辑或上下架灵感，必须提交当前 version
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [admin, workbench]
+      summary: 管理员删除灵感条目，保留关联工具和资源文件
+      parameters:
+        - in: query
+          name: version
+          required: true
+          schema: { type: integer, minimum: 1 }
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
   /features:
     get:
       tags: [auth]
       summary: 获取公开功能开关（允许游客，仅布尔值）
+      description: 包含默认关闭的 canvasConversionEnabled、canvasDrawingEnabled、canvasFolderEnabled、canvasFrameEnabled，控制画布新建入口，保留已有节点数据。
       security: []
       responses:
         "200":
@@ -293,6 +395,43 @@ paths:
         "404": {$ref: "#/components/responses/Error"}
         "500": {$ref: "#/components/responses/Error"}
 
+  /public/appearance:
+    get:
+      tags: [meta]
+      security: []
+      summary: 读取公开站点外观
+      description: 返回 data.appearance，包含 creationShortcuts 分组快捷入口，最多 10 个。仅提供站内导航，不授予目标工具或画布权限；空数组表示隐藏入口。
+      responses:
+        "200": {$ref: "#/components/responses/Envelope"}
+        "500": {$ref: "#/components/responses/Error"}
+  /admin/settings/appearance:
+    get:
+      tags: [admin]
+      summary: 管理员读取站点外观
+      responses:
+        "200": {$ref: "#/components/responses/Envelope"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+    patch:
+      tags: [admin]
+      summary: 管理员更新站点外观及创作入口
+      description: 保留未提交字段。creationShortcuts 最多 10 个，数组顺序决定组内顺序和分组首次出现顺序；空数组清空入口。沿用外观审计及管理员权限校验。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                creationShortcuts:
+                  type: array
+                  maxItems: 10
+                  items: {$ref: "#/components/schemas/CreationShortcut"}
+      responses:
+        "200": {$ref: "#/components/responses/Envelope"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
   /admin/settings/appearance/live2d:
     post:
       tags: [admin]
@@ -540,6 +679,43 @@ paths:
         "401": {$ref: "#/components/responses/Error"}
         "403": {$ref: "#/components/responses/Error"}
         "404": {$ref: "#/components/responses/Error"}
+  /admin/skills:
+    get:
+      tags: [skills]
+      summary: 管理员查询申请公开的技能及审核状态，不包含私有技能
+      parameters:
+        - {in: query, name: status, schema: {type: integer, enum: [0, 1, 2, 3, 4], default: 0}, description: 全部、已上架、待审核、未通过、已下架}
+        - {in: query, name: search, schema: {type: string, maxLength: 100}}
+        - {in: query, name: page, schema: {type: integer, minimum: 1, default: 1}}
+        - {in: query, name: pageSize, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+      responses:
+        "200": {description: 标准信封 data 含 skills、totalCount、page、pageSize}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /admin/skills/{id}/review:
+    parameters:
+      - {in: path, name: id, required: true, schema: {type: string}}
+    put:
+      tags: [skills]
+      summary: 管理员审核上架、拒绝或下架技能并记录审计
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action, versionId, updatedAt]
+              properties:
+                action: {type: string, enum: [approve, reject, offline]}
+                versionId: {type: string, minLength: 1}
+                updatedAt: {type: string, format: date-time}
+      responses:
+        "200": {description: "标准信封 data 为 {reviewed: true}"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "409": {description: 技能内容或公开意愿已变更，须刷新并重新审核}
   /skills/{id}/agent-mode:
     parameters:
       - {in: path, name: id, required: true, description: 技能 ID, schema: {type: string}}
@@ -2554,6 +2730,17 @@ components:
       in: cookie
       name: open_ai_canvas_session
   schemas:
+    CreationShortcut:
+      type: object
+      required: [group, title, icon, target]
+      properties:
+        group: {type: string, minLength: 1, maxLength: 20}
+        title: {type: string, minLength: 1, maxLength: 20}
+        icon: {type: string, enum: [image, video, canvas, skill, text, wand, camera, shopping]}
+        target:
+          type: string
+          maxLength: 512
+          description: 仅支持 /、/toolbox/image、/toolbox/video、/canvas、/canvas/画布ID、/skills，可带 query 与 fragment。拒绝外链、脚本及控制字符。
     FeedbackAttachment:
       type: object
       required: [id, name, type, url, size, mimeType]

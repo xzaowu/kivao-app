@@ -1,11 +1,7 @@
 # Volcengine AI MediaKit
 
-该目录是火山引擎 AI MediaKit 媒体处理工具的官方声明式插件源码。后端从生成的 `volcengine-mediakit.yingce-plugin` 包加载，不依赖系统内置 `host:` 适配器。
+该目录仅提供视频画质增强协议，后端加载 `volcengine-mediakit.yingce-plugin`。
 
-所有 provider 声明 `kind: "processing"`：以输入媒体为主体，不要求提示词，不出现在生成模型列表，只出现在画布节点的处理工具里。
+Provider ID：`volcengine-mediakit-enhance-video`，`kind: processing`，能力 `video`，原有请求、鉴权和响应映射保持不变。
 
-| Provider | 能力 | 画布入口 |
-| --- | --- | --- |
-| `volcengine-mediakit-enhance-video` | video | 视频节点「画质增强」 |
-
-完整接口见 [docs/interface.md](docs/interface.md)。
+深度动作捕捉已拆分至 [独立插件](../volcengine-mediakit-video-depth/README.md)，两个插件可分别启停。完整接口见 [docs/interface.md](docs/interface.md)。

@@ -25,6 +25,7 @@ const operationOptions = [
     { label: "风格迁移", value: "style_transfer" },
     { label: "音频生视频", value: "audio_to_video" },
     { label: "画质增强", value: "enhance" },
+    { label: "深度动作捕捉", value: "depth_capture" },
 ];
 
 function ImageSizeHelp() {
@@ -62,9 +63,10 @@ export function ModelCapabilityEditor({ value, onChange, protocol, capability = 
     const autoDLSpecFields = <AutoDLScreenSpecFields profile={profile} workflow={workflow} disabled={disabled} onChange={(video) => onChange?.({ version: 1, video })} />;
     // 视频处理模型（画质增强等）：帧率策略与源视频时长上限；生成模型不显示。
     const processing = profile.processing;
+    const depthCapture = profile.defaultOperation === "depth_capture";
     const processingFields = processing ? (
         <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="帧率策略">
+            {depthCapture ? <p className="text-sm text-muted-foreground">深度动作捕捉由上游决定输出规格，不设置帧率、码率或尺寸。</p> : <Field label="帧率策略">
                 <Select
                     className="w-full"
                     disabled={disabled}
@@ -75,13 +77,13 @@ export function ModelCapabilityEditor({ value, onChange, protocol, capability = 
                     ]}
                     onChange={(fpsPolicy) => update({ processing: fpsPolicy === "user_select" ? { ...processing, fpsPolicy, fpsOptions: processing.fpsOptions?.length ? processing.fpsOptions : [30, 60] } : { fpsPolicy, maxSourceSeconds: processing.maxSourceSeconds } })}
                 />
-            </Field>
+            </Field>}
             {processing.fpsPolicy === "user_select" ? (
                 <Field label="可选帧率（15–120，逗号分隔）">
                     <Input disabled={disabled} value={(processing.fpsOptions || []).join(",")} placeholder="例如：30,60" onChange={(event) => update({ processing: { ...processing, fpsOptions: parseIntegerList(event.target.value) } })} />
                 </Field>
             ) : null}
-            <NumberField label={`源视频最长秒数（≤${DEFAULT_VIDEO_PROCESSING_MAX_SOURCE_SECONDS}）`} value={processing.maxSourceSeconds || DEFAULT_VIDEO_PROCESSING_MAX_SOURCE_SECONDS} min={1} max={DEFAULT_VIDEO_PROCESSING_MAX_SOURCE_SECONDS} disabled={disabled} onChange={(value) => update({ processing: { ...processing, maxSourceSeconds: value || DEFAULT_VIDEO_PROCESSING_MAX_SOURCE_SECONDS } })} />
+            <NumberField label={`源视频最长秒数（≤${depthCapture ? 600 : DEFAULT_VIDEO_PROCESSING_MAX_SOURCE_SECONDS}）`} value={processing.maxSourceSeconds || (depthCapture ? 60 : DEFAULT_VIDEO_PROCESSING_MAX_SOURCE_SECONDS)} min={1} max={depthCapture ? 600 : DEFAULT_VIDEO_PROCESSING_MAX_SOURCE_SECONDS} disabled={disabled} onChange={(value) => update({ processing: { ...processing, maxSourceSeconds: value || (depthCapture ? 60 : DEFAULT_VIDEO_PROCESSING_MAX_SOURCE_SECONDS) } })} />
         </div>
     ) : null;
 

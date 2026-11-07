@@ -362,6 +362,7 @@ func (s *Service) createSkillFromArchive(userID string, archive skillPackageArch
 		Status: skillStatusEnabled, Source: skillSourceUser, Tag: tag, IsPrivate: req.IsPrivate, MarkdownURL: sourceURL, ShowcaseMediaJSON: "[]",
 	}
 	state := &model.UserSkillState{ID: kernel.NewID(), UserID: userID, SkillID: skillID, Added: true, InstalledVersionID: versionID, AutoUpdate: autoUpdate}
+	resetSkillReview(skill)
 	if err := s.repo.CreateSkillWithPackage(skill, version, files, state); err != nil {
 		_ = os.Remove(filepath.Join(s.dataDir, "skill-packages", filepath.FromSlash(packageKey)))
 		return nil, err
@@ -399,6 +400,7 @@ func editedSkillVersionLabel() string {
 
 // applySkillArchiveVersion 把新版本的包元数据同步到技能行；调用方负责在同一事务里写入版本和文件清单。
 func applySkillArchiveVersion(skill *model.Skill, version *model.SkillVersion, archive skillPackageArchive, sourceType string, sourceURL string, sourceRef string, sourceSubdir string, sourceCommit string, autoUpdate bool) {
+	resetSkillReview(skill)
 	now := time.Now()
 	skill.CurrentVersionID = version.ID
 	skill.VersionLabel = version.VersionLabel

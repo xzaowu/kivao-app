@@ -14,11 +14,13 @@ const (
 )
 
 type (
-	WorkbenchToolInput   = workbench.ToolInput
-	WorkbenchPresetInput = workbench.PresetInput
-	WorkbenchToolView    = workbench.ToolView
-	WorkbenchPresetView  = workbench.PresetView
-	WorkbenchTaskInput   = workbench.TaskInput
+	WorkbenchToolInput    = workbench.ToolInput
+	WorkbenchPresetInput  = workbench.PresetInput
+	WorkbenchToolView     = workbench.ToolView
+	WorkbenchPresetView   = workbench.PresetView
+	WorkbenchTaskInput    = workbench.TaskInput
+	WorkbenchExampleInput = workbench.ResultExample
+	WorkbenchExampleView  = workbench.ResultExampleView
 )
 
 type workbenchAdminGate struct{ svc *Service }
@@ -85,6 +87,29 @@ func (s *Service) PublicWorkbenchTools(kind string) ([]WorkbenchToolView, error)
 
 func (s *Service) AdminWorkbenchTools(actor *model.User, kind string) ([]WorkbenchToolView, error) {
 	return s.workbenchDomain().AdminTools(actor, kind)
+}
+
+func (s *Service) PublicWorkbenchExamples(kind string) (*WorkbenchExampleView, error) {
+	if kind == WorkbenchKindImage {
+		if err := s.RequireFeature(FeatureImageWorkbench); err != nil {
+			return nil, err
+		}
+	} else if kind == WorkbenchKindVideo {
+		if err := s.RequireFeature(FeatureVideoWorkbench); err != nil {
+			return nil, err
+		}
+	} else {
+		return nil, BadAuthRequest("工作台类型无效")
+	}
+	return s.workbenchDomain().DefaultExamples(kind)
+}
+
+func (s *Service) AdminWorkbenchExamples(actor *model.User, kind string) (*WorkbenchExampleView, error) {
+	return s.workbenchDomain().AdminDefaultExamples(actor, kind)
+}
+
+func (s *Service) SaveWorkbenchExamples(actor *model.User, kind string, input WorkbenchExampleInput) (*WorkbenchExampleView, error) {
+	return s.workbenchDomain().SaveDefaultExamples(actor, kind, input)
 }
 func (s *Service) CreateWorkbenchTool(actor *model.User, req WorkbenchToolInput) (*WorkbenchToolView, error) {
 	return s.workbenchDomain().CreateTool(actor, req)
@@ -170,6 +195,9 @@ func (s *Service) resolveWorkbenchProviderConfig(userID, kind, operation, modelN
 		return nil, BadAuthRequest("工作台类型无效")
 	}
 	if logicalModelID != "" {
+		if operation == VideoProcessingOperationDepthCapture {
+			return nil, BadAuthRequest("深度动作捕捉需要选择系统渠道的专用处理模型")
+		}
 		config["model"] = modelName
 		return config, nil
 	}
@@ -181,10 +209,19 @@ func (s *Service) resolveWorkbenchProviderConfig(userID, kind, operation, modelN
 	config["channelId"] = channelID
 	config["model"] = modelName
 	input["config"] = config
-	// Match CreateTask's JSON shape so reference counts affect admission and pricing.
+	// Match CreateTask's JSON shape before shared media admission and pricing.
 	normalizedInput, err := normalizeTaskInput(input)
 	if err != nil {
 		return nil, err
+	}
+	if operation == VideoProcessingOperationDepthCapture {
+		cm, err := s.repo.ChannelModelByKey(channelID, modelName)
+		if err != nil || string(cm.Protocol) != VolcengineMediaKitVideoDepthProtocol {
+			return nil, BadAuthRequest("请选择深度动作捕捉专用模型")
+		}
+		if _, err := s.prepareVideoProcessingTask(userID, normalizedInput); err != nil {
+			return nil, err
+		}
 	}
 	access, err := s.userGroupAccess(userID)
 	if err != nil {

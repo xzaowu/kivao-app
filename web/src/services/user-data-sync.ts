@@ -95,7 +95,7 @@ async function loadPendingCanvasMutationJournal(scope = getActiveUserScope()) {
         if (!Array.isArray(entries)) throw new Error("画布待同步记录格式无效，已保留原记录");
         for (const entry of entries) {
             if (!(entry?.projectId && entry.request?.mutationId && Array.isArray(entry.request.operations))) throw new Error("画布待同步请求格式无效，已保留原记录");
-            const request = repairPendingCanvasMutationRequest(entry.request, entry.baseline, entry.prepared);
+            const request = prepareJournalRequestForReplay(entry.request, entry.baseline, entry.prepared);
             repaired ||= request !== entry.request;
             pendingCanvasMutations.set(entry.projectId, request === entry.request ? entry : { ...entry, request });
         }
@@ -108,12 +108,11 @@ async function loadPendingCanvasMutationJournal(scope = getActiveUserScope()) {
 }
 
 /**
- * 修复旧版生成器写入 journal 的无效请求，这些请求服务端必然拒绝：
- * 1. 新画布请求在 create_canvas.patch 之后又追加了同字段 set_field（beforeValue 缺失或为 null），
- *    服务端先创建字段再校验基线，必然冲突；这些 set_field 与 patch 重复，直接移除。
+ * 构建旧版 journal 的修复候选；首次重放须经 prepareJournalRequestForReplay 判断原请求必然被拒绝，
+ * 或在服务端明确拒绝后才使用，避免改写已有成功回执的请求摘要。
+ * 1. 移除新画布请求在 create_canvas.patch 之后追加的同字段 set_field。
  * 2. 已有画布的 set_field 因 undefined 被 JSON 丢弃属性，补回 JSON null 还原原始意图。
  * 3. 节点补丁的 undefined 被序列化丢弃，造成空 patch/before；只从 journal 原始快照恢复，不能使用当前云端值替代基线。
- * 服务端校验失败会整笔回滚、不写 receipt，因此沿用原 mutationId 不会触发 canvas_mutation_id_reused。
  */
 export function repairPendingCanvasMutationRequest(request: CanvasOperationsRequest, baseline?: CanvasProject, prepared?: CanvasProject): CanvasOperationsRequest {
     let changed = false;
@@ -157,6 +156,54 @@ export function repairPendingCanvasMutationRequest(request: CanvasOperationsRequ
         })
         .filter((operation): operation is CanvasOperation => operation !== undefined);
     return changed ? { ...request, operations } : request;
+}
+
+const SERVER_OPTIONAL_OPERATION_FIELDS = new Set<string>(["projectId", "starterMode", "appearance", "timeline"]);
+
+function isGuaranteedServerRejectedRequest(request: CanvasOperationsRequest): boolean {
+    const firstOp = request.operations[0];
+    const create = firstOp && firstOp.type === "create_canvas" ? firstOp : undefined;
+    const simulatedFields: Record<string, unknown> = create?.patch ? { ...create.patch } : {};
+    for (let index = 0; index < request.operations.length; index++) {
+        const operation = request.operations[index]!;
+        if (operation.type === "create_canvas" && index > 0) {
+            return true;
+        }
+        if (operation.type === "patch_node") {
+            if (Object.keys(operation.patch || {}).length === 0 || Object.keys(operation.before || {}).length === 0) {
+                return true;
+            }
+            continue;
+        }
+        if (operation.type === "set_field") {
+            const hasBefore = Object.prototype.hasOwnProperty.call(operation, "beforeValue") && operation.beforeValue !== undefined;
+            const hasValue = Object.prototype.hasOwnProperty.call(operation, "value") && operation.value !== undefined;
+            if ((!hasBefore || !hasValue) && !SERVER_OPTIONAL_OPERATION_FIELDS.has(operation.field)) {
+                return true;
+            }
+            if (create) {
+                const exists = Object.prototype.hasOwnProperty.call(simulatedFields, operation.field) && simulatedFields[operation.field] !== undefined;
+                const currentVal = exists ? canvasOperationValue(simulatedFields[operation.field]) : null;
+                const effectiveBefore = hasBefore ? canvasOperationValue(operation.beforeValue) : null;
+                const effectiveValue = hasValue ? canvasOperationValue(operation.value) : null;
+                if (!canvasOperationValueEqual(currentVal, effectiveBefore) && !canvasOperationValueEqual(currentVal, effectiveValue)) {
+                    return true;
+                }
+                if (effectiveValue === null) {
+                    delete simulatedFields[operation.field];
+                } else {
+                    simulatedFields[operation.field] = effectiveValue;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+export function prepareJournalRequestForReplay(request: CanvasOperationsRequest, baseline?: CanvasProject, prepared?: CanvasProject): CanvasOperationsRequest {
+    const candidate = repairPendingCanvasMutationRequest(request, baseline, prepared);
+    if (candidate === request) return request;
+    return isGuaranteedServerRejectedRequest(request) ? candidate : request;
 }
 
 async function persistPendingCanvasMutationJournal() {
@@ -1184,9 +1231,14 @@ export function buildCanvasOperations(base: CanvasProject | undefined, next: Can
     // 会在服务端看到刚创建的字段而判定冲突，所以只有已有基线时才生成字段操作。
     if (!base) return operations;
     for (const field of CANVAS_OPERATION_FIELDS) {
-        // 服务端用 "" 表示未关联项目，本地可能是 undefined；两者语义相同，不能生成写操作。
-        if (field === "projectId" && !base.projectId && !next.projectId) continue;
-        if (!canvasOperationValueEqual(base[field], next[field])) operations.push({ type: "set_field", field, value: canvasOperationValue(next[field]), beforeValue: canvasOperationValue(base[field]) });
+        // 服务端用 "" 或缺省表示空值，本地可能是 undefined、null 或空数组；语义相同时不生成写操作。
+        if ((field === "projectId" || field === "activeChatId" || field === "starterMode") && !base[field] && !next[field]) continue;
+        if ((field === "previsScenes" || field === "chatSessions") && (!base[field] || base[field]?.length === 0) && (!next[field] || next[field]?.length === 0)) continue;
+        const previousValue = canvasOperationValue(base[field]);
+        const nextValue = canvasOperationValue(next[field]);
+        if (!canvasOperationValueEqual(previousValue, nextValue)) {
+            operations.push({ type: "set_field", field, value: nextValue, beforeValue: previousValue });
+        }
     }
     return operations;
 }
@@ -1226,7 +1278,9 @@ async function submitCanvasMutation(entry: PendingCanvasMutation) {
                 assertSession();
                 // Only an explicit rejection permits a new request ID/body.
                 if (!(error instanceof ApiError) || error.status !== 409 || error.reason !== "canvas_field_conflict") throw error;
-                const repaired = repairLegacyTaskIdFence(request, entry.baseline, entry.prepared);
+                const candidate = repairPendingCanvasMutationRequest(request, entry.baseline, entry.prepared);
+                const baseRepaired = candidate !== request ? candidate : undefined;
+                const repaired = repairLegacyTaskIdFence(baseRepaired ?? request, entry.baseline, entry.prepared) ?? baseRepaired;
                 const fenced = fenceRejectedTaskTimestampMutation(repaired ?? request, entry.baseline, entry.prepared) ?? repaired;
                 if (!fenced) throw error;
                 entry.request = { ...fenced, mutationId: newCanvasMutationId() };
@@ -1602,7 +1656,7 @@ async function saveRemoteUserDataBatch(uploaded: Map<string, string>, options: {
             if (pendingJournal) {
                 acknowledgedEditVersions = pendingJournal.editSession === canvasEditLeases.session() ? pendingJournal.editVersions || {} : {};
                 preparedForMutation = pendingJournal.localPrepared ?? (sameCanvasContent(prepared, pendingJournal.prepared) ? current : pendingJournal.prepared);
-                const repairedRequest = repairPendingCanvasMutationRequest(pendingJournal.request, pendingJournal.baseline, pendingJournal.prepared);
+                const repairedRequest = prepareJournalRequestForReplay(pendingJournal.request, pendingJournal.baseline, pendingJournal.prepared);
                 if (repairedRequest !== pendingJournal.request) {
                     pendingJournal.request = repairedRequest;
                     await persistPendingCanvasMutationJournal();

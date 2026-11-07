@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"mime/multipart"
+	"time"
 
 	"yingce/backend/internal/model"
 	"yingce/backend/internal/skills"
@@ -101,6 +102,14 @@ func (s *Service) SkillPresets() ([]SkillPreset, error) {
 
 func (s *Service) SkillDetail(userID string, id string) (*SkillItem, error) {
 	return s.skillDomain().SkillDetail(userID, id)
+}
+
+func (s *Service) AdminReviewSkills(actor *model.User, status int, search string, page, pageSize int) (*SkillList, error) {
+	return s.skillDomain().AdminReviewSkills(actor, status, search, page, pageSize)
+}
+
+func (s *Service) ReviewSkill(actor *model.User, id, versionID string, updatedAt time.Time, action, requestID string) error {
+	return s.skillDomain().ReviewSkill(actor, id, versionID, updatedAt, action, requestID)
 }
 
 func (s *Service) CreateSkill(userID string, req SkillMutationRequest) (*SkillItem, error) {

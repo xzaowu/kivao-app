@@ -8,13 +8,14 @@ import { Check, ChevronRight, Code2, ExternalLink, File, FileArchive, FileCode2,
 import { useEffect, useMemo, useState, type MouseEvent, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { skillMarkdownBody } from "@/lib/skills/skill-markdown";
 
-import { formatSkillCount, formatSkillDate, skillCategoryLabel } from "@/pages/skills/skill-catalog";
+import { formatSkillCount, formatSkillDate, skillCategoryLabel, skillReviewLabels } from "@/pages/skills/skill-catalog";
 import { getSkillFile, listSkillFiles, skillFileRawURL, type Skill, type SkillCategory, type SkillPackageFile, type SkillPackageFileContent } from "@/services/api/skills";
 
 type PreviewMode = "preview" | "source";
 
-export function SkillDetailModal({ skill, loading, mutating, categories, onClose, onAdd, onLike, onEdit, onOpenWorkbench, onSync }: { skill: Skill | null; loading: boolean; mutating: boolean; categories: SkillCategory[]; onClose: () => void; onAdd: (skill: Skill) => void; onLike: (skill: Skill) => void; onEdit: (skill: Skill) => void; onOpenWorkbench: (skill: Skill) => void; onSync: (skill: Skill) => void }) {
+export function SkillDetailModal({ skill, loading, mutating, categories, onClose, onAdd, onLike, onEdit, onOpenWorkbench, onSync, reviewActions }: { skill: Skill | null; loading: boolean; mutating: boolean; categories: SkillCategory[]; onClose: () => void; onAdd: (skill: Skill) => void; onLike: (skill: Skill) => void; onEdit: (skill: Skill) => void; onOpenWorkbench: (skill: Skill) => void; onSync: (skill: Skill) => void; reviewActions?: ReactNode }) {
     const [files, setFiles] = useState<SkillPackageFile[]>([]);
     const [filesLoading, setFilesLoading] = useState(false);
     const [filesError, setFilesError] = useState("");
@@ -105,7 +106,8 @@ export function SkillDetailModal({ skill, loading, mutating, categories, onClose
                             <h1 className="mt-1 truncate text-[var(--fs-heading-lg)] font-semibold text-foreground">{skill.skillName}</h1>
                             <p className="mt-1 line-clamp-2 max-w-4xl text-sm leading-5 text-foreground/58">{skill.description}</p>
                         </div>
-                        <div className="skill-package-actions">
+                        <div className={reviewActions ? "flex flex-wrap gap-2" : "skill-package-actions"}>
+                            {reviewActions || <>
                             {skill.sourceType === "github" && skill.isOwner ? <Tooltip title={skill.syncError || "从 GitHub 检查并同步最新提交"}><Button loading={mutating} icon={<RefreshCw className="size-4" />} onClick={() => onSync(skill)}>同步</Button></Tooltip> : null}
                             {skill.isOwner ? <Tooltip title="编辑名称、简介、分类和展示信息"><Button icon={<Info className="size-4" />} onClick={() => onEdit(skill)}>技能信息</Button></Tooltip> : null}
                             {skill.isOwner && skill.sourceType !== "github" ? (
@@ -115,6 +117,7 @@ export function SkillDetailModal({ skill, loading, mutating, categories, onClose
                             )}
                             <Button loading={mutating} icon={<Heart className={`size-4 ${skill.isLike ? "fill-current text-rose-500" : ""}`} />} onClick={() => onLike(skill)}>{skill.isLike ? "已收藏" : "收藏"}</Button>
                             <Button type={skill.isAdded ? "default" : "primary"} loading={mutating} disabled={skill.isOwner} icon={skill.isAdded ? <Check className="size-4" /> : <Plus className="size-4" />} onClick={() => onAdd(skill)}>{skill.isOwner ? "我的技能" : skill.isAdded ? "已加入" : "加入技能"}</Button>
+                            </>}
                         </div>
                     </header>
 
@@ -142,7 +145,7 @@ export function SkillDetailModal({ skill, loading, mutating, categories, onClose
                             </div>
                             <div className="skill-package-sidebar-footer">
                                 <span className="inline-flex items-center gap-1"><Users className="size-3.5" />{formatSkillCount(skill.addedCount)} 人加入</span>
-                                <span>{skill.isPrivate ? "仅自己可见" : "公开"}</span>
+                                <span>{skill.isPrivate ? "仅自己可见" : skillReviewLabels[skill.status] || "尚未公开"}</span>
                             </div>
                         </aside>
 
@@ -180,6 +183,7 @@ function SkillFilePreview({ skill, file, content, mode, filePaths, onNavigate }:
 }
 
 export function SkillMarkdown({ source, currentPath, filePaths, onNavigate }: { source: string; currentPath: string; filePaths: Set<string>; onNavigate: (path: string) => void }) {
+    const body = skillMarkdownBody(source);
     const navigate = (event: MouseEvent<HTMLAnchorElement>, href?: string) => {
         const target = resolveSkillPath(currentPath, href || "");
         if (!target || !filePaths.has(target)) return;
@@ -200,7 +204,8 @@ export function SkillMarkdown({ source, currentPath, filePaths, onNavigate }: { 
                         return <span className="skill-package-inline-missing">{alt || src || "图片"}</span>;
                     },
                 }}
-            >{source}</ReactMarkdown>
+            >{body}</ReactMarkdown>
+            {!body.trim() && source.trim() ? <p>此文件仅包含技能元数据，可切换到“源码”查看。</p> : null}
         </article>
     );
 }

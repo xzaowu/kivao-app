@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"yingce/backend/internal/model"
 	"yingce/backend/internal/service"
@@ -16,6 +17,48 @@ import (
 
 func RegisterSkillRoutes(r *gin.RouterGroup, svc *service.Service) {
 	registerSkillCurationRoutes(r, svc)
+	r.GET("/admin/skills", func(c *gin.Context) {
+		actor, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		status, err := strconv.Atoi(c.DefaultQuery("status", "0"))
+		if err != nil {
+			failService(c, service.BadAuthRequest("无效审核状态"))
+			return
+		}
+		page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+		size, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
+		result, err := svc.AdminReviewSkills(actor, status, c.Query("search"), page, size)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, result)
+	})
+	r.PUT("/admin/skills/:id/review", func(c *gin.Context) {
+		actor, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		var req struct {
+			VersionID string    `json:"versionId"`
+			UpdatedAt time.Time `json:"updatedAt"`
+			Action    string    `json:"action"`
+		}
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 4096)
+		if err := c.ShouldBindJSON(&req); err != nil {
+			failService(c, service.BadAuthRequest("审核请求格式无效"))
+			return
+		}
+		if err := svc.ReviewSkill(actor, c.Param("id"), req.VersionID, req.UpdatedAt, req.Action, RequestID(c)); err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, gin.H{"reviewed": true})
+	})
 	r.POST("/skills/install", func(c *gin.Context) {
 		user, err := currentUser(c, svc)
 		if err != nil {

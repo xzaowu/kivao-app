@@ -113,8 +113,8 @@ func (s *Service) RegistrationAgreement() (string, string) {
 
 func (s *Service) defaultAgreementTitle() string {
 	brand := strings.TrimSpace(s.host.BrandName())
-	if brand == "" {
-		brand = DefaultBrandName
+	if brand == "" || brand == "影策" || brand == DefaultBrandName || strings.EqualFold(brand, "kivao") {
+		return "kivao服务协议"
 	}
 	return brand + "服务协议"
 }

@@ -5,11 +5,13 @@ import { Link, useNavigate, useSearchParams } from "react-router";
 
 import { getAuthSession, getAuthSettings, linuxDOLoginURL, login } from "@/services/api/auth";
 import { useUserStore } from "@/stores/use-user-store";
+import { safeAuthNext, type AuthFormProps } from "@/lib/auth-navigation";
+import { useAuthDialogStore } from "@/stores/use-auth-dialog-store";
 import { LinuxDOIcon } from "./auth-scene";
 import { VerificationFields } from "@/components/auth/verification-fields";
 import { emptyVerification, loginVerification, methodLabels, verificationMethods, type VerificationMethod } from "@/services/api/verification";
 
-export default function LoginPage() {
+export default function LoginPage({ nextPath, onSuccess, onBusyChange, onForgotPassword }: AuthFormProps & { onForgotPassword?: () => void } = {}) {
     const navigate = useNavigate();
     const [params] = useSearchParams();
     const { message } = App.useApp();
@@ -20,17 +22,19 @@ export default function LoginPage() {
     const [methods, setMethods] = useState<VerificationMethod[]>([]);
     const [method, setMethod] = useState<"password" | VerificationMethod>("password");
     const [verification, setVerification] = useState({ ...emptyVerification });
-    const next = safeNext(params.get("next"));
+    const next = safeAuthNext(nextPath ?? params.get("next"));
     const forgotPasswordURL = `/forgot-password?next=${encodeURIComponent(next)}`;
     const user = useUserStore((state) => state.user);
     const hydrated = useUserStore((state) => state.hydrated);
 
     // 如果已登录，直接跳转
     useEffect(() => {
-        if (hydrated && user) {
+        if (!onSuccess && hydrated && user) {
             navigate(next, { replace: true });
         }
-    }, [hydrated, user, next, navigate]);
+    }, [hydrated, user, next, navigate, onSuccess]);
+
+    useEffect(() => { onBusyChange?.(submitting); }, [submitting, onBusyChange]);
 
     useEffect(() => {
         void getAuthSettings()
@@ -46,6 +50,7 @@ export default function LoginPage() {
 
     const submit = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
+        if (submitting) return;
         setSubmitting(true);
         try {
             if (method === "password") await login({ username, password });
@@ -54,9 +59,13 @@ export default function LoginPage() {
                 await loginVerification(verification);
             }
             const { applyUserSession } = await import("@/lib/user-session");
-            await applyUserSession(await getAuthSession());
+            const session = await getAuthSession();
+            if (!session.user) throw new Error("登录会话未建立，请重新登录");
+            if (!useUserStore.getState().user) useAuthDialogStore.getState().claimGuestDraft(session.user.id);
+            await applyUserSession(session);
             message.success("登录成功");
-            navigate(next, { replace: true });
+            if (onSuccess) onSuccess();
+            else navigate(next, { replace: true });
         } catch (error) {
             message.error(error instanceof Error ? error.message : "登录失败");
         } finally {
@@ -75,7 +84,7 @@ export default function LoginPage() {
                 label="密码"
                 htmlFor="login-password"
                 action={
-                    <Link
+                    onForgotPassword ? <button type="button" className="auth-scene-link -my-2 inline-flex min-h-8 items-center rounded-sm text-xs font-medium transition-colors" onClick={onForgotPassword}>忘记密码？</button> : <Link
                         to={forgotPasswordURL}
                         className="auth-scene-link -my-2 inline-flex min-h-8 items-center rounded-sm text-xs font-medium transition-colors"
                     >
@@ -124,9 +133,4 @@ function AuthField({ label, htmlFor, action, children }: { label: string; htmlFo
             {children}
         </div>
     );
-}
-
-function safeNext(value: string | null) {
-    if (!value || !value.startsWith("/") || value.startsWith("//")) return "/";
-    return value;
 }

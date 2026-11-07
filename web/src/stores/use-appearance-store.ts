@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { DEFAULT_CREATION_SHORTCUTS, normalizeCreationShortcuts } from "@/lib/creation-shortcuts";
 import { DEFAULT_CANVAS_APPEARANCE } from "@/lib/canvas/agent-appearance";
 import { DEFAULT_UPDATE_ANNOUNCEMENT, normalizeUpdateAnnouncement } from "@/lib/update-announcement";
 
@@ -6,6 +7,7 @@ import type { PublicAppearance } from "@/services/api/appearance";
 import { applySkinTheme, DEFAULT_CLASSIC_SKIN, normalizeSkinDefinition } from "@/lib/skin-themes";
 
 export const DEFAULT_PUBLIC_APPEARANCE: PublicAppearance = {
+    creationShortcuts: DEFAULT_CREATION_SHORTCUTS,
     updates: DEFAULT_UPDATE_ANNOUNCEMENT,
     canvas: DEFAULT_CANVAS_APPEARANCE,
     schemaVersion: 10,
@@ -71,6 +73,7 @@ export function normalizePublicAppearance(value?: Partial<PublicAppearance> | nu
         schemaVersion: 10,
         updates: normalizeUpdateAnnouncement(value?.updates),
         canvas: { ...DEFAULT_CANVAS_APPEARANCE, ...value?.canvas },
+        creationShortcuts: normalizeCreationShortcuts(value?.creationShortcuts),
         brandName: resolvedBrandName,
         brandSlug,
         authHeroTitle,

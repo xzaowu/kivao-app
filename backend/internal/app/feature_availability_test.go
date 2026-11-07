@@ -66,6 +66,51 @@ func TestWelcomeAvailabilityCanBeDisabledAndReenabled(t *testing.T) {
 	}
 }
 
+func TestCanvasNodeAvailabilityDefaultsOffAndPersistsIndependently(t *testing.T) {
+	svc, db := newFeatureAvailabilityTestService(t)
+	actor := &model.User{ID: "canvas-admin", Role: model.UserRoleAdmin}
+	assertFlags := func(value *PublicFeatureAvailability, conversion, drawing, folder, frame bool) {
+		t.Helper()
+		if value.CanvasConversionEnabled != conversion || value.CanvasDrawingEnabled != drawing || value.CanvasFolderEnabled != folder || value.CanvasFrameEnabled != frame {
+			t.Fatalf("unexpected canvas flags: %#v", value.FeatureAvailability)
+		}
+	}
+	value, err := svc.FeatureAvailability()
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertFlags(value, false, false, false, false)
+	if err := db.Create(&model.SystemSetting{Key: featureAvailabilitySettingKey, ValueJSON: `{"creditsEnabled":true}`}).Error; err != nil {
+		t.Fatal(err)
+	}
+	value, err = svc.FeatureAvailability()
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertFlags(value, false, false, false, false)
+	for index := 0; index < 5; index++ {
+		next := platform.DefaultFeatureAvailability()
+		next.CanvasConversionEnabled = index == 0
+		next.CanvasDrawingEnabled = index == 1
+		next.CanvasFolderEnabled = index == 2
+		next.CanvasFrameEnabled = index == 3
+		if _, err := svc.UpdateFeatureAvailability(&model.User{ID: "ordinary", Role: model.UserRoleUser}, next); err == nil {
+			t.Fatal("ordinary user changed feature flags")
+		}
+		if _, err := svc.UpdateFeatureAvailability(actor, next); err != nil {
+			t.Fatal(err)
+		}
+		value, err = svc.FeatureAvailability()
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertFlags(value, index == 0, index == 1, index == 2, index == 3)
+		if !value.CreditsEnabled || value.UpdatedBy != actor.ID {
+			t.Fatal("other features or audit actor changed")
+		}
+	}
+}
+
 func TestUpdateFeatureAvailabilityPersistsAndAudits(t *testing.T) {
 	svc, db := newFeatureAvailabilityTestService(t)
 	actor := &model.User{ID: "admin-1", Role: model.UserRoleAdmin}

@@ -1,6 +1,4 @@
 import { expect, test } from "bun:test";
-import { renderToStaticMarkup } from "react-dom/server";
-import { UpdateAnnouncementContent } from "../src/components/layout/update-announcement-content";
 import { DEFAULT_UPDATE_ANNOUNCEMENT, moveUpdateItem, validateUpdateAnnouncement, updateAnnouncementVersion, type UpdateAnnouncement } from "../src/lib/update-announcement";
 import { normalizePublicAppearance } from "../src/stores/use-appearance-store";
 import { refreshPublicAppearance } from "../src/services/appearance-bootstrap";
@@ -46,22 +44,6 @@ test("reorder preserves content identity and does not modify the source", () => 
     expect(moveUpdateItem(blocks, 2, -1).map((block) => block.id)).toEqual(["text", "video", "image"]);
     expect(blocks.map((block) => block.id)).toEqual(["text", "image", "video"]);
     expect(moveUpdateItem(blocks, 0, -1)).toBe(blocks);
-});
-test("real renderer supports text, images, videos, dates and responsive half layout", () => {
-    const html = renderToStaticMarkup(<UpdateAnnouncementContent value={custom()} />);
-    expect(html).toContain("<strong>新功能</strong>");
-    expect(html).toContain("is-half");
-    expect(html).toContain('alt="功能示意"');
-    expect(html).toContain("<video");
-    expect(html).toContain('controls=""');
-    expect(html).toMatch(/datetime="2026-10-03"/i);
-});
-test("renderer escapes raw HTML and blocks inline Markdown images", () => {
-    const value = custom();
-    value.releases[0].blocks[0].text = "<script>alert(1)</script>\n\n![hidden](https://example.com/tracker.png)";
-    const html = renderToStaticMarkup(<UpdateAnnouncementContent value={value} />);
-    expect(html).not.toContain("<script>");
-    expect(html).not.toContain("tracker.png");
 });
 test("appearance refresh carries the saved announcement switch and version", async () => {
     const result = await refreshPublicAppearance(async () => normalizePublicAppearance({ updates: custom() }));

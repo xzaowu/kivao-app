@@ -75,6 +75,13 @@ type UserDailyUploadUsage struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
+const (
+	SkillStatusPublished = 1
+	SkillStatusPending   = 2
+	SkillStatusRejected  = 3
+	SkillStatusOffline   = 4
+)
+
 type Skill struct {
 	ID                string     `json:"id" gorm:"primaryKey;size:36"`
 	OwnerID           string     `json:"ownerId" gorm:"index;size:36"`

@@ -54,7 +54,7 @@ func (r *Repository) AgentSkillCatalogRows(userID string) ([]AgentSkillCatalogRo
 	err := r.db.Model(&model.Skill{}).
 		Select(agentSkillCatalogColumns).
 		Joins("LEFT JOIN user_skill_states ON user_skill_states.skill_id = skills.id AND user_skill_states.user_id = ?", userID).
-		Where("skills.status = ?", 1).
+		Where(skillVisibleSQL, userID).
 		Where("skills.owner_id = ? OR (user_skill_states.added = ? AND skills.is_private = ?)", userID, true, false).
 		Order("skills.id ASC").
 		Scan(&rows).Error
@@ -74,7 +74,8 @@ func (r *Repository) AgentSkillCatalogRowsByIDs(userID string, ids []string) ([]
 	err := r.db.Model(&model.Skill{}).
 		Select(agentSkillCatalogColumns).
 		Joins("LEFT JOIN user_skill_states ON user_skill_states.skill_id = skills.id AND user_skill_states.user_id = ?", userID).
-		Where("skills.status = ? AND skills.id IN ?", 1, ids).
+		Where(skillVisibleSQL, userID).
+		Where("skills.id IN ?", ids).
 		Where("skills.owner_id = ? OR skills.is_private = ?", userID, false).
 		Scan(&rows).Error
 	return rows, err

@@ -46,7 +46,6 @@ import {
 import { Suspense, useEffect, useState, type ReactNode } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router";
 
-import { AppChangelogButton } from "@/components/layout/app-changelog-modal";
 import { BrandLogoFrame } from "@/components/brand/brand-logo";
 import { publishWorkspaceSidebarCollapsed, readWorkspaceSidebarCollapsed, subscribeWorkspaceSidebarCollapsed } from "@/components/layout/workspace-sidebar-state";
 import { AppFeedbackProvider } from "@/components/layout/app-feedback";
@@ -114,10 +113,12 @@ const adminNavigation: AdminNavigationGroup[] = [
         label: "创作与扩展",
         items: [
             { path: "/admin/workbench-tools", label: "工作台工具", shortLabel: "工具", icon: <Shapes className="size-4" /> },
+            { path: "/admin/inspirations", label: "灵感管理", shortLabel: "灵感", icon: <Sparkles className="size-4" /> },
             { path: "/admin/prompt-templates", label: "提示词模板", shortLabel: "模板", icon: <MessageSquareText className="size-4" /> },
             { path: "/admin/settings/drawing-engine", label: "绘图工具", shortLabel: "绘图", icon: <Paintbrush className="size-4" /> },
             { path: "/admin/plugins", label: "插件管理", shortLabel: "插件", icon: <PlugZap className="size-4" /> },
             { path: "/admin/skill-curation", label: "技能分类", shortLabel: "技能", icon: <Sparkles className="size-4" /> },
+            { path: "/admin/skills", label: "技能审核", shortLabel: "审核", icon: <Sparkles className="size-4" /> },
             { path: "/admin/resources", label: "存储资源", shortLabel: "资源", icon: <Database className="size-4" /> },
         ],
     },
@@ -217,17 +218,16 @@ function AdminShellLayout() {
                 <main id="admin-root" data-admin-root data-admin-density={density} className="admin-shell flex h-full min-h-0 overflow-hidden">
                     <aside className={cn("admin-sidebar hidden shrink-0 flex-col overflow-hidden lg:flex", collapsed && "is-collapsed")}>
                         <div className="admin-sidebar-identity shrink-0">
-                            <AdminTooltip title={collapsed ? "查看技术更新记录" : undefined} placement="right">
-                                <AppChangelogButton
-                                    technical
-                                    className={cn("admin-sidebar-brand-button", collapsed && "is-collapsed")}
-                                    icon={<BrandLogoFrame className="admin-sidebar-brand-mark grid shrink-0 place-items-center bg-foreground text-background" logoClassName="size-5 object-contain" alt="" fallback={<InfinityIcon className="size-4" />} />}
-                                    label={appearance.brandName}
-                                    showLabel={!collapsed}
-                                    showVersion={!collapsed}
-                                    labelClassName="admin-sidebar-brand-title"
-                                    versionClassName="admin-sidebar-brand-version"
-                                />
+                            <AdminTooltip title={collapsed ? appearance.brandName : undefined} placement="right">
+                                <Link to="/admin" className={cn("admin-sidebar-brand-button", collapsed && "is-collapsed")}>
+                                    <BrandLogoFrame className="admin-sidebar-brand-mark grid shrink-0 place-items-center bg-foreground text-background" logoClassName="size-5 object-contain" alt="" fallback={<InfinityIcon className="size-4" />} />
+                                    {!collapsed ? (
+                                        <>
+                                            <span className="admin-sidebar-brand-title">{appearance.brandName}</span>
+                                            <span className="admin-sidebar-brand-version">v{__APP_VERSION__}</span>
+                                        </>
+                                    ) : null}
+                                </Link>
                             </AdminTooltip>
                         </div>
                         <AdminNavigation collapsed={collapsed} />
@@ -385,7 +385,6 @@ function MobileAdminNavigation() {
                         <Home className="size-4" aria-hidden="true" />
                     </Link>
                 </AdminTooltip>
-                <AppChangelogButton technical className="admin-mobile-navigation-action [&_svg]:size-4" />
             </div>
         </nav>
     );

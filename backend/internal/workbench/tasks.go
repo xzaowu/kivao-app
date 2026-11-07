@@ -86,6 +86,25 @@ func (s *Service) ResolveTask(userID string, req TaskInput) (*TaskResolution, er
 			return nil, kernel.BadAuthRequest("所选工具与工作台类型不匹配")
 		}
 	}
+	processingOperation := ""
+	if tool != nil {
+		catalog, err := parseCatalogConfig(tool.CapabilityJSON, tool.GuideJSON)
+		if err != nil {
+			return nil, kernel.BadAuthRequest("工具配置无效")
+		}
+		processingOperation = catalog.ProcessingOperation
+		if processingOperation != "" && processingOperation != "depth_capture" {
+			return nil, kernel.BadAuthRequest("工具处理方式无效")
+		}
+	}
+	if processingOperation == "depth_capture" {
+		if req.Kind != KindVideo || preset != nil || strings.TrimSpace(req.Prompt) != "" || (req.UserPrompt != nil && strings.TrimSpace(*req.UserPrompt) != "") || len(req.Parameters) != 0 {
+			return nil, kernel.BadAuthRequest("深度动作捕捉只接收源视频，不使用提示词、效果或生成参数")
+		}
+		if len(req.References) != 1 || req.References[0].Kind != "video" {
+			return nil, kernel.BadAuthRequest("深度动作捕捉需要且只能提供一个源视频")
+		}
+	}
 	if strings.TrimSpace(req.Prompt) == "" && (tool == nil || toolRequiresPrompt(tool)) {
 		return nil, kernel.BadAuthRequest("当前工具需要填写提示词")
 	}
@@ -133,7 +152,7 @@ func (s *Service) ResolveTask(userID string, req TaskInput) (*TaskResolution, er
 		if err := json.Unmarshal([]byte(tool.CapabilityJSON), &capability); err != nil {
 			return nil, errors.New("工具能力配置无效")
 		}
-		if err := validateTaskCapabilities(tool.Kind, capability, refs); err != nil {
+		if err := validateTaskCapabilities(tool.Kind, capability, refs, preset); err != nil {
 			return nil, err
 		}
 		catalog, err := parseCatalogConfig(tool.CapabilityJSON, tool.GuideJSON)
@@ -148,6 +167,9 @@ func (s *Service) ResolveTask(userID string, req TaskInput) (*TaskResolution, er
 	operation := "image"
 	if req.Kind == KindVideo {
 		operation = videoOperation(refs)
+		if processingOperation != "" {
+			operation = processingOperation
+		}
 		// Provider adapters read the same operation and frame identities as admission.
 		metadata["videoEditOperation"] = operation
 		for _, ref := range refs {
@@ -377,7 +399,7 @@ func containsSensitiveURL(value any) bool {
 	return false
 }
 
-func validateTaskCapabilities(kind string, capability map[string]any, refs []TaskReference) error {
+func validateTaskCapabilities(kind string, capability map[string]any, refs []TaskReference, preset *model.WorkbenchPreset) error {
 	allowedRefs, _ := capability["referenceKinds"].([]any)
 	allowedSet := map[string]bool{}
 	for _, value := range allowedRefs {
@@ -389,6 +411,12 @@ func validateTaskCapabilities(kind string, capability map[string]any, refs []Tas
 	if raw, ok := capability["inputContract"]; ok {
 		encoded, _ := json.Marshal(raw)
 		_ = json.Unmarshal(encoded, &contract)
+	}
+	hasSlots := len(contract.Slots) > 0
+	var err error
+	contract, err = presetInputContract(contract, preset)
+	if err != nil {
+		return err
 	}
 	slots := map[string]ReferenceSlot{}
 	for _, slot := range contract.Slots {
@@ -405,7 +433,7 @@ func validateTaskCapabilities(kind string, capability map[string]any, refs []Tas
 		if kind == KindVideo && ref.Kind != "image" && ref.Kind != "video" && ref.Kind != "audio" {
 			return kernel.BadAuthRequest("视频任务参考素材类型无效")
 		}
-		if len(contract.Slots) == 0 {
+		if !hasSlots {
 			continue
 		}
 		slotKey := strings.TrimSpace(ref.SlotKey)

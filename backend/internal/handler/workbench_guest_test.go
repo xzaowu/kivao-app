@@ -81,7 +81,8 @@ func TestWorkbenchGuestCatalogRespectsFeatureAndAuthentication(t *testing.T) {
 		var result struct {
 			Code int `json:"code"`
 			Data struct {
-				Tools []struct {
+				DefaultExamples *app.WorkbenchExampleView `json:"defaultExamples"`
+				Tools           []struct {
 					ID      string                  `json:"id"`
 					Presets []model.WorkbenchPreset `json:"presets"`
 				} `json:"tools"`
@@ -93,6 +94,9 @@ func TestWorkbenchGuestCatalogRespectsFeatureAndAuthentication(t *testing.T) {
 		if r.Code != http.StatusOK || result.Code != 0 || len(result.Data.Tools) != 1 || result.Data.Tools[0].ID != kind+"-public" || len(result.Data.Tools[0].Presets) != 1 || result.Data.Tools[0].Presets[0].ID != kind+"-public" {
 			t.Fatalf("guest %s catalog did not filter disabled tools and presets: status=%d", kind, r.Code)
 		}
+		if result.Data.DefaultExamples == nil || len(result.Data.DefaultExamples.Items) != 0 {
+			t.Fatal("guest default example projection missing")
+		}
 	}
 	for _, path := range []string{"/api/workbench/tasks?kind=image", "/api/admin/workbench/tools", "/api/admin/settings/features"} {
 		if r := request(http.MethodGet, path); r.Code != http.StatusUnauthorized {
@@ -101,6 +105,9 @@ func TestWorkbenchGuestCatalogRespectsFeatureAndAuthentication(t *testing.T) {
 	}
 	if r := request(http.MethodPost, "/api/workbench/tasks"); r.Code != http.StatusUnauthorized {
 		t.Fatalf("guest task creation status=%d, want 401", r.Code)
+	}
+	if r := request(http.MethodPut, "/api/admin/workbench/examples/image"); r.Code != http.StatusUnauthorized {
+		t.Fatal("guest default example write accepted")
 	}
 	if err := db.Model(&setting).Update("value_json", `{"imageWorkbenchEnabled":false,"videoWorkbenchEnabled":false}`).Error; err != nil {
 		t.Fatal(err)

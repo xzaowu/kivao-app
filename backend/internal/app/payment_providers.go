@@ -239,6 +239,16 @@ func (s *Service) paymentProviderView(descriptor payment.Descriptor) (PaymentPro
 		return view, nil, configErr
 	}
 	view.Configured = strings.TrimSpace(config.ConfigCipher) != ""
+	if view.Configured && len(descriptor.PaymentMethods) > 0 {
+		values, err := s.decryptPaymentConfig(config)
+		if err != nil {
+			return view, nil, err
+		}
+		view.PaymentMethods, view.DefaultPaymentMethod, err = payment.AvailablePaymentMethods(descriptor, values)
+		if err != nil {
+			return view, nil, err
+		}
+	}
 	view.Enabled = view.Enabled && config.Enabled
 	view.CloseAfterMinutes = config.CloseAfterMinutes
 	return view, config, nil

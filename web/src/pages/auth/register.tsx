@@ -9,12 +9,15 @@ import { ApiError } from "@/services/api/request";
 import { VerificationFields } from "@/components/auth/verification-fields";
 import { emptyVerification, methodLabels, verificationMethods, type VerificationMethod } from "@/services/api/verification";
 import { useAppearanceStore } from "@/stores/use-appearance-store";
+import { safeAuthNext, type AuthFormProps } from "@/lib/auth-navigation";
+import { useAuthDialogStore } from "@/stores/use-auth-dialog-store";
+import { useUserStore } from "@/stores/use-user-store";
 
 type AuthSettings = Awaited<ReturnType<typeof getAuthSettings>>;
 
 const REFERRAL_CODE_STORAGE_KEY = "yingce:referral-code";
 
-export default function RegisterPage() {
+export default function RegisterPage({ nextPath, onSuccess, onBusyChange }: AuthFormProps = {}) {
     const navigate = useNavigate();
     const [params] = useSearchParams();
     const { message } = App.useApp();
@@ -34,7 +37,8 @@ export default function RegisterPage() {
     const [submitting, setSubmitting] = useState(false);
     const [registerCountdown, setRegisterCountdown] = useState(0);
     const registering = useRef(false);
-    const next = safeNext(params.get("next"));
+    const next = safeAuthNext(nextPath ?? params.get("next"));
+    useEffect(() => { onBusyChange?.(submitting); }, [submitting, onBusyChange]);
     // 推广码只存会话级缓存：用户从推广链接跳到登录页再回来注册时仍能归属，关闭浏览器后失效。
     const [referralCode] = useState(() => {
         const fromUrl = (params.get("ref") || "").trim();
@@ -85,10 +89,14 @@ export default function RegisterPage() {
             await register({ username, ...(settings?.firstUser ? { email } : verification), displayName, password, acceptedTerms: agreementAccepted, ...(referralCode ? { referralCode } : {}) });
             window.sessionStorage.removeItem(REFERRAL_CODE_STORAGE_KEY);
             const { applyUserSession } = await import("@/lib/user-session");
-            await applyUserSession(await getAuthSession());
+            const session = await getAuthSession();
+            if (!session.user) throw new Error("注册会话未建立，请重新登录");
+            if (!useUserStore.getState().user) useAuthDialogStore.getState().claimGuestDraft(session.user.id);
+            await applyUserSession(session);
             if (!settings?.firstUser) window.sessionStorage.setItem("yingce:model-setup-guide", "1");
             message.success(settings?.firstUser ? "管理员账号已创建" : "注册成功");
-            navigate(next, { replace: true });
+            if (onSuccess) onSuccess();
+            else navigate(next, { replace: true });
         } catch (error) {
             if (error instanceof ApiError && error.status === 429) setRegisterCountdown(Math.max(1, Math.ceil((error.retryAfterMs ?? 60000) / 1000)));
             message.error(error instanceof Error ? error.message : "注册失败");
@@ -269,10 +277,6 @@ function Notice({ icon, tone, children }: { icon: ReactNode; tone: "blue" | "amb
     );
 }
 
-function safeNext(value: string | null) {
-    if (!value || !value.startsWith("/") || value.startsWith("//")) return "/";
-    return value;
-}
 
 // 中文条款里「一、」「二、」这类条目标题常与正文写在同一个段落内（只隔一个换行）。
 // 这里按「条目标题 + 紧随其后的正文」拆成独立段落，让标题能单独成行并加重；

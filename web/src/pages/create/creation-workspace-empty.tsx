@@ -2,10 +2,11 @@
 
 import { useAppearanceStore } from "@/stores/use-appearance-store";
 import type { CreationMode } from "./creation-assets";
-import { ArrowUp, ChevronDown, Clapperboard, FileText, Image as ImageIcon, Blocks, Bookmark } from "lucide-react";
-import { LayoutGroup, motion, useReducedMotion } from "motion/react";
+import { ArrowUp, ChevronDown, Bookmark } from "lucide-react";
+import { Link } from "react-router";
+import { CREATION_SHORTCUT_ICONS, normalizeCreationShortcuts } from "@/lib/creation-shortcuts";
+import { useUserStore } from "@/stores/use-user-store";
 import { useState } from "react";
-import { aceternityMotion } from "@/lib/aceternity-motion";
 import { curatedInspirations, inspirationSourceOf, inspirationSources } from "@/lib/inspirations/catalog";
 import { modeLabels } from "./creation-types";
 import { Button } from "antd";
@@ -33,49 +34,36 @@ export function CreationEmptyBanner() {
     );
 }
 
-export const creationEmptySuggestions: Array<{ mode: CreationMode; icon: typeof Clapperboard; title: string; hint: string; prompt: string; openLibrary?: boolean }> = [
-    { mode: "video", icon: Clapperboard, title: "生成第一个镜头", hint: "描述画面、镜头运动与光线", prompt: "雨夜天台，镜头缓缓推近霓虹灯牌下的主角，她回眸看向镜头，强对比电影感布光" },
-    { mode: "image", icon: ImageIcon, title: "从参考图开始", hint: "上传风格图，生成同风格画面", prompt: "", openLibrary: true },
-    { mode: "text", icon: FileText, title: "续写故事", hint: "和 AI 讨论剧情、角色与对白", prompt: "帮我续写一个短剧故事，先聊聊剧情走向：" },
-    { mode: "video", icon: Blocks, title: "引用技能增强", hint: "@技能 调用分镜、配音等专业能力", prompt: "调用分镜技能，帮我规划这个镜头的拍摄方案：" },
-];
-
-export function CreationEmptySuggest({ onStartPrompt, onOpenLibrary }: { onStartPrompt: (mode: CreationMode, prompt: string) => void; onOpenLibrary: () => void }) {
-    const reducedMotion = useReducedMotion();
-    const [hovered, setHovered] = useState<string | null>(null);
+export function CreationEmptySuggest() {
+    const shortcuts = useAppearanceStore((state) => state.appearance.creationShortcuts);
+    const features = useUserStore((state) => state.features);
+    const groups = new Map<string, ReturnType<typeof normalizeCreationShortcuts>>();
+    for (const item of normalizeCreationShortcuts(shortcuts)) {
+        if ((item.target.startsWith("/toolbox/image") && !features.imageWorkbenchEnabled) || (item.target.startsWith("/toolbox/video") && !features.videoWorkbenchEnabled)) continue;
+        const items = groups.get(item.group) || [];
+        items.push(item);
+        groups.set(item.group, items);
+    }
+    if (!groups.size) return null;
     return (
-        <LayoutGroup id="creation-empty-suggest">
-            <div className="creation-empty-suggest" aria-label="快捷创作入口">
-                {creationEmptySuggestions.map((item) => {
-                    const Icon = item.icon;
-                    const start = () => {
-                        if (item.openLibrary) onOpenLibrary();
-                        else onStartPrompt(item.mode, item.prompt);
-                    };
-                    return (
-                        <motion.button
-                            key={item.title}
-                            type="button"
-                            className="suggest-card"
-                            onClick={start}
-                            onHoverStart={() => setHovered(item.title)}
-                            onHoverEnd={() => setHovered(null)}
-                            whileHover={reducedMotion ? undefined : { y: -2 }}
-                            transition={aceternityMotion.spring.surface}
-                        >
-                            {hovered === item.title ? <motion.span layoutId="creation-suggest-hover" className="suggest-card-hover" aria-hidden transition={reducedMotion ? { duration: 0 } : aceternityMotion.spring.surface} /> : null}
-                            <span className="library-icon-tile suggest-icon">
-                                <Icon size={18} strokeWidth={2} />
-                            </span>
-                            <span className="suggest-copy">
-                                <strong>{item.title}</strong>
-                                <span>{item.hint}</span>
-                            </span>
-                        </motion.button>
-                    );
-                })}
-            </div>
-        </LayoutGroup>
+        <nav className="creation-shortcuts" aria-label="快捷创作入口">
+            {[...groups].map(([group, items]) => (
+                <section className="creation-shortcut-group" key={group} aria-label={group}>
+                    <h2>{group}</h2>
+                    <div className="creation-shortcut-items">
+                        {items.map((item, index) => {
+                            const Icon = CREATION_SHORTCUT_ICONS[item.icon as keyof typeof CREATION_SHORTCUT_ICONS].icon;
+                            return (
+                                <Link className="creation-shortcut" key={`${item.target}:${index}`} to={item.target}>
+                                    <Icon aria-hidden="true" />
+                                    <span>{item.title}</span>
+                                </Link>
+                            );
+                        })}
+                    </div>
+                </section>
+            ))}
+        </nav>
     );
 }
 

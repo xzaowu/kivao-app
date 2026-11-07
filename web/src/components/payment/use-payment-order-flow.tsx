@@ -57,11 +57,11 @@ export function usePaymentOrderFlow({ onGranted }: { onGranted: (order: PaymentO
         idempotencyKey.current = "";
     };
 
-    const start = async (productId: string, providerId: string) => {
+    const start = async (productId: string, providerId: string, paymentMethod?: string) => {
         setCreating(true);
         try {
             if (!idempotencyKey.current) idempotencyKey.current = createClientUUID();
-            const result = await createPaymentOrder({ productId, providerId, idempotencyKey: idempotencyKey.current });
+            const result = await createPaymentOrder({ productId, providerId, paymentMethod, idempotencyKey: idempotencyKey.current });
             idempotencyKey.current = "";
             setOrder(result.order);
             await settle(result.order);

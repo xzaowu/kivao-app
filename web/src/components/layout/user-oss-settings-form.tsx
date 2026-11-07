@@ -3,7 +3,7 @@ import { Switch } from "@/components/ui/base/switch";
 import { Cloud, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { changesRequireOSSRetest, DEFAULT_OSS_PATH_PREFIX, getS3PresetHints, S3_PRESET_OPTIONS, validateOSSConnectionDraft, type OSSConnectionTestResult, type OSSProvider, type S3Preset } from "@/lib/oss-settings";
+import { changesRequireOSSRetest, DEFAULT_USER_OSS_PATH_PREFIX, getS3PresetHints, S3_PRESET_OPTIONS, validateOSSConnectionDraft, type OSSConnectionTestResult, type OSSProvider, type S3Preset } from "@/lib/oss-settings";
 import { getUserOSSSetting, testUserOSSConnection, updateUserOSSSetting, type UserOSSSetting } from "@/services/api/resources";
 import { useUserStore } from "@/stores/use-user-store";
 import { StatusBadge } from "@/components/ui/base/badges";
@@ -88,7 +88,7 @@ export function UserOSSSettingsForm() {
                 accessKeyId: values.accessKeyId?.trim() || "",
                 accessKeySecret: values.accessKeySecret?.trim() || "",
                 sessionToken: values.sessionToken?.trim() || "",
-                pathPrefix: values.pathPrefix?.trim() || DEFAULT_OSS_PATH_PREFIX,
+                pathPrefix: values.pathPrefix?.trim() || DEFAULT_USER_OSS_PATH_PREFIX,
                 pathStyle: values.pathStyle === true,
             });
             setSetting(data.setting);
@@ -196,7 +196,7 @@ export function UserOSSSettingsForm() {
                     <Input spellCheck={false} placeholder={isTencentCOS ? "my-canvas-assets-1250000000" : isQiniuKodo ? "七牛云存储空间名称" : "my-canvas-assets"} />
                 </Form.Item>
                 <Form.Item name="pathPrefix" label="路径前缀" className="mb-3">
-                    <Input spellCheck={false} placeholder={DEFAULT_OSS_PATH_PREFIX} />
+                    <Input spellCheck={false} placeholder={DEFAULT_USER_OSS_PATH_PREFIX} />
                 </Form.Item>
                 <Form.Item name="accessKeyId" label={accessKeyIdLabel} className="mb-3 xl:col-span-1">
                     <Input autoComplete="off" spellCheck={false} placeholder={isTencentCOS ? "腾讯云 SecretId" : isQiniuKodo ? "七牛云 AccessKey" : "阿里云 AccessKey ID"} />
@@ -246,7 +246,7 @@ function toFormValues(setting: UserOSSSetting): OSSFormValues {
         accessKeyId: setting.accessKeyId,
         accessKeySecret: "",
         sessionToken: "",
-        pathPrefix: setting.pathPrefix || DEFAULT_OSS_PATH_PREFIX,
+        pathPrefix: setting.pathPrefix || DEFAULT_USER_OSS_PATH_PREFIX,
         pathStyle: setting.pathStyle === true,
     };
 }
@@ -262,7 +262,7 @@ function connectionInput(values: OSSFormValues) {
         accessKeyId: values.accessKeyId?.trim() || "",
         accessKeySecret: values.accessKeySecret?.trim() || "",
         sessionToken: values.sessionToken?.trim() || "",
-        pathPrefix: values.pathPrefix?.trim() || DEFAULT_OSS_PATH_PREFIX,
+        pathPrefix: values.pathPrefix?.trim() || DEFAULT_USER_OSS_PATH_PREFIX,
         pathStyle: values.pathStyle === true,
     };
 }

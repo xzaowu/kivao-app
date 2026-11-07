@@ -17,6 +17,7 @@ import { CanvasNodeType, type CanvasConnection, type CanvasFolderStyle, type Can
 import { cloneCanvasDrawing } from "@/lib/canvas/canvas-drawing-storage";
 import { isDrawingEngineAvailable, type CanvasDrawingEngine } from "@/lib/canvas/canvas-drawing-engine";
 import { useUserStore } from "@/stores/use-user-store";
+import { canvasNodeCreationEnabled } from "@/lib/canvas/canvas-node-availability";
 import { useEffectiveConfig } from "@/stores/use-config-store";
 import { workflowProviderPluginEnabled } from "@/lib/plugins/builtin/workflows";
 import { usePluginStore } from "@/stores/use-plugin-store";
@@ -133,6 +134,7 @@ export function useCanvasNodeOperations({
     }, [selectedNodeIdsRef, setSelectedConnectionId, setSelectedNodeIds]);
 
     const createNode = useCallback((type: CanvasNodeTypeId, position?: Position, workflowProvider?: "runninghub") => {
+        if (!canvasNodeCreationEnabled(type, useUserStore.getState().features)) { message.warning("该节点暂未开放"); return; }
         if (type === CanvasNodeType.Drawing && !isDrawingEngineAvailable(defaultDrawingEngine, tldrawLicenseKey)) {
             message.error("当前生产构建未配置 tldraw License Key，不能创建 tldraw 绘图");
             return;
@@ -159,6 +161,7 @@ export function useCanvasNodeOperations({
     }, [commitNodes, defaultDrawingEngine, effectiveConfig.runningHub.enabled, effectiveConfig.runningHub.workflows.length, getCanvasCenter, message, nodesRef, runtimeStatuses, selectNodes, setDialogNodeId, tldrawLicenseKey]);
 
     const createFolder = useCallback((position?: Position, linked?: { id: string; projectId: string; title: string; style: CanvasFolderStyle; theme: CanvasFolderTheme; createdAt: string }) => {
+        if (!canvasNodeCreationEnabled("folder", useUserStore.getState().features)) { message.warning("文件夹节点暂未开放"); return; }
         const folder = createCanvasNode(CanvasNodeType.Frame, position || getCanvasCenter(), {
             frame: {
                 collapsed: true,
@@ -239,6 +242,7 @@ export function useCanvasNodeOperations({
     }, [commitNodes, message, nodesRef, selectedNodeIdsRef]);
 
     const createStoryboardGroup = useCallback(() => {
+        if (!canvasNodeCreationEnabled(CanvasNodeType.Frame, useUserStore.getState().features)) { message.warning("背板节点暂未开放"); return; }
         const images = nodesRef.current
             .filter((node) => selectedNodeIdsRef.current.has(node.id) && !node.metadata?.locked && node.type === CanvasNodeType.Image && Boolean(node.metadata?.content))
             .sort((a, b) => a.position.y - b.position.y || a.position.x - b.position.x);
@@ -290,6 +294,7 @@ export function useCanvasNodeOperations({
     }, [commitNodes, message, nodesRef, selectNodes, selectedNodeIdsRef]);
 
     const createReferenceGroup = useCallback(() => {
+        if (!canvasNodeCreationEnabled(CanvasNodeType.Frame, useUserStore.getState().features)) { message.warning("背板节点暂未开放"); return; }
         const media = nodesRef.current
             .filter((node) => selectedNodeIdsRef.current.has(node.id) && !node.metadata?.locked && (node.type === CanvasNodeType.Image || node.type === CanvasNodeType.Video) && Boolean(node.metadata?.content))
             .sort((a, b) => a.position.y - b.position.y || a.position.x - b.position.x);

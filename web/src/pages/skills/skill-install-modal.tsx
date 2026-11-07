@@ -137,8 +137,8 @@ export function SkillInstallModal({ open, onClose, onInstalled, onManualCreate }
                     <Form.Item name="tag" label="技能分类" rules={[{ required: true, message: "请选择技能分类" }]}>
                         <Select options={fallbackSkillCategories} />
                     </Form.Item>
-                    <Form.Item name="is_public" label="公开状态" valuePropName="checked" extra="公开后其他用户可以加入使用。">
-                        <Switch checkedChildren="公开" unCheckedChildren="私有" />
+                    <Form.Item name="is_public" label="申请公开" valuePropName="checked" extra="安装后自己即可使用；管理员审核通过后才对其他用户公开。">
+                        <Switch checkedChildren="申请公开" unCheckedChildren="私有" />
                     </Form.Item>
                 </div>
                 {mode === "github" ? <Form.Item name="autoUpdate" label="自动同步" valuePropName="checked" extra="后台每 6 小时检查一次提交版本，并记录最近检查与同步时间。"><Switch checkedChildren="开启" unCheckedChildren="关闭" /></Form.Item> : null}

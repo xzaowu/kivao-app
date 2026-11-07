@@ -33,6 +33,7 @@ const { defaultFeatureAvailability } = await import("../../src/stores/use-user-s
 const { WorkbenchPage } = await import("../../src/pages/workbench/image-workbench-page");
 const { default: UserLayout } = await import("../../src/layouts/user-layout");
 const { RequireFeature } = await import("../../src/components/auth/require-feature");
+const { AuthDialogLayout } = await import("../../src/components/auth/auth-dialog-layout");
 const get = spyOn(http, "get").mockResolvedValue({ tools: [] });
 const post = spyOn(http, "post").mockResolvedValue({});
 
@@ -98,6 +99,7 @@ for (const kind of ["image", "video"] as const) {
                                         categoryId: "general",
                                         enabled: true,
                                         sortOrder: 0,
+                                        resultExample: { items: [{ resourceId: "example-image", kind: "image", title: "匿名作品示例", description: "示例说明", url: "/example.png" }] },
                                         presets: [{ id: `${kind}-preset`, name: "标准效果", promptTemplate: "ADMIN_ONLY_TEMPLATE", enabled: true }],
                                     },
                                 ],
@@ -114,6 +116,7 @@ for (const kind of ["image", "video"] as const) {
                         <MemoryRouter>
                             <QueryClientProvider client={queryClient}>
                                 <App>
+                                    <AuthDialogLayout />
                                     <UserLayout>
                                         <RequireFeature feature={kind === "image" ? "imageWorkbenchEnabled" : "videoWorkbenchEnabled"}>
                                             <WorkbenchPage kind={kind} />
@@ -133,34 +136,74 @@ for (const kind of ["image", "video"] as const) {
                     return;
                 }
                 expect(host.querySelector(`[data-kind="${kind}"]`)).not.toBeNull();
-                expect(host.textContent).toContain(`${kind} public tool`);
+                expect(host.querySelector('[aria-label="创作流程"]')).toBeNull();
+                expect(host.querySelector('[aria-label="重置工作台"]')).toBeNull();
+                expect(host.querySelector(".workbench-block-label")).toBeNull();
+                expect(host.querySelector(".workbench-guide-stage")).toBeNull();
+                expect(host.textContent).not.toContain("作品会在这里呈现");
+                expect(Array.from(host.querySelectorAll(".workbench-mobile-tabs .ant-segmented-item-label")).map((element) => element.textContent)).toEqual(["生成", "结果", "任务", "示例"]);
+                expect(host.querySelector(".workbench-goal-picker")).toBeNull();
+                expect(host.querySelector(".workbench-goal-card")).toBeNull();
+                expect(host.textContent).not.toContain(`${kind} public tool`);
                 expect(host.querySelector(".workbench-model-empty")?.textContent).toContain("登录后查看模型");
                 expect(host.querySelector('a[href="/settings?section=models"]')).toBeNull();
+                const library = host.querySelector<HTMLButtonElement>('[aria-label="从素材库选择参考素材"]')!;
+                expect(library).not.toBeNull();
+                await act(async () => library.click());
+                expect(Array.from(document.querySelectorAll('[role="dialog"]')).some((dialog) => dialog.textContent?.includes("登录 / 注册"))).toBe(true);
+                expect(get.mock.calls.every(([path]) => path === "/workbench/tools" || path === "/features" || path === "/banner-announcements" || path === "/auth/settings")).toBe(true);
+                expect(post).not.toHaveBeenCalled();
+                await act(async () => document.querySelector<HTMLButtonElement>(".ant-modal-close")!.click());
                 const scenePicker = host.querySelector<HTMLButtonElement>(".workbench-tool-choice")!;
-                expect(scenePicker.textContent).toContain("选择创作场景（可选）");
+                expect(scenePicker.querySelector("strong")?.textContent).toBe("选择创作场景（可选）");
+                expect(scenePicker.querySelector("small")).toBeNull();
+                expect(host.querySelector(".workbench-direct-create")).toBeNull();
                 await act(async () => scenePicker.click());
                 expect(scenePicker.getAttribute("aria-expanded")).toBe("true");
                 const scene = document.querySelector<HTMLButtonElement>(".workbench-picker-modal .workbench-tool-card")!;
                 expect(scene.textContent).toContain(`${kind} public tool`);
+                expect(scene.querySelector("small")).toBeNull();
+                expect(scene.querySelector("img")?.getAttribute("src")).toBe("/example.png");
+                expect(document.querySelector(".workbench-tool-library-heading")).toBeNull();
+                const autoplay = document.querySelector<HTMLButtonElement>('.workbench-preview-autoplay [role="switch"]')!;
+                const previousAutoplay = autoplay.getAttribute("aria-checked");
+                await act(async () => autoplay.click());
+                expect(autoplay.getAttribute("aria-checked")).not.toBe(previousAutoplay);
                 await act(async () => scene.click());
                 expect(scenePicker.getAttribute("aria-expanded")).toBe("false");
                 expect(scenePicker.querySelector("strong")?.textContent).toBe(`${kind} public tool`);
-                expect(scenePicker.querySelector(".workbench-tool-change")?.textContent).toBe("更换");
+                expect(scenePicker.querySelector("small")).toBeNull();
+                expect(scenePicker.querySelector(".workbench-tool-change")).toBeNull();
+                const clearScene = host.querySelector<HTMLButtonElement>(".workbench-tool-bar .workbench-direct-create")!;
+                expect(clearScene.textContent).toBe("清除选择");
+                expect(scenePicker.contains(clearScene)).toBe(false);
                 expect(host.querySelector(".workbench-goal-picker")).toBeNull();
                 expect(host.textContent).not.toContain("ADMIN_ONLY_TEMPLATE");
                 expect(host.querySelector('[aria-label="生成提示词，可输入 @ 引用参考素材"]')).toBeNull();
                 expect(host.querySelector('[aria-label="补充要求，可输入 @ 引用素材"]')).not.toBeNull();
                 expect(host.querySelector('[aria-label="选择生成效果"]')?.textContent).toContain("标准效果");
+                const tabs = Array.from(host.querySelectorAll<HTMLElement>(".workbench-mobile-tabs .ant-segmented-item"));
+                await act(async () => tabs.find((element) => element.textContent === "示例")!.click());
+                expect(host.querySelector(".workbench-example-title")?.textContent).toBe("匿名作品示例");
+                expect(host.querySelector(".workbench-example figcaption")?.textContent).toBe("示例说明");
+                expect(post).not.toHaveBeenCalled();
+                await act(async () => tabs.find((element) => element.textContent === "生成")!.click());
                 await act(async () => scenePicker.click());
                 expect(scenePicker.getAttribute("aria-expanded")).toBe("true");
                 await act(async () => document.querySelector<HTMLButtonElement>(".workbench-picker-modal .ant-modal-close")!.click());
+                await act(async () => clearScene.click());
+                expect(scenePicker.querySelector("strong")?.textContent).toBe("选择创作场景（可选）");
+                expect(scenePicker.getAttribute("aria-expanded")).toBe("false");
+                expect(document.activeElement).toBe(scenePicker);
+                expect(host.querySelector(".workbench-direct-create")).toBeNull();
+                expect(host.querySelector('[aria-label="生成提示词，可输入 @ 引用参考素材"]')).not.toBeNull();
                 const generate = host.querySelector<HTMLButtonElement>(".workbench-submit")!;
                 expect(generate.textContent).toContain("登录后生成");
                 expect(generate.disabled).toBe(false);
                 await act(async () => generate.click());
-                expect(Array.from(document.querySelectorAll('[role="dialog"]')).some((dialog) => dialog.textContent?.includes("登录后开始创作"))).toBe(true);
+                expect(Array.from(document.querySelectorAll('[role="dialog"]')).some((dialog) => dialog.textContent?.includes("登录 / 注册"))).toBe(true);
                 expect(get.mock.calls.length).toBeGreaterThan(0);
-                expect(get.mock.calls.every(([path]) => path === "/workbench/tools" || path === "/features" || path === "/banner-announcements")).toBe(true);
+                expect(get.mock.calls.every(([path]) => path === "/workbench/tools" || path === "/features" || path === "/banner-announcements" || path === "/auth/settings")).toBe(true);
                 expect(post).not.toHaveBeenCalled();
             } finally {
                 await act(async () => root.unmount());

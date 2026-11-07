@@ -5,7 +5,6 @@ import { useWalletBalance } from "@/hooks/use-wallet-balance";
 import { useWorkspaceLogout } from "@/hooks/use-workspace-logout";
 import { useUserStore } from "@/stores/use-user-store";
 import { UserAvatar } from "./user-avatar";
-import { AppChangelogButton } from "./app-changelog-modal";
 import { UserGroupAvatarRing, UserGroupBadge } from "./user-group-badge";
 import "./workspace-account-card.css";
 
@@ -54,13 +53,6 @@ export function WorkspaceAccountCard({ onWallet, onNavigate }: { onWallet: () =>
                 </div>
             ) : null}
             <nav className="workspace-account-card-actions" aria-label="账户操作">
-                <AppChangelogButton
-                    className="flex w-full items-center gap-2 rounded px-2 py-2 text-xs text-foreground/65 hover:bg-surface-hover [&_svg]:size-3.5"
-                    showLabel
-                    showVersion
-                    versionClassName="ml-auto text-[var(--fs-micro)] tabular-nums text-foreground/32"
-                />
-                <AppChangelogButton technical className="flex w-full items-center gap-2 rounded px-2 py-2 text-xs text-foreground/65 hover:bg-surface-hover [&_svg]:size-3.5" showLabel />
                 <Link to="/settings?section=profile" onClick={onNavigate}>
                     <Settings />
                     <span>账户与设置</span>

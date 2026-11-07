@@ -12,7 +12,7 @@ import { PageHeader, PaginationBar, WorkspacePage } from "@/components/layout/wo
 import { WorkspaceErrorState, WorkspaceState } from "@/components/layout/workspace-state";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { cn } from "@/lib/utils";
-import { fallbackSkillCategories, formatSkillCount, skillAccent, skillCategoryLabel, skillGlyph } from "@/pages/skills/skill-catalog";
+import { fallbackSkillCategories, formatSkillCount, skillAccent, skillCategoryLabel, skillGlyph, skillReviewLabels } from "@/pages/skills/skill-catalog";
 import { SkillDetailModal } from "@/pages/skills/skill-detail-drawer";
 import { SkillEditorDrawer } from "@/pages/skills/skill-editor-drawer";
 import { SkillInstallModal } from "@/pages/skills/skill-install-modal";
@@ -623,6 +623,7 @@ function SkillCard({ skill, accentKey, categoryLabel, libraryCategories, canCate
             </div>
 
             <p className="skill-tile-description">{skill.description || "暂无技能简介"}</p>
+            {skill.isOwner && !skill.isPrivate && skill.status !== 1 ? <p className="text-xs text-foreground/65" role="status">{skillReviewLabels[skill.status] || "尚未公开"}{skill.status === 3 ? "，编辑保存后可重新提交审核" : "，仅自己可用"}</p> : null}
 
             <div className="skill-tile-footer">
                 <Tooltip title={likeLabel}>

@@ -94,10 +94,10 @@ export function buildNodeConfig(globalConfig: AiConfig, node: CanvasNodeData, mo
 }
 
 export function promptPlaceholder(mode: CanvasNodeGenerationMode, hasImageContent: boolean, hasTextContent: boolean) {
-    if (mode === "video") return "描述要生成的视频内容";
-    if (mode === "audio") return "描述要生成的音频内容";
-    if (mode === "image") return hasImageContent ? "输入新提示词，重新生成当前图片" : "描述要生成的图片内容";
-    return hasTextContent ? "请输入你想要将本段文本修改成什么" : "请输入你想要生成的文本内容";
+    if (mode === "video") return "描述要生成的视频内容，@引用素材/技能";
+    if (mode === "audio") return "描述要生成的音频内容，@引用素材/技能";
+    if (mode === "image") return hasImageContent ? "输入新提示词，重新生成当前图片，@引用素材/技能" : "描述要生成的图片内容，@引用素材/技能";
+    return hasTextContent ? "请输入你想要将本段文本修改成什么，@引用素材/技能" : "请输入你想要生成的文本内容，@引用素材/技能";
 }
 
 export function videoConfigPatch(key: keyof AiConfig, value: string) {

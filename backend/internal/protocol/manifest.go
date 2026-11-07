@@ -403,6 +403,16 @@ func validatePaymentProviderContributions(manifest Manifest) error {
 			return fmt.Errorf("duplicate payment provider contribution %q", provider.ID)
 		}
 		seen[provider.ID] = struct{}{}
+		methodIDs := map[string]bool{}
+		if len(provider.PaymentMethods) > 16 {
+			return fmt.Errorf("too many payment methods for %q", provider.ID)
+		}
+		for _, method := range provider.PaymentMethods {
+			if !validManifestIdentifier(method.ID) || len(method.ID) > 40 || strings.TrimSpace(method.Label) == "" || len(method.Label) > 120 || methodIDs[method.ID] {
+				return fmt.Errorf("invalid or duplicate payment method for %q", provider.ID)
+			}
+			methodIDs[method.ID] = true
+		}
 		if strings.TrimSpace(provider.Icon) == "" {
 			return fmt.Errorf("payment provider contribution %q requires an icon", provider.ID)
 		}

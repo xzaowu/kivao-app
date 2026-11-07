@@ -342,7 +342,7 @@ func skuSelectorForIntent(intent ModelRequestIntent) map[string]string {
 		// 价格档按实际参考素材归类。供应商执行仍可使用 reference_to_video、extend
 		// 等细分操作；计价时视频参考优先归为视频生视频，其余图片参考无论数量
 		// 都归为图生视频。
-		if selector["operation"] == VideoProcessingOperationEnhance {
+		if selector["operation"] == VideoProcessingOperationEnhance || selector["operation"] == VideoProcessingOperationDepthCapture {
 			// 画质增强等处理任务保留自身 operation，价格档可单独按 enhance 定价。
 		} else if intent.Inputs["video"] > 0 {
 			selector["operation"] = "video_to_video"

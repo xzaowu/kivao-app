@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 )
 
 // InputContract describes the media and text inputs a workbench tool expects.
@@ -17,6 +18,8 @@ type InputContract struct {
 type ReferenceSlot struct {
 	Key              string   `json:"key"`
 	Name             string   `json:"name"`
+	Common           *bool    `json:"common,omitempty"`
+	Description      string   `json:"description,omitempty"`
 	MediaTypes       []string `json:"mediaTypes"`
 	ResourceKind     string   `json:"resourceKind"`
 	MaxCount         int      `json:"maxCount"`
@@ -27,13 +30,36 @@ type ReferenceSlot struct {
 }
 
 type ResultExample struct {
-	Title            string   `json:"title,omitempty"`
-	Description      string   `json:"description,omitempty"`
-	ImageResourceIDs []string `json:"imageResourceIds,omitempty"`
-	VideoResourceID  string   `json:"videoResourceId,omitempty"`
+	Items            []ResultExampleItem `json:"items,omitempty"`
+	Title            string              `json:"title,omitempty"`
+	Description      string              `json:"description,omitempty"`
+	ImageResourceIDs []string            `json:"imageResourceIds,omitempty"`
+	VideoResourceID  string              `json:"videoResourceId,omitempty"`
+}
+
+type ResultExampleItem struct {
+	ResourceID  string `json:"resourceId"`
+	Kind        string `json:"kind"`
+	Title       string `json:"title,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+func resultExampleItems(example ResultExample) []ResultExampleItem {
+	if example.Items != nil {
+		return example.Items
+	}
+	items := make([]ResultExampleItem, 0, len(example.ImageResourceIDs)+1)
+	for _, id := range example.ImageResourceIDs {
+		items = append(items, ResultExampleItem{ResourceID: id, Kind: "image", Title: example.Title, Description: example.Description})
+	}
+	if example.VideoResourceID != "" {
+		items = append(items, ResultExampleItem{ResourceID: example.VideoResourceID, Kind: "video", Title: example.Title, Description: example.Description})
+	}
+	return items
 }
 
 type catalogConfig struct {
+	ProcessingOperation string        `json:"processingOperation,omitempty"`
 	InputContract       InputContract `json:"inputContract"`
 	SearchKeywords      []string      `json:"searchKeywords,omitempty"`
 	Surfaces            []string      `json:"surfaces,omitempty"`
@@ -54,6 +80,11 @@ func parseCatalogConfig(capabilityJSON, guideJSON string) (catalogConfig, error)
 	if raw, ok := capability["inputContract"]; ok {
 		if err := json.Unmarshal(raw, &config.InputContract); err != nil {
 			return config, fmt.Errorf("inputContract: %w", err)
+		}
+	}
+	if raw, ok := capability["processingOperation"]; ok {
+		if err := json.Unmarshal(raw, &config.ProcessingOperation); err != nil {
+			return config, fmt.Errorf("processingOperation: %w", err)
 		}
 	}
 	if raw, ok := capability["searchKeywords"]; ok {
@@ -86,6 +117,10 @@ func parseCatalogConfig(capabilityJSON, guideJSON string) (catalogConfig, error)
 }
 
 func normalizeCatalogConfig(config catalogConfig) (catalogConfig, error) {
+	config.ProcessingOperation = strings.TrimSpace(config.ProcessingOperation)
+	if config.ProcessingOperation != "" && config.ProcessingOperation != "depth_capture" {
+		return config, fmt.Errorf("不支持的工具处理方式")
+	}
 	if config.InputContract.MinTextReferences < 0 || config.InputContract.MinTextReferences > 20 {
 		return config, fmt.Errorf("文本参考数量无效")
 	}
@@ -97,6 +132,10 @@ func normalizeCatalogConfig(config catalogConfig) (catalogConfig, error) {
 		slot := &config.InputContract.Slots[index]
 		slot.Key = strings.TrimSpace(slot.Key)
 		slot.Name = strings.TrimSpace(slot.Name)
+		slot.Description = strings.TrimSpace(slot.Description)
+		if utf8.RuneCountInString(slot.Description) > 1000 {
+			return config, fmt.Errorf("素材说明不能超过 1000 字")
+		}
 		slot.ResourceKind = strings.TrimSpace(slot.ResourceKind)
 		if slot.ResourceKind == "" {
 			slot.ResourceKind = "asset"
@@ -131,6 +170,21 @@ func normalizeCatalogConfig(config catalogConfig) (catalogConfig, error) {
 	config.ResultExample.Description = strings.TrimSpace(config.ResultExample.Description)
 	config.ResultExample.ImageResourceIDs = cleanStrings(config.ResultExample.ImageResourceIDs, 8)
 	config.ResultExample.VideoResourceID = strings.TrimSpace(config.ResultExample.VideoResourceID)
+	if len(config.ResultExample.Items) > 20 {
+		return config, fmt.Errorf("作品示例不能超过 20 个")
+	}
+	for index := range config.ResultExample.Items {
+		item := &config.ResultExample.Items[index]
+		item.ResourceID, item.Kind = strings.TrimSpace(item.ResourceID), strings.TrimSpace(item.Kind)
+		item.Title, item.Description = strings.TrimSpace(item.Title), strings.TrimSpace(item.Description)
+		if item.ResourceID == "" || (item.Kind != "image" && item.Kind != "video") || utf8.RuneCountInString(item.Title) > 120 || utf8.RuneCountInString(item.Description) > 2000 {
+			return config, fmt.Errorf("作品示例的文件、类型、标题或说明无效")
+		}
+	}
+	if config.ResultExample.Items != nil {
+		config.ResultExample.Title, config.ResultExample.Description = "", ""
+		config.ResultExample.ImageResourceIDs, config.ResultExample.VideoResourceID = nil, ""
+	}
 	if config.RecommendationOrder < 0 || config.RecommendationOrder > 1_000_000 {
 		return config, fmt.Errorf("推荐排序值无效")
 	}
@@ -164,10 +218,11 @@ func catalogResourceIDs(config catalogConfig) []struct{ id, kind string } {
 	seen := map[string]bool{}
 	appendResource := func(id, kind string) {
 		id = strings.TrimSpace(id)
-		if id == "" || seen[id] {
+		key := kind + ":" + id
+		if id == "" || seen[key] {
 			return
 		}
-		seen[id] = true
+		seen[key] = true
 		result = append(result, struct{ id, kind string }{id: id, kind: kind})
 	}
 	for _, slot := range config.InputContract.Slots {
@@ -178,5 +233,8 @@ func catalogResourceIDs(config catalogConfig) []struct{ id, kind string } {
 		appendResource(id, "image")
 	}
 	appendResource(config.ResultExample.VideoResourceID, "video")
+	for _, item := range resultExampleItems(config.ResultExample) {
+		appendResource(item.ResourceID, item.Kind)
+	}
 	return result
 }

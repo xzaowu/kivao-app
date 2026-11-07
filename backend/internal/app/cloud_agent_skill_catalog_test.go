@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"yingce/backend/internal/model"
 	"yingce/backend/internal/skills"
 )
 
@@ -140,6 +141,21 @@ func TestSkillMarketSearchFeedsOneRecommendationCard(t *testing.T) {
 		t.Fatal(err)
 	}
 	matches := result.(map[string]any)["matches"].([]map[string]any)
+	if len(matches) != 0 {
+		t.Fatalf("pending skills must stay out of market search: %+v", matches)
+	}
+	admin := &model.User{ID: "reviewer", Username: "reviewer", Role: model.UserRoleAdmin, Status: model.UserStatusActive}
+	if err := db.Create(admin).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ReviewSkill(admin, public.SkillID, public.VersionID, public.UpdatedAt, "approve", ""); err != nil {
+		t.Fatal(err)
+	}
+	result, err = cloudAgentHandleSkillMarketSearch(s.repo, "user", state, search, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	matches = result.(map[string]any)["matches"].([]map[string]any)
 	if len(matches) != 1 || matches[0]["skillId"] != public.SkillID {
 		t.Fatalf("market search should find the uninstalled public skill: %+v", matches)
 	}

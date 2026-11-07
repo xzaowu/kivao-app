@@ -54,6 +54,9 @@ func (s *Service) TestUserOSSSetting(actor *model.User, req OSSSettingRequest) (
 	if err != nil {
 		return nil, err
 	}
+	if strings.Trim(strings.TrimSpace(req.PathPrefix), "/") == "" {
+		req.PathPrefix = defaultUserOSSPathPrefix
+	}
 	return s.testOSSSetting("user", actor.ID, actor.ID, req, current)
 }
 

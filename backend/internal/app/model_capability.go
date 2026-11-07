@@ -118,7 +118,11 @@ const (
 	// 轮询上限固定 1 小时，按大模型画质增强 RTF≈20 估算，源视频默认不超过 180 秒。
 	DefaultVideoProcessingMaxSourceSeconds = 180
 	// VideoProcessingOperationEnhance 是画质增强任务的 operation，前后端与价格档共用。
-	VideoProcessingOperationEnhance = "enhance"
+	VideoProcessingOperationEnhance      = "enhance"
+	VideoProcessingOperationDepthCapture = "depth_capture"
+	DefaultVideoDepthCaptureMaxSeconds   = 60
+	MaxVideoDepthCaptureSeconds          = 600
+	VolcengineMediaKitVideoDepthProtocol = "volcengine-mediakit-video-depth"
 	// VolcengineMediaKitEnhanceVideoProtocol 是官方插件 volcengine-mediakit 的画质增强 provider。
 	VolcengineMediaKitEnhanceVideoProtocol = "volcengine-mediakit-enhance-video"
 )
@@ -477,7 +481,9 @@ func CapabilitySpecFromModelCapabilityConfig(config *ModelCapabilityConfig, capa
 		if video.Processing != nil {
 			// 处理类模型的 videoSeconds 是服务端测得的源时长，fpsBand 只用于价格档选择。
 			spec.Options["videoSeconds"] = numericRange(1, float64(videoProcessingMaxSourceSeconds(video.Processing)), 1)
-			spec.Options["fpsBand"] = anyValues(videoProcessingFPSBands)
+			if video.DefaultOperation != VideoProcessingOperationDepthCapture {
+				spec.Options["fpsBand"] = anyValues(videoProcessingFPSBands)
+			}
 		}
 		if video.GenerateAudio.Supported {
 			spec.Options["videoGenerateAudio"] = boolValues(true)

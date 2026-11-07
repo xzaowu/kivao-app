@@ -62,35 +62,35 @@ type AdminPluginStateView struct {
 var officialApplicationPolicies = map[string]PluginManagementView{
 	WorkflowPluginRunningHub: {
 		Origin: PluginOriginOfficial, Kind: PluginKindApplication,
-		ActivationScope: PluginScopeUser, ConfigurationScope: PluginConfigurationUser,
+		ActivationScope: PluginScopeSystem, ConfigurationScope: PluginConfigurationUser,
 	},
 	PluginEagleAssetConnector: {
 		Origin: PluginOriginOfficial, Kind: PluginKindApplication,
-		ActivationScope: PluginScopeUser, ConfigurationScope: PluginConfigurationUser,
+		ActivationScope: PluginScopeSystem, ConfigurationScope: PluginConfigurationUser,
 	},
 	PluginPromptOptimizer: {
 		Origin: PluginOriginOfficial, Kind: PluginKindApplication,
-		ActivationScope: PluginScopeUser, ConfigurationScope: PluginConfigurationNone,
+		ActivationScope: PluginScopeSystem, ConfigurationScope: PluginConfigurationNone,
 	},
 	PluginPortraitClearance: {
 		Origin: PluginOriginOfficial, Kind: PluginKindApplication,
-		ActivationScope: PluginScopeUser, ConfigurationScope: PluginConfigurationNone,
+		ActivationScope: PluginScopeSystem, ConfigurationScope: PluginConfigurationNone,
 	},
 	PluginAIArtCritique: {
 		Origin: PluginOriginOfficial, Kind: PluginKindApplication,
-		ActivationScope: PluginScopeUser, ConfigurationScope: PluginConfigurationNone,
+		ActivationScope: PluginScopeSystem, ConfigurationScope: PluginConfigurationNone,
 	},
 	PluginMediaConversion: {
 		Origin: PluginOriginOfficial, Kind: PluginKindApplication,
-		ActivationScope: PluginScopeUser, ConfigurationScope: PluginConfigurationNone,
+		ActivationScope: PluginScopeSystem, ConfigurationScope: PluginConfigurationNone,
 	},
 	PluginEditorShell: {
 		Origin: PluginOriginOfficial, Kind: PluginKindApplication,
-		ActivationScope: PluginScopeUser, ConfigurationScope: PluginConfigurationNone,
+		ActivationScope: PluginScopeSystem, ConfigurationScope: PluginConfigurationNone,
 	},
 	PluginUserFeedback: {
 		Origin: PluginOriginOfficial, Kind: PluginKindApplication,
-		ActivationScope: PluginScopeUser, ConfigurationScope: PluginConfigurationNone,
+		ActivationScope: PluginScopeSystem, ConfigurationScope: PluginConfigurationNone,
 	},
 }
 
@@ -201,8 +201,8 @@ func (s *Service) pluginStateForUser(actor *model.User, pluginID string, items [
 		return PluginStateView{}, fmt.Errorf("插件 %q 不存在", pluginID)
 	}
 	policy := pluginManagement(pluginID, source)
-	platformAvailable := policy.Kind == PluginKindApplication
-	if hasRuntime && (policy.ActivationScope == PluginScopeSystem || s.repo == nil) {
+	platformAvailable := pluginID == PluginMediaConversion || pluginID == PluginUserFeedback
+	if hasRuntime {
 		platformAvailable = runtimePlugin.Status == "enabled"
 	}
 	if s.repo != nil {
@@ -215,44 +215,16 @@ func (s *Service) pluginStateForUser(actor *model.User, pluginID string, items [
 		}
 	}
 
-	userEnabled := false
-	userConfigured := false
-	if policy.ActivationScope == PluginScopeUser && actor != nil {
-		if s.repo != nil {
-			userState, err := s.repo.UserPluginState(actor.ID, pluginID)
-			if err != nil {
-				return PluginStateView{}, fmt.Errorf("读取用户插件状态：%w", err)
-			}
-			if userState != nil {
-				userEnabled, userConfigured = userState.Enabled, true
-			}
-		}
-		// Preserve the old globally-enabled workflow behavior until each user
-		// explicitly saves a personal choice. Other official applications were
-		// already controlled by each user's local installation state.
-		if !userConfigured {
-			if pluginID == PluginMediaConversion || pluginID == PluginUserFeedback {
-				userEnabled = true
-			} else if hasRuntime && pluginID == WorkflowPluginRunningHub {
-				userEnabled = runtimePlugin.Status == "enabled"
-			}
-		}
-	}
-	effective := platformAvailable
-	if policy.ActivationScope == PluginScopeUser {
-		effective = platformAvailable && userEnabled
-	}
 	state := PluginStateView{
 		PluginID: pluginID, PlatformAvailable: platformAvailable,
-		UserEnabled: userEnabled, UserConfigured: userConfigured,
-		EffectiveEnabled: effective,
-		CanToggle:        policy.ActivationScope == PluginScopeUser && platformAvailable,
+		EffectiveEnabled: platformAvailable,
+		CanToggle:        false,
 		CanConfigure:     policy.ConfigurationScope == PluginConfigurationUser && platformAvailable,
 	}
 	if !platformAvailable {
 		state.BlockedReason = "管理员已停用该插件"
 	} else if policy.ActivationScope == PluginScopeSystem {
-		state.BlockedReason = "系统插件由管理员统一管理"
+		state.BlockedReason = "插件由管理员统一管理"
 	}
 	return state, nil
 }
@@ -261,31 +233,7 @@ func (s *Service) SetUserPluginEnabled(actor *model.User, pluginID string, enabl
 	if actor == nil || strings.TrimSpace(actor.ID) == "" {
 		return PluginStateView{}, Forbidden("请先登录")
 	}
-	items := s.Plugins()
-	current, err := s.pluginStateForUser(actor, pluginID, items)
-	if err != nil {
-		return PluginStateView{}, err
-	}
-	runtimePlugin, hasRuntime := runtimePluginByID(items, pluginID)
-	source := "bundled"
-	if hasRuntime {
-		source = runtimePlugin.Source
-	}
-	if pluginManagement(pluginID, source).ActivationScope != PluginScopeUser {
-		return PluginStateView{}, Forbidden("系统插件只能由管理员统一管理")
-	}
-	if !current.PlatformAvailable {
-		return PluginStateView{}, Forbidden("管理员已停用该插件")
-	}
-	if s.repo == nil {
-		return PluginStateView{}, fmt.Errorf("插件状态存储未初始化")
-	}
-	now := time.Now()
-	state := &model.UserPluginState{ID: newID(), UserID: actor.ID, PluginID: pluginID, Enabled: enabled, CreatedAt: now, UpdatedAt: now}
-	if err := s.repo.SaveUserPluginState(state); err != nil {
-		return PluginStateView{}, fmt.Errorf("保存用户插件状态：%w", err)
-	}
-	return s.pluginStateForUser(actor, pluginID, items)
+	return PluginStateView{}, Forbidden("插件只能在后台由管理员统一管理")
 }
 
 func (s *Service) AdminPluginStates(actor *model.User) (map[string]AdminPluginStateView, error) {
@@ -296,13 +244,9 @@ func (s *Service) AdminPluginStates(actor *model.User) (map[string]AdminPluginSt
 	if err != nil {
 		return nil, err
 	}
-	counts, err := s.repo.EnabledPluginUserCounts()
-	if err != nil {
-		return nil, fmt.Errorf("统计插件启用用户数：%w", err)
-	}
 	result := make(map[string]AdminPluginStateView, len(states))
 	for pluginID, state := range states {
-		result[pluginID] = AdminPluginStateView{PluginStateView: state, EnabledUserCount: counts[pluginID]}
+		result[pluginID] = AdminPluginStateView{PluginStateView: state}
 	}
 	return result, nil
 }
@@ -322,10 +266,10 @@ func (s *Service) SetPluginPlatformAvailability(actor *model.User, pluginID stri
 	policy := pluginManagement(pluginID, source)
 	previousRuntimeEnabled := false
 	runtimeChanged := false
-	if policy.ActivationScope == PluginScopeSystem {
-		if !hasRuntime {
-			return AdminPluginStateView{}, fmt.Errorf("插件 %q 缺少运行时", pluginID)
-		}
+	if !hasRuntime && policy.Kind != PluginKindApplication {
+		return AdminPluginStateView{}, fmt.Errorf("插件 %q 缺少运行时", pluginID)
+	}
+	if hasRuntime {
 		previousRuntimeEnabled = runtimePlugin.Status == "enabled"
 		if _, err := s.SetPluginEnabled(pluginID, available); err != nil {
 			return AdminPluginStateView{}, err

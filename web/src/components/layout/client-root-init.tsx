@@ -5,7 +5,9 @@ import { App } from "antd";
 import { createModelChannel, useConfigStore } from "@/stores/use-config-store";
 import { navigateToSettings } from "@/lib/settings-navigation";
 import { initializeClientDiagnostics, setDiagnosticUserScope } from "@/services/diagnostics/client-diagnostics";
-import { fetchPluginRuntimeState, setUserPluginEnabled } from "@/services/api/plugins";
+import { fetchPluginRuntimeState } from "@/services/api/plugins";
+import "@/lib/plugins/builtin";
+import { listRegisteredPlugins } from "@/lib/plugins/plugin-registry";
 import { usePluginStore } from "@/stores/use-plugin-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { appQueryClient } from "@/lib/query-client";
@@ -28,28 +30,13 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
     useEffect(() => {
         if (!userId || !pluginStoreHydrated) return;
         let cancelled = false;
-        void appQueryClient.fetchQuery({ queryKey: ["plugin-runtime", userId], queryFn: fetchPluginRuntimeState, staleTime: 30_000 })
-            .then(async (runtime) => {
+        setPluginStates({});
+        for (const plugin of listRegisteredPlugins()) usePluginStore.getState().ensurePlugin(plugin.manifest);
+        const refresh = () => void appQueryClient.fetchQuery({ queryKey: ["plugin-runtime", userId], queryFn: fetchPluginRuntimeState, staleTime: 0, retry: false })
+            .then((runtime) => {
                 if (cancelled || useUserStore.getState().user?.id !== userId) return;
-                const statuses = { ...runtime.statuses };
-                const states = { ...runtime.states };
-                const legacyEnabledIds = usePluginStore
-                    .getState()
-                    .installations.filter((installation) => installation.enabled && states[installation.manifest.id]?.canToggle && !states[installation.manifest.id]?.userConfigured)
-                    .map((installation) => installation.manifest.id);
-                if (legacyEnabledIds.length) {
-                    try {
-                        const migrated = await Promise.all(legacyEnabledIds.map((pluginId) => setUserPluginEnabled(pluginId, true)));
-                        for (const state of migrated) states[state.pluginId] = state;
-                        for (const pluginId of legacyEnabledIds) statuses[pluginId] = states[pluginId]?.effectiveEnabled ? "enabled" : "disabled";
-                    } catch (error) {
-                        console.warn("迁移用户插件启用状态失败，已保留服务端状态", error);
-                    }
-                }
-                if (!cancelled && useUserStore.getState().user?.id === userId) {
-                    setRuntimeStatuses(statuses);
-                    setPluginStates(states);
-                }
+                setRuntimeStatuses(runtime.statuses);
+                setPluginStates(runtime.states);
             })
             .catch(() => {
                 if (!cancelled) {
@@ -57,8 +44,13 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
                     setPluginStates({});
                 }
             });
+        refresh();
+        const interval = window.setInterval(refresh, 30_000);
+        window.addEventListener("focus", refresh);
         return () => {
             cancelled = true;
+            window.clearInterval(interval);
+            window.removeEventListener("focus", refresh);
         };
     }, [pluginStoreHydrated, setPluginStates, setRuntimeStatuses, userId]);
 

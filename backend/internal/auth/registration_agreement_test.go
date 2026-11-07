@@ -31,6 +31,16 @@ func TestRegistrationAgreementFollowsBrandNameWhenUnset(t *testing.T) {
 	}
 }
 
+func TestKivaoDefaultRegistrationAgreement(t *testing.T) {
+	for _, brand := range []string{"", "影策", DefaultBrandName, "kivao"} {
+		svc := New(repository.New(newAgreementTestDB(t)), brandHost{name: brand}, nil)
+		title, _ := svc.RegistrationAgreement()
+		if title != "kivao服务协议" {
+			t.Fatalf("brand %q title = %q", brand, title)
+		}
+	}
+}
+
 func TestUpdateRegistrationSettingStoresAgreement(t *testing.T) {
 	db := newAgreementTestDB(t)
 	svc := New(repository.New(db), brandHost{name: "星野"}, nil)

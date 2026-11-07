@@ -245,6 +245,7 @@ func (s *Service) CreateSkill(userID string, req SkillMutationRequest) (*SkillIt
 	}
 	skill.ShowcaseMediaJSON = mediaJSON
 	skill.ExtraInfo = normalized.ExtraInfo
+	resetSkillReview(skill)
 	if err := s.repo.SaveSkill(skill); err != nil {
 		return nil, err
 	}
@@ -268,6 +269,7 @@ func (s *Service) UpdateSkill(userID string, id string, req SkillMutationRequest
 	skill.MarkdownURL = normalized.MarkdownURL
 	skill.ShowcaseMediaJSON = mediaJSON
 	skill.ExtraInfo = normalized.ExtraInfo
+	resetSkillReview(skill)
 	if skill.SourceType == "markdown" || skill.SourceType == "builtin" || skill.SourceType == "" {
 		if err := s.updateSingleMarkdownSkill(skill, normalized); err != nil {
 			return nil, err
@@ -446,6 +448,12 @@ func (s *Service) visibleSkill(userID string, id string) (*model.Skill, error) {
 	}
 	if skill.IsPrivate && skill.OwnerID != userID {
 		return nil, kernel.Forbidden("该技能未公开")
+	}
+	if skill.OwnerID != userID && skill.Status != model.SkillStatusPublished {
+		actor, err := s.repo.User(userID)
+		if err != nil || actor.Role != model.UserRoleAdmin || actor.Status != model.UserStatusActive {
+			return nil, kernel.Forbidden("该技能尚未通过公开审核或已下架")
+		}
 	}
 	return skill, nil
 }

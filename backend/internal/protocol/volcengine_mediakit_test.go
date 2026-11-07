@@ -7,6 +7,42 @@ import (
 
 const mediaKitEnhanceProvider = "volcengine-mediakit-enhance-video"
 
+func TestVolcengineMediaKitDepthCapture(t *testing.T) {
+	adapter := officialPackageAdapter(t, "volcengine-mediakit-video-depth.yingce-plugin", "volcengine-mediakit-video-depth")
+	if !adapter.Metadata().Kind.IsProcessing() || !adapter.Metadata().RequiresPublicMediaURLs {
+		t.Fatal("depth provider must use processing/public-media policy")
+	}
+	spec, err := adapter.BuildCreate(context.Background(), RequestContext{Request: GenerationRequest{Model: "standard", Resolution: "4k", Videos: []MediaReference{{URL: "https://cdn.example/source.mp4"}}, Extra: map[string]any{"idempotencyKey": "depth-one"}, ProviderOptions: map[string]map[string]any{"volcengine-mediakit-video-depth": {"fps": 60, "bitrate": 8000}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := manifestTestBody(t, spec)
+	if spec.Path != "/api/v1/tools/video-depth" || body["model"] != "standard" || body["client_token"] != "depth-one" || body["video_url"] != "https://cdn.example/source.mp4" || len(body) != 3 {
+		t.Fatalf("invalid depth request: %#v", body)
+	}
+	for _, videos := range [][]MediaReference{nil, {{URL: "https://a.example"}, {URL: "https://b.example"}}} {
+		if _, err := adapter.BuildCreate(context.Background(), RequestContext{Request: GenerationRequest{Videos: videos}}); err == nil {
+			t.Fatal("invalid source count accepted")
+		}
+	}
+	created, err := adapter.ParseCreate(context.Background(), []byte(`{"success":true,"task_id":"depth-task"}`))
+	if err != nil || created.TaskID != "depth-task" {
+		t.Fatal("task ID missing")
+	}
+	poll, err := adapter.BuildPoll(context.Background(), PollContext{TaskID: created.TaskID})
+	if err != nil || poll.Method != "GET" || poll.Path != "/api/v1/tasks/depth-task" {
+		t.Fatal("bad polling request")
+	}
+	done, err := adapter.ParsePoll(context.Background(), PollContext{TaskID: created.TaskID}, []byte(`{"success":true,"status":"completed","result":{"video_url":"https://out.example/depth.mp4","duration":18.625}}`))
+	if err != nil || done.Status != StatusSucceeded || done.Result == nil || len(done.Result.Videos) != 1 || done.Result.Usage["outputDurationSeconds"] != 18.625 {
+		t.Fatalf("depth result: %#v, %v", done, err)
+	}
+	failed, err := adapter.ParsePoll(context.Background(), PollContext{TaskID: created.TaskID}, []byte(`{"success":true,"status":"failed","error":{"code":"SourceExpired","message":"source unavailable"}}`))
+	if err != nil || failed.Status != StatusFailed {
+		t.Fatal("provider failure was treated as success")
+	}
+}
+
 func TestVolcengineMediaKitEnhanceVideoBuildsCreateRequest(t *testing.T) {
 	adapter := officialPackageAdapter(t, "volcengine-mediakit.yingce-plugin", mediaKitEnhanceProvider)
 	metadata := adapter.Metadata()

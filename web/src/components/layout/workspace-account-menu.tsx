@@ -2,7 +2,7 @@ import { Popover } from "antd";
 import { Switch } from "@/components/ui/base/switch";
 import { CircleUserRound, Moon, Sun } from "lucide-react";
 import { useState } from "react";
-import { Link } from "react-router";
+import { useAuthDialogStore } from "@/stores/use-auth-dialog-store";
 
 import { WorkspaceAccountCard } from "./workspace-account-card";
 import { UserAvatar } from "./user-avatar";
@@ -58,9 +58,9 @@ export function WorkspaceAccountMenu() {
             </Popover>
         </>
     ) : (
-        <Link to="/login" className="inline-flex items-center gap-2 px-2 text-xs text-foreground/55" aria-label="登录" title="登录">
+        <button type="button" onClick={() => useAuthDialogStore.getState().openDialog()} className="inline-flex items-center gap-2 px-2 text-xs text-foreground/55" aria-label="登录" title="登录">
             <CircleUserRound className="size-5" />
             <span className="hidden sm:inline">游客</span>
-        </Link>
+        </button>
     );
 }

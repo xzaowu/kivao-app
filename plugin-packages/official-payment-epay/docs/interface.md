@@ -1,5 +1,15 @@
 ## yingce.payment/v1
 
+### RPC 业务错误
+
+插件仅按真实错误类型写出 `order_not_found`、`order_not_paid`、`trade_bill_not_found`，宿主恢复对应类型，不根据错误文字关单。易支付未提供统一账单接口时保留“账单不存在”含义；网关返回通用查单错误时继续作为未知状态处理，不把“订单不存在或查询失败”提示自动当作明确不存在。网络异常、验签失败和损坏响应均不能作为关单或入账凭据。此修复需宿主与插件执行文件配套更新，原多支付方式配置及请求字段保持不变。
+
+### 多支付方式（1.0.10）
+
+`payTypes` 为以英文逗号分隔的开放方式，例如 `alipay,wxpay`；后台提供多选，支持清单声明的支付宝、微信、QQ 和 USDT，实际能力取决于网关。`payType` 仍是默认方式，必须在开放列表中。旧配置没有 `payTypes` 时只开放原默认方式，不自动开放其他通道。
+
+宿主将用户选中的 `paymentMethod` 固定到订单，并在插件 `create_order` 请求中传入；插件校验开放列表后将该单值写入上游 `type` 并参与原有 MD5/RSA 签名。不能把整个列表拼成 `type`。收银台刷新使用订单选择与原配置版本；幂等键不能用于不同的支付方式。插件仍使用 `yingce.payment/v1`，新增请求字段可选，旧订单缺少字段时使用其历史配置默认方式。宿主需配套支持订单字段及插件清单 `paymentMethods`，不能仅替换前端或清单而保留旧执行文件。
+
 支持 `validate_config`、`create_order`、`query_order`、`close_order`、`verify_notification` 和 `download_trade_bill`，统一返回 JSON 响应。
 
 易支付渠道协议全部封装在本插件内：V1 下单 `POST /mapi.php`（MD5），查单 `GET /api.php?act=order`；V2 下单 `POST /api/pay/create`（RSA，`method=jump`），异步通知为 form/JSON，成功应答 `success`。配置字段包括 `publicBaseUrl`、`pid`、`key`、`gateway`、`payType`、`version`、`checkoutMode`、`privateKey`、`platformPublicKey`。
@@ -18,7 +28,7 @@ V1 关单先查单：已支付订单返回付款凭据，未付款订单只关�
   "apiVersion": "yingce.plugin/v1",
   "id": "official-payment-epay",
   "name": "易支付",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "author": "Epay",
   "description": "易支付适配器，支持 V1/MD5 与 V2/RSA 的支付宝/微信/QQ 通道。",
   "enabled": true,
@@ -68,6 +78,20 @@ V1 关单先查单：已支付订单返回付款凭据，未付款订单只关�
         "description": "显式填写可信易支付网关根地址，不要带 /mapi.php；不会默认向第三方网关发送商户信息。"
       },
       {
+        "name": "payTypes",
+        "type": "multiselect",
+        "label": "开放的支付方式",
+        "required": true,
+        "default": "alipay",
+        "values": [
+          "alipay",
+          "wxpay",
+          "qqpay",
+          "usdt"
+        ],
+        "description": "可同时开放多种，由用户下单时选择。只勾选该商户网关实际已开通的方式；原有配置未填写时沿用默认方式。"
+      },
+      {
         "name": "payType",
         "type": "string",
         "label": "默认支付方式",
@@ -78,7 +102,8 @@ V1 关单先查单：已支付订单返回付款凭据，未付款订单只关�
           "wxpay",
           "qqpay",
           "usdt"
-        ]
+        ],
+        "description": "未指定支付方式时使用，必须包含在开放的支付方式中。"
       },
       {
         "name": "version",
@@ -145,7 +170,25 @@ V1 关单先查单：已支付订单返回付款凭据，未付款订单只关�
           "status": 400,
           "contentType": "text/plain; charset=utf-8",
           "body": "failure"
-        }
+        },
+        "paymentMethods": [
+          {
+            "id": "alipay",
+            "label": "支付宝"
+          },
+          {
+            "id": "wxpay",
+            "label": "微信支付"
+          },
+          {
+            "id": "qqpay",
+            "label": "QQ 钱包"
+          },
+          {
+            "id": "usdt",
+            "label": "USDT"
+          }
+        ]
       }
     ]
   },

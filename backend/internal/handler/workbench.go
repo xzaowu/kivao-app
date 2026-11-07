@@ -20,7 +20,12 @@ func RegisterWorkbenchRoutes(r *gin.RouterGroup, svc *service.Service) {
 			failService(c, err)
 			return
 		}
-		ok(c, gin.H{"tools": tools})
+		examples, err := svc.PublicWorkbenchExamples(kind)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, gin.H{"tools": tools, "defaultExamples": examples})
 	})
 	r.GET("/workbench/tasks", func(c *gin.Context) {
 		user, err := currentUser(c, svc)
@@ -75,7 +80,35 @@ func RegisterWorkbenchRoutes(r *gin.RouterGroup, svc *service.Service) {
 			failService(c, err)
 			return
 		}
-		ok(c, gin.H{"tools": items})
+		payload := gin.H{"tools": items}
+		if kind := c.Query("kind"); kind != "" {
+			examples, err := svc.AdminWorkbenchExamples(user, kind)
+			if err != nil {
+				failService(c, err)
+				return
+			}
+			payload["defaultExamples"] = examples
+		}
+		ok(c, payload)
+	})
+	r.PUT("/admin/workbench/examples/:kind", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 1<<20)
+		var input service.WorkbenchExampleInput
+		if err := decodeWorkbenchJSON(c, &input); err != nil {
+			fail(c, http.StatusBadRequest, err)
+			return
+		}
+		examples, err := svc.SaveWorkbenchExamples(user, c.Param("kind"), input)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, gin.H{"defaultExamples": examples})
 	})
 	admin.POST("", func(c *gin.Context) {
 		user, err := currentUser(c, svc)

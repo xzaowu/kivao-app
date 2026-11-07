@@ -163,10 +163,11 @@ func (r *Repository) ResourceReferenceSnapshotExcludingAssets(userID string, exc
 		snapshot.Documents = append(snapshot.Documents, ResourceReferenceDocument{Kind: "工具", ID: strconv.FormatInt(tool.ID, 10), Title: tool.Label, PrimaryJSON: string(payload)})
 	}
 	var workbenchTools []model.WorkbenchTool
-	if err := r.db.Where("(icon_resource_id IN ? OR cover_resource_id IN ?) AND enabled = ?", resourceIDs, resourceIDs, true).Find(&workbenchTools).Error; err != nil {
+	if err := r.db.Select("id", "name", "icon_resource_id", "cover_resource_id", "capability_json", "guide_json").Find(&workbenchTools).Error; err != nil {
 		return snapshot, err
 	}
 	for _, tool := range workbenchTools {
+		snapshot.Documents = append(snapshot.Documents, ResourceReferenceDocument{Kind: "工作台工具素材", ID: tool.ID, Title: tool.Name, PrimaryJSON: tool.CapabilityJSON, SecondaryJSON: tool.GuideJSON})
 		if tool.IconResourceID != "" && slices.Contains(resourceIDs, tool.IconResourceID) {
 			snapshot.Direct = append(snapshot.Direct, ResourceDirectReference{Kind: "工作台工具图标", ID: tool.ID, Title: tool.Name, ResourceID: tool.IconResourceID})
 		}
@@ -176,6 +177,17 @@ func (r *Repository) ResourceReferenceSnapshotExcludingAssets(userID string, exc
 	}
 
 	var assets []model.Asset
+	var defaultExamples []model.SystemSetting
+	if err := r.db.Select("key", "value_json").Where("key IN ? OR key LIKE ?", []string{model.WorkbenchExamplesSettingPrefix + model.WorkbenchKindImage, model.WorkbenchExamplesSettingPrefix + model.WorkbenchKindVideo}, model.InspirationSettingPrefix+"%").Find(&defaultExamples).Error; err != nil {
+		return snapshot, err
+	}
+	for _, setting := range defaultExamples {
+		kind := "工作台默认示例"
+		if strings.HasPrefix(setting.Key, model.InspirationSettingPrefix) {
+			kind = "灵感大厅示例"
+		}
+		snapshot.Documents = append(snapshot.Documents, ResourceReferenceDocument{Kind: kind, ID: setting.Key, Title: kind, PrimaryJSON: setting.ValueJSON})
+	}
 	assetQuery := r.db.Where("user_id = ?", userID)
 	if len(excludingAssetIDs) > 0 {
 		assetQuery = assetQuery.Where("id NOT IN ?", excludingAssetIDs)
@@ -401,6 +413,15 @@ func (r *Repository) ResourceReferenceSnapshotExcludingAssets(userID string, exc
 	}
 	for _, draft := range announcementDrafts {
 		snapshot.Direct = append(snapshot.Direct, ResourceDirectReference{Kind: "公告草稿", ID: draft.ResourceID, ResourceID: draft.ResourceID})
+	}
+
+	// 反馈附件只记录在 user_feedbacks.attachments 中，不进入素材或画布；漏掉会被孤儿清理删除，后台收件箱无法查看。
+	var feedbacks []model.UserFeedback
+	if err := r.db.Select("id", "title", "attachments").Where("user_id = ? AND attachments <> ? AND attachments <> ?", userID, "", "[]").Find(&feedbacks).Error; err != nil {
+		return snapshot, err
+	}
+	for _, feedback := range feedbacks {
+		snapshot.Documents = append(snapshot.Documents, ResourceReferenceDocument{Kind: FeedbackResourceReferenceKind, ID: feedback.ID, Title: feedback.Title, PrimaryJSON: feedback.Attachments})
 	}
 	return snapshot, nil
 }

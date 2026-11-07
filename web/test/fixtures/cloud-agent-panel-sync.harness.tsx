@@ -245,7 +245,7 @@ async function mount(initial: CloudAgentConversation, cloud: CloudAgentConversat
     document.body.append(host);
     const root = createRoot(host);
     await act(async () => {
-        root.render(<CanvasCloudAgentPanel />);
+        root.render(<CanvasCloudAgentPanel visible />);
         await settle();
     });
     return {

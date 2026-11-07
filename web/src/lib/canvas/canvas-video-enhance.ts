@@ -19,13 +19,13 @@ export type VideoEnhanceParams = {
 };
 
 /** 画质增强只使用系统渠道上声明了 processing 配置的视频模型；这些模型已从普通生成下拉中排除。 */
-export function listVideoEnhanceModels(config: AiConfig): string[] {
+export function listVideoEnhanceModels(config: AiConfig, operation = VIDEO_ENHANCE_OPERATION): string[] {
     return modelOptionsFromChannels(config.channels).filter((model) => {
         const decoded = decodeChannelModel(model);
         const channel = decoded ? config.channels.find((item) => item.id === decoded.channelId) : undefined;
         if (!channel || channel.scope !== "system") return false;
         const cost = channel.modelCosts?.find((item) => item.model === modelOptionName(model));
-        return cost?.capability === "video" && Boolean(cost.capabilityConfig?.video?.processing);
+        return cost?.capability === "video" && Boolean(cost.capabilityConfig?.video?.processing) && modelCapabilityConfigFor(config, model).video?.defaultOperation === operation;
     });
 }
 

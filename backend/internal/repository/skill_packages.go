@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"yingce/backend/internal/kernel"
 	"yingce/backend/internal/model"
 
 	"gorm.io/gorm"
@@ -33,7 +34,7 @@ func (r *Repository) AddSkillVersion(skill *model.Skill, version *model.SkillVer
 				return err
 			}
 		}
-		return tx.Save(skill).Error
+		return New(tx).SaveSkill(skill)
 	})
 }
 
@@ -42,7 +43,7 @@ func (r *Repository) AddSkillVersion(skill *model.Skill, version *model.SkillVer
 func (r *Repository) AddSkillVersionIfCurrent(skill *model.Skill, version *model.SkillVersion, files []model.SkillFile, baseVersionID string) (bool, error) {
 	applied := false
 	err := r.db.Transaction(func(tx *gorm.DB) error {
-		result := tx.Model(&model.Skill{}).Where("id = ? AND current_version_id = ?", skill.ID, baseVersionID).Update("current_version_id", version.ID)
+		result := tx.Model(&model.Skill{}).Where("id = ? AND current_version_id = ? AND updated_at = ?", skill.ID, baseVersionID, skill.UpdatedAt).UpdateColumn("current_version_id", version.ID)
 		if result.Error != nil {
 			return result.Error
 		}
@@ -57,7 +58,7 @@ func (r *Repository) AddSkillVersionIfCurrent(skill *model.Skill, version *model
 				return err
 			}
 		}
-		if err := tx.Save(skill).Error; err != nil {
+		if err := New(tx).SaveSkill(skill); err != nil {
 			return err
 		}
 		applied = true
@@ -82,7 +83,7 @@ func (r *Repository) SkillFiles(versionID string) ([]model.SkillFile, error) {
 
 func (r *Repository) SkillsForPackageEnsure() ([]model.Skill, error) {
 	var skills []model.Skill
-	err := r.db.Where("status = ?", 1).Find(&skills).Error
+	err := r.db.Where("status IN (1,2,3,4)").Find(&skills).Error
 	return skills, err
 }
 
@@ -93,5 +94,12 @@ func (r *Repository) AutoUpdatingGitHubSkills() ([]model.Skill, error) {
 }
 
 func (r *Repository) SaveSkill(skill *model.Skill) error {
-	return r.db.Save(skill).Error
+	result := r.db.Model(&model.Skill{}).Where("id = ? AND updated_at = ?", skill.ID, skill.UpdatedAt).Select("*").Updates(skill)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return kernel.NewAppError(409, "技能已更新，请刷新后重试")
+	}
+	return nil
 }

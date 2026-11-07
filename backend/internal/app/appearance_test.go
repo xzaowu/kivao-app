@@ -32,6 +32,9 @@ func TestAppearanceDefaultsPreserveBuiltInBrand(t *testing.T) {
 	if appearance.Configured || appearance.SchemaVersion != appearanceSchemaVersion || appearance.BrandName != defaultAppearanceBrandName || appearance.BrandSlug != defaultAppearanceBrandSlug || appearance.AuthHeroTitle != defaultAppearanceHeroTitle || appearance.AuthHeroDescription != "" || appearance.LogoURL != defaultAppearanceLogoURL || appearance.DarkLogoURL != defaultAppearanceLogoURL || !appearance.LogoFrameEnabled || appearance.AuthVideoURL != defaultAppearanceVideoURL || appearance.AuthVideoPosterURL != defaultAppearancePosterURL || !appearance.AuthVideoAutoplay || appearance.SkinID != defaultAppearanceSkinID || appearance.SEOTitle != defaultAppearanceBrandName || !strings.Contains(appearance.SEODescription, defaultAppearanceBrandName) || !strings.Contains(appearance.FooterCopyright, defaultAppearanceBrandName) || appearance.ICPFilingEnabled {
 		t.Fatalf("Appearance() = %#v", appearance)
 	}
+	if appearance.BrandName != "KIVAO" || appearance.BrandSlug != "kivao" || appearance.LogoURL != "/kivao-mark.png" || appearance.DarkLogoURL != "/kivao-mark.png" || appearance.Canvas.AgentName != "KIVAO" {
+		t.Fatal("built-in appearance must use the KIVAO identity")
+	}
 	if appearance.LogoConfigured || appearance.DarkLogoConfigured || appearance.AuthVideoConfigured || appearance.AuthVideoPosterConfigured || appearance.Revision != "builtin" {
 		t.Fatalf("Appearance() configured state = %#v", appearance)
 	}

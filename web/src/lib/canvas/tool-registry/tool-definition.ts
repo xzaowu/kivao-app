@@ -3,6 +3,7 @@ import type { MouseEvent } from "react";
 
 import type { CanvasAlignmentMode } from "@/lib/canvas/canvas-layout";
 import type { CanvasBackgroundMode } from "@/lib/canvas-theme";
+import type { CanvasNodeFeatures } from "@/lib/canvas/canvas-node-availability";
 import type { CanvasNodeData, CanvasNodeMetadata, CanvasNodeTypeId, CanvasToolMode, CanvasWorkspaceMode } from "@/types/canvas";
 
 /** 工具栏标识——每个工具栏有独立的注册表与偏好 */
@@ -102,6 +103,7 @@ export type ToolbarHandlers = {
     onNodeTrimVideoSegments: (node: CanvasNodeData) => void;
     /** 视频画质增强；只在存在 processing 视频模型时由项目页提供。 */
     onNodeEnhanceVideo?: (node: CanvasNodeData) => void;
+    onNodeDepthCapture?: (node: CanvasNodeData) => void;
     onNodeSubtitles: (node: CanvasNodeData) => void;
     onNodeTimeline: (node: CanvasNodeData) => void;
     /** 打开媒体版本面板；只读分享页不提供。 */
@@ -118,6 +120,7 @@ export type ToolbarHandlers = {
 
 /** 工具运行时可见的上下文。工具定义通过纯函数读取状态 */
 export type ToolContext = {
+    nodeFeatures?: CanvasNodeFeatures;
     selectedCount: number;
     selectedNodeTypes: Set<CanvasNodeTypeId>;
     selectedVideoCount: number;
@@ -147,6 +150,7 @@ export type ToolContext = {
 
 /** 添加节点菜单只依赖创建动作，避免右键菜单为工具栏状态补无意义字段。 */
 export type AddNodeMenuContext = {
+    nodeFeatures?: CanvasNodeFeatures;
     workspaceMode: CanvasWorkspaceMode;
     isProjectLinked: boolean;
     /** 内置应用插件的启用状态；未声明时视为未提供 gating 信息。 */

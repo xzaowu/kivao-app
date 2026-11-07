@@ -36,6 +36,9 @@ type SkillCategoryCount struct {
 	Count int64
 }
 
+const SkillPublicSQL = "skills.status = 1 AND skills.is_private = false"
+const skillVisibleSQL = "skills.status IN (1,2,3,4) AND (skills.owner_id = ? OR (" + SkillPublicSQL + "))"
+
 // PublicSkillCategoryCounts 返回技能广场中已启用公开技能的共享分类数量。
 func (r *Repository) PublicSkillCategoryCounts() (map[string]int64, error) {
 	var rows []SkillCategoryCount
@@ -56,7 +59,7 @@ func (r *Repository) PublicSkillCategoryCounts() (map[string]int64, error) {
 }
 
 func (r *Repository) Skills(filter SkillListFilter) ([]model.Skill, int64, error) {
-	query := r.db.Model(&model.Skill{}).Where("skills.status = ?", 1)
+	query := r.db.Model(&model.Skill{}).Where(skillVisibleSQL, filter.UserID)
 	switch filter.Scope {
 	case "mine":
 		query = query.Joins("LEFT JOIN user_skill_states ON user_skill_states.skill_id = skills.id AND user_skill_states.user_id = ?", filter.UserID).
@@ -70,7 +73,7 @@ func (r *Repository) Skills(filter SkillListFilter) ([]model.Skill, int64, error
 		query = query.Joins("JOIN user_skill_states ON user_skill_states.skill_id = skills.id AND user_skill_states.user_id = ? AND user_skill_states.liked = ?", filter.UserID, true).
 			Where("skills.owner_id = ? OR skills.is_private = ?", filter.UserID, false)
 	default:
-		query = query.Where("skills.is_private = ?", false)
+		query = query.Where(SkillPublicSQL)
 	}
 	if filter.Search != "" {
 		pattern := "%" + strings.ToLower(filter.Search) + "%"
@@ -119,7 +122,7 @@ func (r *Repository) UpsertBuiltinSkills(skills []model.Skill) error {
 	return r.db.Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "id"}},
 		DoUpdates: clause.AssignmentColumns([]string{
-			"owner_id", "author_name", "author_avatar_url", "name", "description", "instruction", "status", "source", "tag", "sort_weight", "is_private",
+			"owner_id", "author_name", "author_avatar_url", "name", "description", "instruction", "source", "tag", "sort_weight", "is_private",
 			"markdown_url", "showcase_media_json", "extra_info", "initial_like_count", "initial_added_count", "created_at", "updated_at",
 		}),
 	}).Create(&skills).Error
@@ -127,7 +130,7 @@ func (r *Repository) UpsertBuiltinSkills(skills []model.Skill) error {
 
 func (r *Repository) Skill(id string) (*model.Skill, error) {
 	var skill model.Skill
-	if err := r.db.First(&skill, "id = ? AND status = ?", id, 1).Error; err != nil {
+	if err := r.db.First(&skill, "id = ? AND status IN (1,2,3,4)", id).Error; err != nil {
 		return nil, err
 	}
 	return &skill, nil

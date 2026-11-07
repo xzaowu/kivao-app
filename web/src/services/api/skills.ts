@@ -218,6 +218,14 @@ export function listSkills(input: ListSkillsInput = {}) {
     return http.get<SkillList>(`/skills?${params.toString()}`);
 }
 
+export function listAdminSkills(input: { status: number; search?: string; page: number; pageSize: number }) {
+    return http.get<SkillList>("/admin/skills", { params: compactApiParams(input) });
+}
+
+export function reviewSkill(skill: Skill, action: "approve" | "reject" | "offline") {
+    return http.put<{ reviewed: boolean }>(`/admin/skills/${encodeURIComponent(skill.skillId)}/review`, { versionId: skill.versionId, updatedAt: skill.updatedAt, action }).finally(invalidateAddedSkillsCache);
+}
+
 
 export function listSkillLibraryCategories(scope: "mine" | "created" = "mine") {
     return http.get<SkillLibraryCategoryList>("/skills/library-categories", { params: { scope } });

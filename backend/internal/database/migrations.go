@@ -12,7 +12,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const CurrentSchemaVersion int64 = 77
+const CurrentSchemaVersion int64 = 79
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -274,6 +274,13 @@ var schemaMigrations = []migration{
 	{version: 75, name: "user_groups_pricing_currency", checksum: "sha256:user-groups-pricing-currency-v75-20261028", apply: migrateUserGroupsPricingCurrency},
 	{version: 76, name: "agent_memory_document_skill_discovery", checksum: "sha256:agent-memory-document-skill-discovery-v76-20261028", apply: migrateAgentMemoryDocumentSkillDiscovery},
 	{version: 77, name: "agent_memory_document_columns", checksum: "sha256:agent-memory-document-columns-v77-20261028", apply: migrateAgentMemoryDocumentColumns},
+	{version: 78, name: "skill_publication_review", checksum: "sha256:skill-publication-review-v78-r1", apply: migrateSkillPublicationReview},
+	{version: 79, name: "payment_order_method", checksum: "sha256:payment-order-method-v79-r1", apply: func(tx *gorm.DB) error {
+		if tx.Migrator().HasColumn(&model.PaymentOrder{}, "PaymentMethod") {
+			return nil
+		}
+		return tx.Migrator().AddColumn(&model.PaymentOrder{}, "PaymentMethod")
+	}},
 }
 
 // migrateAgentMemoryDocumentColumns 补齐记忆文件的条目序号与修订的工具调用 ID。

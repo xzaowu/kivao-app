@@ -1,6 +1,6 @@
 import { PaymentBrandIcon } from "@/components/payment-brand-icons";
 import { Callout } from "@/pages/admin/ui/controls";
-import { App, Button, DatePicker, Descriptions, Form, Input, InputNumber, Tabs, Typography } from "antd";
+import { App, Button, DatePicker, Descriptions, Form, Input, InputNumber, Select as AntSelect, Tabs, Typography } from "antd";
 import { AdminDrawer } from "@/pages/admin/ui/overlays";
 import { Switch } from "@/pages/admin/ui/controls";
 import type { ColumnsType } from "antd/es/table";
@@ -250,6 +250,7 @@ export default function AdminPaymentsPage() {
         providerForm.resetFields();
         const configValues = { ...(provider.values || {}) };
         for (const field of provider.configFields) {
+            if (field.type === "multiselect" && !configValues[field.name]) configValues[field.name] = configValues.payType || String(field.default || "");
             if (!configValues[field.name] && field.default !== undefined && field.default !== null) configValues[field.name] = String(field.default);
         }
         providerForm.setFieldsValue({ enabled: provider.configEnabled, closeAfterMinutes: provider.closeAfterMinutes || 30, values: configValues });
@@ -980,7 +981,13 @@ export default function AdminPaymentsPage() {
                             const rules = field.required && !secretReady ? [{ required: true, message: `请输入${field.label || field.name}` }] : undefined;
                             const placeholder = field.secret && secretReady ? configuredSecretText : field.description || undefined;
                             const input =
-                                field.type === "textarea" ? (
+                                field.type === "multiselect" ? (
+                                    <AntSelect
+                                        mode="multiple"
+                                        aria-label={field.label || field.name}
+                                        options={(field.values || []).map((value) => ({ value, label: ({ alipay: "支付宝", wxpay: "微信支付", qqpay: "QQ 钱包", usdt: "USDT" } as Record<string, string>)[value] || value }))}
+                                    />
+                                ) : field.type === "textarea" ? (
                                     <Input.TextArea autoSize={{ minRows: 4, maxRows: 10 }} placeholder={placeholder} autoComplete="off" />
                                 ) : field.type === "password" || field.secret ? (
                                     <Input.Password placeholder={placeholder} autoComplete="new-password" />
@@ -988,7 +995,24 @@ export default function AdminPaymentsPage() {
                                     <Input placeholder={placeholder} />
                                 );
                             return (
-                                <Form.Item key={field.name} name={["values", field.name]} label={field.label || field.name} extra={field.description} rules={rules}>
+                                <Form.Item
+                                    key={field.name}
+                                    name={["values", field.name]}
+                                    label={field.label || field.name}
+                                    extra={field.description}
+                                    rules={rules}
+                                    getValueProps={
+                                        field.type === "multiselect"
+                                            ? (value: string) => ({
+                                                  value: (value || "")
+                                                      .split(",")
+                                                      .map((item: string) => item.trim())
+                                                      .filter(Boolean),
+                                              })
+                                            : undefined
+                                    }
+                                    getValueFromEvent={field.type === "multiselect" ? (value: string[]) => value.join(",") : undefined}
+                                >
                                     {input}
                                 </Form.Item>
                             );

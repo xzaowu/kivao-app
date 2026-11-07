@@ -69,6 +69,7 @@ type PresetInput struct {
 }
 
 type ToolView struct {
+	ProcessingOperation string            `json:"processingOperation,omitempty"`
 	ID                  string            `json:"id"`
 	Kind                string            `json:"kind"`
 	CategoryID          string            `json:"categoryId"`
@@ -104,6 +105,8 @@ type InputContractView struct {
 type ReferenceSlotView struct {
 	Key              string   `json:"key"`
 	Name             string   `json:"name"`
+	Common           *bool    `json:"common,omitempty"`
+	Description      string   `json:"description,omitempty"`
 	MediaTypes       []string `json:"mediaTypes"`
 	ResourceKind     string   `json:"resourceKind"`
 	MaxCount         int      `json:"maxCount"`
@@ -116,12 +119,18 @@ type ReferenceSlotView struct {
 }
 
 type ResultExampleView struct {
-	Title            string   `json:"title,omitempty"`
-	Description      string   `json:"description,omitempty"`
-	ImageResourceIDs []string `json:"imageResourceIds,omitempty"`
-	ImageURLs        []string `json:"imageUrls,omitempty"`
-	VideoResourceID  string   `json:"videoResourceId,omitempty"`
-	VideoURL         string   `json:"videoUrl,omitempty"`
+	Items            []ResultExampleItemView `json:"items"`
+	Title            string                  `json:"title,omitempty"`
+	Description      string                  `json:"description,omitempty"`
+	ImageResourceIDs []string                `json:"imageResourceIds,omitempty"`
+	ImageURLs        []string                `json:"imageUrls,omitempty"`
+	VideoResourceID  string                  `json:"videoResourceId,omitempty"`
+	VideoURL         string                  `json:"videoUrl,omitempty"`
+}
+
+type ResultExampleItemView struct {
+	ResultExampleItem
+	URL string `json:"url,omitempty"`
 }
 
 type PresetView struct {
@@ -203,6 +212,9 @@ func (s *Service) CreateTool(actor *model.User, req ToolInput) (*ToolView, error
 	if err != nil {
 		return nil, err
 	}
+	if err := s.validateToolPresetInputs(item, presets); err != nil {
+		return nil, err
+	}
 	if err := s.repo.SaveWorkbenchToolWithPresets(item, presets, true); err != nil {
 		return nil, err
 	}
@@ -227,6 +239,14 @@ func (s *Service) UpdateTool(actor *model.User, id string, req ToolInput) (*Tool
 	if item.Kind != before.Kind {
 		return nil, kernel.BadAuthRequest("工具类型创建后不可更改")
 	}
+	previousConfig, err := parseCatalogConfig(before.CapabilityJSON, before.GuideJSON)
+	if err != nil {
+		return nil, kernel.BadAuthRequest("原工具配置无效")
+	}
+	nextConfig, _ := parseCatalogConfig(item.CapabilityJSON, item.GuideJSON)
+	if nextConfig.ProcessingOperation != previousConfig.ProcessingOperation {
+		return nil, kernel.BadAuthRequest("执行方式创建后不可更改，请新建工具")
+	}
 	if err := s.validateToolResources(actor.ID, item.IconResourceID, item.CoverResourceID, item.CapabilityJSON, item.GuideJSON); err != nil {
 		return nil, err
 	}
@@ -234,6 +254,9 @@ func (s *Service) UpdateTool(actor *model.User, id string, req ToolInput) (*Tool
 	item.UpdatedBy, item.UpdatedAt, item.Version = actor.ID, time.Now(), before.Version+1
 	presets, err := s.normalizeToolPresets(actor.ID, item.ID, req.Presets)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.validateToolPresetInputs(item, presets); err != nil {
 		return nil, err
 	}
 	if err := s.repo.SaveWorkbenchToolWithPresets(item, presets, false); err != nil {
@@ -283,6 +306,9 @@ func (s *Service) CreatePreset(actor *model.User, req PresetInput) (*PresetView,
 	}
 	item.ID, item.CreatedBy, item.UpdatedBy = kernel.NewID(), actor.ID, actor.ID
 	item.Version, item.CreatedAt, item.UpdatedAt = 1, time.Now(), time.Now()
+	if err := s.validateToolPresetInputs(tool, &[]model.WorkbenchPreset{*item}); err != nil {
+		return nil, err
+	}
 	if err := s.repo.CreateWorkbenchPreset(item); err != nil {
 		return nil, err
 	}
@@ -307,6 +333,13 @@ func (s *Service) UpdatePreset(actor *model.User, id string, req PresetInput) (*
 	}
 	if item.ToolID != before.ToolID {
 		return nil, kernel.BadAuthRequest("预设所属工具不可更改")
+	}
+	tool, err := s.repo.WorkbenchTool(item.ToolID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.validateToolPresetInputs(tool, &[]model.WorkbenchPreset{*item}); err != nil {
+		return nil, err
 	}
 	item.ID, item.CreatedBy, item.CreatedAt = before.ID, before.CreatedBy, before.CreatedAt
 	item.Version, item.UpdatedBy, item.UpdatedAt = before.Version+1, actor.ID, time.Now()
@@ -404,10 +437,10 @@ func (s *Service) validateToolResources(adminID, iconID, coverID, capabilityJSON
 	seen := map[string]bool{}
 	for _, id := range []string{iconID, coverID} {
 		id = strings.TrimSpace(id)
-		if id == "" || seen[id] {
+		if id == "" || seen["image:"+id] {
 			continue
 		}
-		seen[id] = true
+		seen["image:"+id] = true
 		resource, err := s.repo.ResourceForUser(adminID, id)
 		if err != nil || resource.Status != model.ResourceStatusReady || resource.Kind != "image" {
 			return kernel.BadAuthRequest("工具图标和封面必须引用当前管理员已就绪的图片资源")
@@ -418,10 +451,11 @@ func (s *Service) validateToolResources(adminID, iconID, coverID, capabilityJSON
 		return kernel.BadAuthRequest("工具输入配置无效")
 	}
 	for _, reference := range catalogResourceIDs(config) {
-		if seen[reference.id] {
+		key := reference.kind + ":" + reference.id
+		if seen[key] {
 			continue
 		}
-		seen[reference.id] = true
+		seen[key] = true
 		resource, resourceErr := s.repo.ResourceForUser(adminID, reference.id)
 		if resourceErr != nil || resource.Status != model.ResourceStatusReady || resource.Kind != reference.kind {
 			return kernel.BadAuthRequest("工具输入槽位和效果示例必须引用当前管理员已就绪的对应媒体")
@@ -471,6 +505,12 @@ func (s *Service) attachToolMedia(view *ToolView) error {
 			view.ResultExample.VideoURL = url
 		}
 	}
+	for index := range view.ResultExample.Items {
+		item := &view.ResultExample.Items[index]
+		if url, err := s.access.WorkbenchResourceAccess(item.ResourceID); err == nil {
+			item.URL = url
+		}
+	}
 	return nil
 }
 
@@ -509,11 +549,22 @@ func normalizeTool(req ToolInput) (*model.WorkbenchTool, error) {
 	if err != nil {
 		return nil, kernel.BadAuthRequest(err.Error())
 	}
+	if config.ProcessingOperation == "depth_capture" {
+		contract := config.InputContract
+		if item.Kind != KindVideo || contract.PromptRequired || contract.MinTextReferences != 0 || len(contract.Slots) != 1 || (req.Presets != nil && len(*req.Presets) != 0) {
+			return nil, kernel.BadAuthRequest("深度动作捕捉仅用于视频工作台，需要一个必填源视频，不使用提示词或效果预设")
+		}
+		slot := contract.Slots[0]
+		if len(slot.MediaTypes) != 1 || slot.MediaTypes[0] != "video" || !slot.Required || slot.MinCount != 1 || slot.MaxCount != 1 || (slot.Common != nil && !*slot.Common) {
+			return nil, kernel.BadAuthRequest("深度动作捕捉必须配置一个必填视频槽位，数量固定为 1")
+		}
+	}
 	capability := map[string]any{}
 	guide := map[string]any{}
 	_ = json.Unmarshal([]byte(item.CapabilityJSON), &capability)
 	_ = json.Unmarshal([]byte(item.GuideJSON), &guide)
 	capability["inputContract"] = config.InputContract
+	capability["processingOperation"] = config.ProcessingOperation
 	capability["searchKeywords"], capability["surfaces"] = config.SearchKeywords, config.Surfaces
 	capability["recommended"], capability["recommendationOrder"] = config.Recommended, config.RecommendationOrder
 	guide["inputHint"], guide["resultExample"] = config.InputHint, config.ResultExample
@@ -572,7 +623,8 @@ func validKind(kind string) bool { return kind == KindImage || kind == KindVideo
 func toolView(item model.WorkbenchTool, presets []model.WorkbenchPreset) ToolView {
 	config, _ := parseCatalogConfig(item.CapabilityJSON, item.GuideJSON)
 	view := ToolView{
-		ID: item.ID, Kind: item.Kind, CategoryID: item.CategoryID, Name: item.Name, Subtitle: item.Subtitle, Description: item.Description,
+		ProcessingOperation: config.ProcessingOperation,
+		ID:                  item.ID, Kind: item.Kind, CategoryID: item.CategoryID, Name: item.Name, Subtitle: item.Subtitle, Description: item.Description,
 		IconResourceID: item.IconResourceID, CoverResourceID: item.CoverResourceID, SortOrder: item.SortOrder,
 		Capability: json.RawMessage(item.CapabilityJSON), Guide: json.RawMessage(item.GuideJSON), InputHint: config.InputHint,
 		SearchKeywords: config.SearchKeywords, Surfaces: config.Surfaces, Recommended: config.Recommended, RecommendationOrder: config.RecommendationOrder,
@@ -588,13 +640,17 @@ func toolView(item model.WorkbenchTool, presets []model.WorkbenchPreset) ToolVie
 func inputContractView(contract InputContract) InputContractView {
 	view := InputContractView{PromptRequired: contract.PromptRequired, MinTextReferences: contract.MinTextReferences, Slots: make([]ReferenceSlotView, 0, len(contract.Slots))}
 	for _, slot := range contract.Slots {
-		view.Slots = append(view.Slots, ReferenceSlotView{Key: slot.Key, Name: slot.Name, MediaTypes: slot.MediaTypes, ResourceKind: slot.ResourceKind, MaxCount: slot.MaxCount, Required: slot.Required, MinCount: slot.MinCount, CoverResourceID: slot.CoverResourceID, SampleResourceID: slot.SampleResourceID})
+		view.Slots = append(view.Slots, ReferenceSlotView{Key: slot.Key, Name: slot.Name, Common: slot.Common, Description: slot.Description, MediaTypes: slot.MediaTypes, ResourceKind: slot.ResourceKind, MaxCount: slot.MaxCount, Required: slot.Required, MinCount: slot.MinCount, CoverResourceID: slot.CoverResourceID, SampleResourceID: slot.SampleResourceID})
 	}
 	return view
 }
 
 func resultExampleView(example ResultExample) ResultExampleView {
-	return ResultExampleView{Title: example.Title, Description: example.Description, ImageResourceIDs: example.ImageResourceIDs, VideoResourceID: example.VideoResourceID}
+	view := ResultExampleView{Title: example.Title, Description: example.Description, ImageResourceIDs: example.ImageResourceIDs, VideoResourceID: example.VideoResourceID, Items: make([]ResultExampleItemView, 0)}
+	for _, item := range resultExampleItems(example) {
+		view.Items = append(view.Items, ResultExampleItemView{ResultExampleItem: item})
+	}
+	return view
 }
 
 func presetView(item model.WorkbenchPreset) PresetView {

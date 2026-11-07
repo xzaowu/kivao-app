@@ -3,8 +3,10 @@ package model
 import "time"
 
 const (
-	WorkbenchKindImage = "image"
-	WorkbenchKindVideo = "video"
+	WorkbenchKindImage             = "image"
+	WorkbenchKindVideo             = "video"
+	WorkbenchExamplesSettingPrefix = "workbench.examples."
+	InspirationSettingPrefix       = "inspiration.entry."
 )
 
 // WorkbenchTool is an administrator-managed public generation entry.

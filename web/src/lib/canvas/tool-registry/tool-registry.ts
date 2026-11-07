@@ -3,6 +3,7 @@ import { createElement } from "react";
 
 import type { FloatingDockEntry } from "@/components/ui/aceternity/floating-dock";
 import { ART_CRITIQUE_NODE_TYPE } from "@/lib/art-critique/contracts";
+import { canvasNodeCreationEnabled } from "@/lib/canvas/canvas-node-availability";
 import { listCreatableNodeDefinitions } from "@/lib/canvas/node-registry";
 
 import type { AddNodeMenuCommand, AddNodeMenuContext, NodeToolbarGroup, ToolCategory, ToolContext, ToolDefinition, ToolbarId, ToolbarPrefs } from "./tool-definition";
@@ -113,7 +114,7 @@ export function resolveNodeToolbarPlacement(tool: ToolDefinition, ctx: ToolConte
 
 /** 解析添加节点菜单命令——合并插件节点后按 applicable 过滤并排序。 */
 export function resolveAddNodeMenuCommands(ctx: AddNodeMenuContext): AddNodeMenuCommand[] {
-    return [...getAddNodeMenuCommands(), ...getPluginNodeMenuCommands()].filter((command) => !command.applicable || command.applicable(ctx)).sort((a, b) => a.defaultOrder - b.defaultOrder);
+    return [...getAddNodeMenuCommands(), ...getPluginNodeMenuCommands()].filter((command) => canvasNodeCreationEnabled(command.id, ctx.nodeFeatures) && (!command.applicable || command.applicable(ctx))).sort((a, b) => a.defaultOrder - b.defaultOrder);
 }
 
 /**

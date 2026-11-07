@@ -3,7 +3,7 @@ import { App, Spin } from "antd";
 import { Tooltip } from "@/components/ui/base/tooltip";
 import { History, Maximize2, PenLine } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { useNavigate } from "react-router";
+import { useLocation, useNavigate } from "react-router";
 
 import type { AssetLibraryPickerItem } from "@/components/assets/asset-library-picker-modal";
 import { generationErrorCode, generationErrorMessage } from "@/lib/generation-error";
@@ -35,13 +35,11 @@ import { creationLibraryDisabledReason, creationLibrarySelectionToAttachments } 
 import { defaultCreationMode, modeLabels, type CreationConversation, type CreationMessage, type CreationMode, type CreationRetryContext, type CreationSettings, type CreationShotRailEntry, type CreationStatus } from "./creation-types";
 import { attachCreationTaskContexts, completedCreationGenerationTask, conversationTimestamp, creationMessageNeedsResultSync, creationShotRail, creationVideoShotOrdinal, isImageAttachment, isVideoAttachment, materializeCreationTaskResults, newConversation, newMessage, reconcileCreationTaskMessages, type PersistedCreationTask } from "./creation-conversations";
 import { CreationComposer, CreationEmptySuggest, CreationHistoryDrawer, CreationMessageView, CreationModeTabs, CreationWorkspaceToolbar, creationAssetCategoryLabels } from "./creation-workspace";
-import { declaredInspirationSources } from "@/lib/inspirations/catalog";
-import { fillablePrompt } from "@/lib/inspirations/resolve";
 import { CreationRecentCanvases } from "./creation-recent-canvases";
 import { CreationAgentEntry } from "./creation-agent-entry";
 import { createCreationSubmitGate } from "./creation-submit-gate";
 import { creationVideoConfig } from "./creation-generation-config";
-import { CreationLoginDialog } from "./creation-login-dialog";
+import { useAuthDialogStore } from "@/stores/use-auth-dialog-store";
 
 const AssetLibraryPickerModal = lazy(() => import("@/components/assets/asset-library-picker-modal").then((module) => ({ default: module.AssetLibraryPickerModal })));
 const InspirationHall = lazy(() => import("@/pages/inspirations"));
@@ -81,7 +79,7 @@ export default function CreatePage() {
     const rememberVideoSettings = useCreationPreferencesStore((state) => state.rememberVideoSettings);
     const initialComposerPreferences = useCreationPreferencesStore.getState().preferences;
     const promptOptimizerInstallation = usePluginStore((state) => state.installations.find((item) => item.manifest.id === PROMPT_OPTIMIZER_PLUGIN_ID));
-    const promptOptimizerEnabled = usePluginStore((state) => state.pluginStates[PROMPT_OPTIMIZER_PLUGIN_ID]?.effectiveEnabled ?? Boolean(state.installations.find((item) => item.manifest.id === PROMPT_OPTIMIZER_PLUGIN_ID)?.enabled));
+    const promptOptimizerEnabled = usePluginStore((state) => state.pluginStates[PROMPT_OPTIMIZER_PLUGIN_ID]?.effectiveEnabled === true);
     const promptOptimizerProvider = useMemo<PromptOptimizerProvider | null>(() => {
         if (!promptOptimizerEnabled || !promptOptimizerInstallation || !promptOptimizerPlugin.createPromptOptimizer) return null;
         return promptOptimizerPlugin.createPromptOptimizer(createPluginHostContext(promptOptimizerPlugin, promptOptimizerInstallation, config));
@@ -96,10 +94,16 @@ export default function CreatePage() {
     const [hydrated, setHydrated] = useState(false);
     const userId = useUserStore((state) => state.user?.id || null);
     const userSessionHydrated = useUserStore((state) => state.hydrated);
-    const inspirationSourcesVisible = useUserStore((state) => state.features.inspirationSourcesVisible);
     const [conversationScope, setConversationScope] = useState<string | null>(null);
     const [mode, setMode] = useState<CreationMode>(() => initialComposerPreferences.mode || defaultCreationMode);
-    const [prompt, setPrompt] = useState("");
+    const location = useLocation();
+    const authDraftPath = location.pathname + location.search + location.hash;
+    const [prompt, setPrompt] = useState(() => useAuthDialogStore.getState().readGuestDraft(authDraftPath, userId)?.prompt || "");
+    useEffect(() => {
+        const store = useAuthDialogStore.getState();
+        if (!userId) store.saveGuestDraft({ path: authDraftPath, prompt });
+        else if (store.guestDraft) store.saveGuestDraft(null);
+    }, [userId, authDraftPath, prompt]);
     const [attachments, setAttachments] = useState<CreationAttachment[]>([]);
     const promptRef = useRef(prompt);
     const attachmentsRef = useRef(attachments);
@@ -118,7 +122,6 @@ export default function CreatePage() {
     const [busy, setBusy] = useState(false);
     const [referenceReplacementBusy, setReferenceReplacementBusy] = useState(false);
     const [historyOpen, setHistoryOpen] = useState(false);
-    const [loginDialogOpen, setLoginDialogOpen] = useState(false);
     const [libraryOpen, setLibraryOpen] = useState(false);
     const externalAssetSources = useExternalAssetSources(libraryOpen);
     const abortRef = useRef<AbortController | null>(null);
@@ -705,7 +708,7 @@ export default function CreatePage() {
             return;
         }
         if (!useUserStore.getState().user) {
-            setLoginDialogOpen(true);
+            useAuthDialogStore.getState().openDialog();
             releaseRetryLock();
             releaseSubmitGate();
             return;
@@ -1255,33 +1258,12 @@ export default function CreatePage() {
                         <CreationModeTabs mode={mode} agentActive={agentMode} onAgentSelect={() => setAgentMode(true)} onModeChange={(next) => { setAgentMode(false); selectMode(next); }} />
                         {agentMode ? <CreationAgentEntry /> : <div className="creation-empty-composer"><CreationComposer {...composerProps} variant="empty" /></div>}
                     </div>
-                    <CreationEmptySuggest
-                        onStartPrompt={startPrompt}
-                        onOpenLibrary={() => { setAgentMode(false); selectMode("image"); setLibraryOpen(true); }}
-                    />
+                    <CreationEmptySuggest />
                 </section>
-                <CreationRecentCanvases onRequireLogin={() => setLoginDialogOpen(true)} />
+                <CreationRecentCanvases onRequireLogin={() => useAuthDialogStore.getState().openDialog()} />
                 <Suspense fallback={<div className="creation-hall-loading" role="status">正在准备灵感大厅…</div>}>
-                    <InspirationHall onUse={(item) => startPrompt(item.mode, fillablePrompt(item))} />
+                    <InspirationHall onUse={(item) => startPrompt(item.mode, item.prompt)} />
                 </Suspense>
-                {inspirationSourcesVisible ? <div className="creation-source-notice">
-                    <details>
-                        <summary>素材来源</summary>
-                        {declaredInspirationSources().map((source) => (
-                            <p key={source.name ?? source.label}>
-                                {source.notice}
-                                {source.repository ? (
-                                    <>
-                                        {" "}
-                                        <a href={source.repository} target="_blank" rel="noreferrer">
-                                            {source.name} · {source.license}
-                                        </a>
-                                    </>
-                                ) : null}
-                            </p>
-                        ))}
-                    </details>
-                </div> : null}
                 </main>
             </> : <div className="creation-thread-workbench">
                 <CreationWorkspaceToolbar onNewConversation={startNewConversation} onOpenHistory={() => setHistoryOpen(true)} shots={videoShots} onJumpToShot={jumpToShot} onContinueCanvas={() => void continueOnCanvas()} openingCanvas={openingCanvas} />
@@ -1303,7 +1285,6 @@ export default function CreatePage() {
             </div>}
         </div>
         <CreationHistoryDrawer open={historyOpen} conversations={historyConversations} activeId={activeConversation.id} onNew={startNewConversation} onClose={() => setHistoryOpen(false)} onSelect={selectConversation} onDelete={confirmDeleteConversation} onRename={renameConversationTitle} />
-        <CreationLoginDialog open={loginDialogOpen} onClose={() => setLoginDialogOpen(false)} />
         {libraryOpen ? <Suspense fallback={null}><AssetLibraryPickerModal
             remoteLibrary
             acceptRemoteItems

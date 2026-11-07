@@ -43,6 +43,10 @@ export type FeatureAvailability = {
     inspirationSourcesVisible: boolean;
     imageWorkbenchEnabled: boolean;
     videoWorkbenchEnabled: boolean;
+    canvasConversionEnabled: boolean;
+    canvasDrawingEnabled: boolean;
+    canvasFolderEnabled: boolean;
+    canvasFrameEnabled: boolean;
     configured?: boolean;
     updatedBy?: string;
     updatedAt?: string;
@@ -60,6 +64,10 @@ export const defaultFeatureAvailability: FeatureAvailability = {
     inspirationSourcesVisible: true,
     imageWorkbenchEnabled: false,
     videoWorkbenchEnabled: false,
+    canvasConversionEnabled: false,
+    canvasDrawingEnabled: false,
+    canvasFolderEnabled: false,
+    canvasFrameEnabled: false,
 };
 
 type UserStore = {

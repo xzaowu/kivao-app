@@ -4,13 +4,15 @@ import type { GenerationTask } from "@/services/api/task-center";
 
 export type WorkbenchKind = "image" | "video";
 
+export type WorkbenchPresetInputs = { slotKeys?: string[]; noticeSlotKeys?: string[] };
+
 export type WorkbenchPromptPreset = {
     id: string;
     name: string;
     summary?: string;
     promptTemplate: string;
     enabled?: boolean;
-    defaultParameters?: Record<string, unknown>;
+    defaultParameters?: Record<string, unknown> & { workbenchInputs?: WorkbenchPresetInputs };
     requiredVariables?: string[];
     sortOrder?: number;
 };
@@ -19,6 +21,8 @@ export type WorkbenchReferenceSlot = {
     key: string;
     name: string;
     mediaTypes: Array<"image" | "video" | "audio">;
+    common?: boolean;
+    description?: string;
     resourceKind?: string;
     maxCount: number;
     minCount: number;
@@ -35,7 +39,10 @@ export type WorkbenchInputContract = {
     slots: WorkbenchReferenceSlot[];
 };
 
+export type WorkbenchResultExampleItem = { resourceId: string; kind: "image" | "video"; title?: string; description?: string; url?: string };
+
 export type WorkbenchResultExample = {
+    items?: WorkbenchResultExampleItem[];
     title?: string;
     description?: string;
     imageResourceIds?: string[];
@@ -44,7 +51,15 @@ export type WorkbenchResultExample = {
     videoUrl?: string;
 };
 
+export function workbenchExamples(example?: WorkbenchResultExample): WorkbenchResultExampleItem[] {
+    if (example?.items) return example.items;
+    const items: WorkbenchResultExampleItem[] = (example?.imageResourceIds || []).map((resourceId, index) => ({ resourceId, kind: "image", title: example?.title, description: example?.description, url: example?.imageUrls?.[index] }));
+    if (example?.videoResourceId) items.push({ resourceId: example.videoResourceId, kind: "video", title: example.title, description: example.description, url: example.videoUrl });
+    return items;
+}
+
 export type WorkbenchTool = {
+    processingOperation?: "depth_capture" | "";
     id: string;
     kind: WorkbenchKind;
     categoryId: string;
@@ -73,6 +88,7 @@ export type WorkbenchTool = {
 
 export type WorkbenchToolDirectory = {
     tools: WorkbenchTool[];
+    defaultExamples?: WorkbenchResultExample;
 };
 
 export type CreateWorkbenchTaskInput = {
@@ -104,7 +120,7 @@ export async function listWorkbenchTasks(kind: WorkbenchKind, limit = 100, activ
 }
 
 export async function listWorkbenchTools(kind: WorkbenchKind, signal?: AbortSignal, admin = false) {
-    const response = await http.get<{ tools: WorkbenchTool[] }>(admin ? "/admin/workbench/tools" : "/workbench/tools", { params: { kind }, signal });
+    const response = await http.get<WorkbenchToolDirectory>(admin ? "/admin/workbench/tools" : "/workbench/tools", { params: { kind }, signal });
     if (admin) return response;
     const tools = await Promise.all(
         response.tools.map(async (tool) => ({
@@ -114,7 +130,11 @@ export async function listWorkbenchTools(kind: WorkbenchKind, signal?: AbortSign
             presets: Array.isArray(tool.presets) ? tool.presets.filter((preset) => preset.enabled !== false) : [],
         })),
     );
-    return { tools };
+    return { tools, defaultExamples: response.defaultExamples };
+}
+
+export function saveDefaultWorkbenchExamples(kind: WorkbenchKind, items: WorkbenchResultExampleItem[]) {
+    return http.put<{ defaultExamples: WorkbenchResultExample }>(`/admin/workbench/examples/${kind}`, { items: items.map(({ url: _url, ...item }) => item) }).then((data) => data.defaultExamples);
 }
 
 async function resourceDisplayUrl(resourceId: string, variant: "thumbnail" | "original" = "thumbnail") {

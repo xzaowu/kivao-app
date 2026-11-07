@@ -7,6 +7,7 @@ import { canvasDockStyle } from "@/lib/canvas/canvas-aceternity-style";
 import { defaultToolbarPrefs, readToolbarPrefs, resolveToolbarEntries, type ToolContext, type ToolbarHandlers } from "@/lib/canvas/tool-registry";
 import type { CanvasAlignmentMode } from "@/lib/canvas/canvas-layout";
 import { useCanvasThemeStore } from "@/stores/canvas/use-canvas-theme-store";
+import { useUserStore } from "@/stores/use-user-store";
 
 type CanvasProjectSelectionToolbarProps = {
     anchorRef: RefObject<HTMLDivElement | null>;
@@ -25,12 +26,14 @@ type CanvasProjectSelectionToolbarProps = {
 
 export function CanvasProjectSelectionToolbar({ anchorRef, containerRef, count, selectedVideoCount, mergingVideos, onAlign, onArrange, onCreateStoryboard, onCreateReferenceGroup, onBatchConnect, onMergeVideos, onSendSelectionToAgent }: CanvasProjectSelectionToolbarProps) {
     const theme = canvasThemes[useCanvasThemeStore((state) => state.theme)];
+    const nodeFeatures = useUserStore((state) => state.features);
 
     const handlers = {
         onAlign, onArrange, onCreateStoryboard, onCreateReferenceGroup, onBatchConnect, onMergeVideos, onSendSelectionToAgent,
     } as Partial<ToolbarHandlers> as ToolbarHandlers;
 
     const ctx: ToolContext = {
+        nodeFeatures,
         selectedCount: count,
         selectedNodeTypes: new Set(),
         selectedVideoCount,

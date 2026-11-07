@@ -333,6 +333,7 @@ type ManifestSMSProvider struct {
 }
 
 type ManifestPaymentProvider struct {
+	PaymentMethods      []ManifestPaymentMethod     `json:"paymentMethods,omitempty"`
 	ID                  string                      `json:"id"`
 	Label               string                      `json:"label"`
 	Icon                string                      `json:"icon"`
@@ -341,6 +342,11 @@ type ManifestPaymentProvider struct {
 	IdentityFields      []string                    `json:"identityFields,omitempty"`
 	NotificationSuccess ManifestPaymentResponse     `json:"notificationSuccess,omitempty"`
 	NotificationFailure ManifestPaymentResponse     `json:"notificationFailure,omitempty"`
+}
+
+type ManifestPaymentMethod struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
 }
 
 type ManifestPaymentExpiryPolicy struct {

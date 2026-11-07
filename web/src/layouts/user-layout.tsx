@@ -43,36 +43,34 @@ export default function UserLayout({ children }: { children: ReactNode }) {
         };
     }, [adminWorkspace, spatialWorkbench, productWorkspace]);
 
-    // 所有登录页面共用同一个面板实例：跨路由不卸载，对话、运行和事件流都不中断。
+    // 保留唯一实例维持运行和事件流，仅在画布编辑器展示界面。
     const globalAgent = userId ? (
         <Suspense fallback={null}>
-            <GlobalAgentPanel key={userId} />
+            <GlobalAgentPanel key={userId} visible={canvasEditor} />
         </Suspense>
     ) : null;
 
-    if (adminWorkspace)
-        return (
-            <>
-                {children}
-                {globalAgent}
-            </>
-        );
-
     return (
-        <ConfigProvider
-            theme={productWorkspace ? workspaceTheme : undefined}
-            select={productWorkspace ? { classNames: { popup: { root: "workspace-quiet-popup" } } } : undefined}
-            dropdown={productWorkspace ? { classNames: { root: "workspace-quiet-popup" } } : undefined}
-            popover={productWorkspace ? { classNames: { root: "workspace-quiet-popup" } } : undefined}
-        >
-            <div
-                className={cn("app-user-workspace h-dvh overflow-hidden text-foreground", spatialWorkbench && "app-spatial-workspace", productWorkspace && "app-product-workspace")}
-                style={agentDocked ? { paddingRight: agentDock.width } : undefined}
-                data-agent-docked={agentDocked || undefined}
-            >
-                <AppWorkspaceShell>{children}</AppWorkspaceShell>
-            </div>
+        <>
+            {adminWorkspace ? (
+                children
+            ) : (
+                <ConfigProvider
+                    theme={productWorkspace ? workspaceTheme : undefined}
+                    select={productWorkspace ? { classNames: { popup: { root: "workspace-quiet-popup" } } } : undefined}
+                    dropdown={productWorkspace ? { classNames: { root: "workspace-quiet-popup" } } : undefined}
+                    popover={productWorkspace ? { classNames: { root: "workspace-quiet-popup" } } : undefined}
+                >
+                    <div
+                        className={cn("app-user-workspace h-dvh overflow-hidden text-foreground", spatialWorkbench && "app-spatial-workspace", productWorkspace && "app-product-workspace")}
+                        style={agentDocked ? { paddingRight: agentDock.width } : undefined}
+                        data-agent-docked={agentDocked || undefined}
+                    >
+                        <AppWorkspaceShell>{children}</AppWorkspaceShell>
+                    </div>
+                </ConfigProvider>
+            )}
             {globalAgent}
-        </ConfigProvider>
+        </>
     );
 }

@@ -105,6 +105,7 @@ export function WorkspaceWalletModal({
     const [paymentsLoading, setPaymentsLoading] = useState(false);
     const [selectedProductId, setSelectedProductId] = useState("");
     const [selectedProviderId, setSelectedProviderId] = useState("");
+    const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("");
     const [code, setCode] = useState("");
     const [redeeming, setRedeeming] = useState(false);
     const requestSequence = useRef(0);
@@ -114,6 +115,9 @@ export function WorkspaceWalletModal({
 
     const selectedProduct = useMemo(() => products.find((item) => item.id === selectedProductId), [products, selectedProductId]);
     const selectedProvider = useMemo(() => providers.find((item) => item.id === selectedProviderId), [providers, selectedProviderId]);
+    useEffect(() => {
+        setSelectedPaymentMethod((current) => (selectedProvider?.paymentMethods?.some((method) => method.id === current) ? current : selectedProvider?.defaultPaymentMethod || ""));
+    }, [selectedProvider]);
     const activeTab: WalletModalTab = creditsEnabled ? tab : "topup";
 
     const reloadWallet = async (targetPage = page) => {
@@ -149,7 +153,7 @@ export function WorkspaceWalletModal({
                 setSelectedProductId((current) =>
                     current && enabledProducts.some((item) => item.id === current) && !initialCategory ? current : preferred.find((item) => item.canPurchase)?.id || enabledProducts.find((item) => item.canPurchase)?.id || "",
                 );
-                setSelectedProviderId((current) => current || usableProviders[0]?.id || "");
+                setSelectedProviderId((current) => (usableProviders.some((provider) => provider.id === current) ? current : usableProviders[0]?.id || ""));
             })
             .catch((error) => message.error(error instanceof Error ? error.message : "读取充值配置失败"))
             .finally(() => setPaymentsLoading(false));
@@ -178,7 +182,7 @@ export function WorkspaceWalletModal({
 
     useEffect(() => {
         payment.resetIdempotency();
-    }, [selectedProductId, selectedProviderId]);
+    }, [selectedProductId, selectedProviderId, selectedPaymentMethod]);
 
     useEffect(() => {
         if (!open || !pendingPaymentOrderId) return;
@@ -213,7 +217,7 @@ export function WorkspaceWalletModal({
             message.error("该套餐当前不可购买，请刷新后重试");
             return;
         }
-        await payment.start(selectedProduct.id, selectedProvider.id);
+        await payment.start(selectedProduct.id, selectedProvider.id, selectedPaymentMethod || undefined);
     };
 
     // 定位到某类套餐：滚动到分组，并在当前选中项不属于该类时改选该类第一个可买套餐。
@@ -298,7 +302,11 @@ export function WorkspaceWalletModal({
                             selectedProduct={selectedProduct}
                             onSelectProduct={setSelectedProductId}
                             selectedProviderId={selectedProviderId}
-                            onSelectProvider={setSelectedProviderId}
+                            selectedPaymentMethod={selectedPaymentMethod}
+                            onSelectProvider={(id, method) => {
+                                setSelectedProviderId(id);
+                                setSelectedPaymentMethod(method || "");
+                            }}
                             creating={payment.creating}
                             onPay={() => void startPayment()}
                             storageUsage={storageQuery.data}

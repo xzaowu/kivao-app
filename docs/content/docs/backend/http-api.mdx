@@ -5,6 +5,55 @@ description: 信封、错误码与 OpenAPI
 
 # HTTP API 合同
 
+## 易支付多支付方式
+
+易支付插件 1.0.10 的渠道配置增加 `payTypes` 多选（存储为英文逗号分隔字符串），`payType` 仍为默认方式且必须在列表中。后台只开放商户网关实际支持的方式；网关能力和币种不会因勾选选项自动开通或转换。旧配置未填写列表时沿用单个默认方式。
+
+`GET /payments/providers` 返回 `paymentMethods: [{ id, label }]` 与 `defaultPaymentMethod`，无多选能力的其他插件保持原显示。`POST /payments/orders` 新增可选 `paymentMethod`，省略时选择默认值；服务端在预留商品或创建订单之前校验开放列表。商品、渠道及支付方式一同约束幂等键，相同键改用其他方式返回 409。订单响应包含选择的方式，刷新收银台使用订单选择及原配置版本。
+
+插件 `yingce.payment/v1` 的 `create_order.request` 可携带 `paymentMethod`；执行文件再次校验后将单个值写入原上游 `type` 并参与 MD5/RSA 签名，回调验签、金额核验和积分到账流程不改变。新增订单字段对应 Schema 79，宿主、前端及完整插件包需配套更新；不能仅修改清单而保留旧执行文件。未完成订单仍受既有插件升级保护，不得为升级绕过关单或资金核对。
+
+## 深度动作捕捉
+
+协议 ID 保持 `volcengine-mediakit-video-depth`，由同名独立插件提供，后台可与仅保留画质增强的 `volcengine-mediakit` 1.2.0 分别启停。不更改现有模型、价格、任务或画布接口。升级旧合并版 1.1.0 时需同步替换两个插件包，避免重复 provider ID；只回退其中一个包可能造成冲突。
+
+工作台复用 `POST /api/workbench/tasks`。管理员创建视频工具时，在 `capability` JSON 配置 `processingOperation: "depth_capture"`，配合一个必填、数量固定 1 的视频槽位及 `promptRequired: false`；工具响应将该执行方式投影为顶层 `processingOperation`。普通工具留空。执行方式创建后不可更改，深度工具不接受提示词效果预设。
+
+提交时指定已开放的 `toolId`、系统 `channelId/model` 与一个本人就绪视频，`prompt` 留空，`parameters` 为 `{}`，不传 `presetId` 或补充文字。操作由已保存的工具配置决定，不能由请求随意指定。后端在模型与价格档选择前复用资源准入，按实际源时长重算秒数，仅接受 `volcengine-mediakit-video-depth` 系统模型；普通生成模型、逻辑模型绕路、额外素材和生成规格参数均拒绝，不产生账单。随后仍进入统一任务准入、资源转存及按输出时长结算链路。
+
+沿用模型报价与视频任务 API，不新增公开端点。系统渠道协议 `volcengine-mediakit-video-depth` 声明处理模型，操作为 `depth_capture`，恰好一个当前用户已就绪的 `resource:` 视频，不接收图片或音频。服务器按资源记录重算时长、尺寸和预留秒数；拒绝未知尺寸、超时长或超过短边 1440 / 长边 2560 的源视频。默认最大 60 秒，管理员可设 1–600 秒。
+
+上游固定 `model: standard`，`client_token` 复用任务幂等键；不发送增强用的分辨率、帧率或码率。结果 URL 沿用临时媒体转存路径，输出时长优先使用保存后探测值，再使用上游 `result.duration`。按秒订单沿用整秒向上取整结算；无法确认实际时长进入既有待核对流程，不以预留时长冒充实际时长。原有资源鉴权、出站限制、失败处理和账务链路保持生效。
+
+## 创作首页快捷入口
+
+沿用 `GET /api/public/appearance` 和管理员 `GET/PATCH /api/admin/settings/appearance`。外观对象新增 `creationShortcuts` 数组，每项为 `{ group, title, icon, target }`：分组和标题各 1–20 字，图标使用固定选项，最多 10 项。数组顺序决定组内排序和分组首次出现顺序；空数组隐藏全部入口，未提交该字段保留原配置。未配置的历史外观在内存补入四个默认入口。
+
+`target` 仅允许站内 `/`、`/toolbox/image`、`/toolbox/video`、`/canvas`、`/canvas/:id` 和 `/skills`，可附带工具选择 query；拒绝外部 URL、脚本、控制字符及越界路由。公开外观不授予目标访问权，目标仍经过原有登录、功能开关和资源归属检查。管理员更新沿用外观审计，不涉及任务创建、数据库迁移或真实模型调用。
+
+## 灵感大厅管理
+
+- `GET /api/inspirations`：游客可读，仅返回已上架条目；关联工具必须启用，且对应工作台入口开放。响应为 `{ items }`，不缓存响应，不包含工具提示词。
+- `GET/POST /api/admin/inspirations`：管理员查询全部条目或新增；新建 `version = 0`，`type` 为 `prompt` 或 `tool`。提示词条目需标题、有效类型及正文，可选当前管理员已就绪的图片/视频资源；工具条目需有效 `toolId`，分类可覆盖或留空跟随。
+- `PATCH /api/admin/inspirations/:id`：管理员编辑及上下架，提交当前 `version`；保存后版本递增。`DELETE /api/admin/inspirations/:id?version=N` 删除条目，保留工具及文件。过期版本返回 409，非管理员返回 403；管理写入与审计原子提交。
+
+首个示例继续使用 `resourceId/mediaKind`，新增 `additionalExamples: [{ resourceId, mediaKind }]` 保存其余最多 9 个示例。合计最多 10 个，拒绝重复资源、缺失首个示例、归属或类型不符；编辑可保留已有共享引用，新增资源仍需管理员名下已就绪资源。读取响应新增 `examples` 完整有序列表，携带临时 `mediaUrl` 供详情展示，不保存 URL。关联工具的示例沿用工具设置，最多展示前 10 个。
+
+## 插件统一启停
+
+`GET /api/plugins/status` 为登录用户返回后台统一计算的插件状态，应用插件与协议插件均不再叠加个人启停记录，`canToggle` 为 `false`。`PUT /api/admin/plugins/:id/availability` 仍只允许管理员修改，并记录审计；`PUT /api/plugins/:id/activation` 拒绝个人启停请求（403），管理员也需使用后台接口。个人配置仍保留原归属，不提升到全局配置。前台入口移除不删除协议目录或已有插件包。
+
+## 个人对象存储默认前缀
+
+未配置个人对象存储时，读取配置的 `pathPrefix` 默认返回 `kivao`；个人保存及连接测试请求未填前缀（含只有斜杠的输入）也采用 `kivao`。已保存的旧前缀按原值读取，不迁移历史对象；平台存储默认与配置不变。本项不改变 API 结构或数据库 Schema。
+
+## 技能公开审核与上下架
+
+- `GET /admin/skills?status=2&page=1&pageSize=20&search=`：仅管理员，返回 `data.skills / totalCount / page / pageSize`。`status=0` 全部，`1` 已上架，`2` 待审核，`3` 未通过，`4` 已下架；列表仅包含作者申请公开的技能，不开放私有技能。
+- `PUT /admin/skills/:id/review`：仅管理员，提交 `{ action: "approve" | "reject" | "offline", versionId, updatedAt }`。必须使用当前实际查看的版本与时间戳；版本/信息变更或作者改为私有时返回 409，成功返回 `data.reviewed=true`，审核状态和审计记录原子保存。
+- 普通用户创建、上传、申请公开，以及更新公开技能的信息或文件、GitHub 内容同步后均进入待审核；未审核、未通过和下架的技能仅作者可自用，管理员可检查申请公开的内容。其他用户的列表、详情、文件/下载、加入/收藏和 Agent 目录均受服务端控制，已有加入关系不能绕过下架。
+- 内置技能默认已上架；下架结果在启动刷新内置目录后保留。场景预设引用下架技能时整组隐藏，避免一键加入不可用技能。下架不删除用户关系与技能包，也不撤回已经下载的文件或已经送入执行中任务上下文的内容。
+
 ## 画布实时会话
 
 `GET /api/canvas-projects/:id/realtime` 使用登录 Cookie 升级为 WebSocket，握手校验当前用户对画布的归属和请求 Origin。首帧 `welcome` 提供服务端分配的 `selfId` 和窗口 Presence；客户端发送 `presence`，服务端推送 `peer`、`leave`、`invalidate` 和 `heartbeat`。Presence 只含有界世界坐标和拖拽矩形，不包含密钥、编辑租约 token、画布正文或实际保存指令。
@@ -20,6 +69,20 @@ description: 信封、错误码与 OpenAPI
 `POST /api/workbench/tasks` 接收可选 `userPrompt`（最多 32000 个字符），与原始模板一起保存在既有 `metadata.workbench` JSON 中供再次生成恢复；其中素材引用按资源 ID 绑定，执行提示词使用当前编号。配置 `minTextReferences > 0` 的预设要求补充内容非空。任务列表 `clientContext` 新增可选 `workbenchToolId`、`workbenchToolName`、`workbenchPresetId`、`workbenchPresetName`、`workbenchReferenceCount`，界面优先展示工具、效果及素材数量，直接创作仍显示原提示词。不变更数据库 Schema、资源归属或计费协议。
 
 图片和视频工作台页面允许游客浏览，但仍受后台 `imageWorkbenchEnabled` / `videoWorkbenchEnabled` 开关控制。`GET /api/features` 允许匿名读取功能布尔值，不返回修改人等管理元信息，管理员设置修改仍需鉴权。游客首页加载公开开关后同步侧栏入口。`GET /api/workbench/tools?kind=image|video` 允许匿名读取已启用工具、预设及其展示素材，关闭对应功能时返回 403。模型目录、个人任务、素材上传及任务创建仍要求登录，游客点击生成或上传时打开登录弹窗，不发起任务或上传请求。
+
+素材输入区支持 `common`（省略或 `true` 表示所有效果通用）和 `description`（最多 1000 字，显示在上传框中）。复用 `sampleResourceId` 存储注意事项图片，仍只接受当前管理员已就绪的图片资源；公开目录通过既有展示资源访问服务返回 `sampleUrl`。
+
+每个预设的 `defaultParameters.workbenchInputs` 保存可选 `slotKeys` 和 `noticeSlotKeys` 数组，各最多 20 个不重复的输入区 key。`slotKeys` 省略时保留原来的全部输入；显式空数组表示只用通用输入；其他情况展示通用输入及所选专用输入。`noticeSlotKeys` 默认空，仅为已启用且有注意事项图片的输入显示按钮。保存时拒绝不存在、重复、未启用或缺少图片的注意事项引用，删除输入或移除图片时后台编辑器同步清理关联选择。
+
+任务创建按预设筛选后的输入区校验类型、数量与必填，拒绝提交隐藏输入，即使某个效果只保留零个输入也不能绕过校验。此元数据不进入 Provider 参数。前端切换效果保留仍适用的素材，释放隐藏项的本地预览并移除其补充要求引用；不删除素材库或后端资源。载入旧任务时若素材输入已不再适用则提示重新选择，不静默复用失效绑定。
+
+工具的 `resultExample.items` 支持最多 20 个示例，每项包含 `resourceId`、`kind=image|video`、可选 `title`（120 字）和 `description`（2000 字）；公开目录为各项签发展示 `url`。后台仅保存资源 ID，不保存展示 URL。服务端按资源归属、就绪状态和媒体类型校验每一项，相同 ID 不能借去重绕过类型检查。原有图片列表及单视频配置读取为独立示例，保留原有共享标题和说明；编辑保存后使用列表配置，显式空列表表示移除全部示例。
+
+示例切换仅浏览媒体，不创建任务、报价或计费请求。标题作为半透明标签叠加，说明显示在对应媒体下方，视频使用原生控件且不自动播放。示例、注意事项及输入区封面纳入已有资源引用保护，未开放的工具配置也保留关联文件，避免资源清理误删。
+
+工具目录的响应增加 `defaultExamples`，与 `tools` 一同加载；公开读取仍受对应工作台功能开关控制。管理员在「工作台工具 → 默认状态示例」按图片/视频分类维护，`PUT /api/admin/workbench/examples/:kind` 接收 `{ items: [...] }`，应用同一套数量、文本长度、资源归属、类型及就绪校验，需管理员权限并记录审计。返回 `{ defaultExamples }`，不包含系统设置修改人等管理元数据。默认示例独立于场景示例，未选场景时使用默认配置，选定场景后使用该场景自己的示例。
+
+示例网格在空间足够时居中，溢出时从顶部滚动以免遮掉首项。电脑端在没有结果且示例可用时默认展示示例，手动切到结果后不再自动切回；已有结果或开始生成时保留结果显示。手机仍从“生成”进入，由用户切换“示例”。
 
 ## 视频工作台的生成模式
 
@@ -83,6 +146,8 @@ description: 信封、错误码与 OpenAPI
 | `PATCH /api/admin/feedbacks/{id}` | 可更新 `status=pending/processing/resolved/closed`、`adminReply`、`archived`；返回更新后的反馈记录 |
 | `POST /api/admin/feedbacks/{id}/archive`、`POST /api/admin/feedbacks/{id}/unarchive` | 归档或恢复历史反馈，返回更新后的反馈记录 |
 | `DELETE /api/admin/feedbacks/{id}` | 删除反馈记录，返回 `data={ok:true}` |
+
+后台附件预览复用管理员资源接口 `/api/admin/resources/{id}/file`，普通用户仍只能读取本人资源，不放宽原资源归属校验。反馈附件包含在资源引用保护中；归档不解除引用，管理员删除或孤儿清理均不得移除仍被反馈引用的资源。
 
 
 
@@ -272,7 +337,7 @@ CANVAS_BACKEND_DATA_DIR=/明确的数据目录 ./migrate-schema repair-canvas-re
 
 ### 画布配置、更新公告、状态动画包与 Live2D（外观合同版本 11）
 
-外观设置新增 `updates: { enabled, currentVersion, releases }`，由管理员通过 `PATCH /admin/settings/appearance` 保存；关闭开关保留草稿，但 `GET /public/appearance` 返回关闭状态与空公告列表，前端恢复内置更新日志。开启时公开版本与内容块，当前版本须对应公告版本。媒体上传、管理员预览、公开引用读取及限制详见 [自定义更新公告](/docs/backend/update-announcements)。JSON 请求上限为 512KB；无数据表迁移。
+外观设置保留历史字段 `updates: { enabled, currentVersion, releases }` 及既有媒体读取合同；关闭时 `GET /public/appearance` 返回关闭状态与空公告列表，开启时返回已保存的公开版本与内容块。KIVAO 前端已移除其阅读与编辑入口，发布通知使用独立的系统公告；保存品牌等其他外观配置时原样保留旧字段，不回退上游更新日志。历史媒体与字段约束见 [历史更新公告数据](/docs/backend/update-announcements)。JSON 请求上限为 512KB；无数据表迁移。
 
 `GET /public/appearance` 和管理员 `GET /admin/settings/appearance` 返回 `canvas`；管理员通过 `PATCH /admin/settings/appearance` 随外观配置统一保存。字段为 `agentName`（1–24 字）、`launcherLabel`（0–24 字）、`panelTitle`（1–40 字）、`welcomeTitle`（1–100 字）、`welcomeDescription`（0–200 字）、`inputPlaceholder`（1–160 字）、`avatarType`（`orb|bundle|live2d`）、`avatarHeight`（120–360 整数）、`live2dResourceId`、`live2dEntry`、`avatarBundleResourceId` 和状态到 clip 名的 `avatarClipStates`。状态键为 `idle|queued|running|waiting_approval|completed|failed|cancelled|rejected`；状态动画包为空资源 ID 时使用内置 `/doll/avatar.json`。启用上传包时服务端核验资源归属、ZIP 与每个状态引用的 clip。名称以数据形式投影到每轮 Agent 执行上下文，不提供自由系统提示词配置，也不改变工具权限。
 
@@ -428,6 +493,8 @@ operations 的结构化配额在提交事务内实时统计账号的素材/画�
 
 管理员通过 `GET/PATCH /admin/settings/features` 读取和保存 `welcomeEnabled`，默认 `true`，与其他功能开关一起存入 `system_settings` 的 `feature_availability` JSON，并记录管理员审计。关闭后新访问 `/welcome` 的浏览器跳转到 `/`。
 
+同一接口提供 `canvasConversionEnabled`（转换）、`canvasDrawingEnabled`（绘图）、`canvasFolderEnabled`（画布文件夹）与 `canvasFrameEnabled`（背板），默认均为 `false`，旧配置缺少字段时也关闭。匿名 `/features` 和登录会话下发这些布尔值，管理员修改仍需鉴权并记录审计。开关对全站账号控制新建菜单、连线创建和对应创建操作；背板开关同时控制新建分镜组／引用组。保留已有节点的展示、编辑与画布保存、导入／恢复能力，不改变素材库文件夹，不作为对象读取或数据权限规则。其他已打开客户端刷新配置后生效，不新增推送通道。
+
 ## 云端 Agent
 
 所有 `/agent` 路径都需要登录 Cookie。`GET /agent/capabilities` 返回当前版本（2）、权限模式、上下文范围、技能和工具清单；跨轮历史仍按可恢复事实和发送预算整理，不把某个固定字节数当作模型窗口。Agent 运行由服务端任务 Worker 驱动，浏览器断开不会停止运行。
@@ -517,6 +584,8 @@ Skills 的 `tool_completed` / `tool_failed` 事件附带 `skillId`、`skillName`
 每条管理员列表订单在原有字段之外包含 `user: { id, username, displayName, email }`，由当前页用户 ID 批量读取；用户不存在时返回 `user: null`，保留原 `userId` 与历史订单。此身份摘要仅用于管理员订单列表，不添加到普通用户支付接口或支付状态同步响应。
 
 后台支付订单列表展示用户身份，点击名称打开用户详情；订单详情提供完整订单号、渠道交易号、用户 ID 和各阶段时间。同步支付状态与关闭订单位于更多菜单，关闭订单仍需确认。
+
+支付插件 RPC 通过 `order_not_found`、`order_not_paid`、`trade_bill_not_found` 保留插件明确返回的业务错误类型，宿主不根据错误文案推断资金状态。查单、关单及失败后的复查均明确不存在时，才按既有规则关闭本地订单；复查已付款则正常入账，网络错误、验签失败和不完整响应继续保留订单。宿主与插件执行文件需配套更新；旧插件的通用错误仍按未知结果处理。易支付的通用查单失败不会因此被转换为“订单不存在”。
 
 官方易支付插件 `official-payment-epay` 通过既有支付接口接入，不新增业务路由。管理员必须显式填写可信支付网关；V1 支持 MD5 下单、查单与通知验签，未付款订单的关单仅关闭本地记录。V2 目前只支持 RSA 下单和通知验签，不支持查单、刷新收银台及自动关单；相应操作返回明确失败，不能按“订单已关闭”处理。启用前需在实际网关验收回调和到账，不能用插件安装成功代替支付链路验收。
 

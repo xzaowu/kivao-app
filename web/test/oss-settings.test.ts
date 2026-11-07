@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { changesRequireOSSRetest, DEFAULT_OSS_PATH_PREFIX, getS3PresetHints, normalizeOSSConnectionTestInput, validateOSSConnectionDraft } from "../src/lib/oss-settings";
+import { changesRequireOSSRetest, DEFAULT_OSS_PATH_PREFIX, DEFAULT_USER_OSS_PATH_PREFIX, getS3PresetHints, normalizeOSSConnectionTestInput, validateOSSConnectionDraft } from "../src/lib/oss-settings";
 
 describe("OSS settings helpers", () => {
     test("provides editable S3 endpoint hints for known presets", () => {
@@ -16,6 +16,7 @@ describe("OSS settings helpers", () => {
 
     test("uses the product path prefix by default", () => {
         expect(DEFAULT_OSS_PATH_PREFIX).toBe("open-ai-canvas");
+        expect(DEFAULT_USER_OSS_PATH_PREFIX).toBe("kivao");
     });
 
     test("rejects a connection test draft without a bucket", () => {

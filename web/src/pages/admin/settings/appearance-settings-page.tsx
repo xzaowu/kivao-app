@@ -8,8 +8,8 @@ import { Switch } from "@/pages/admin/ui/controls";
 import { WelcomeSetting } from "@/pages/admin/settings/components/welcome-setting";
 import { SkinThemeEditor } from "@/pages/admin/settings/components/skin-theme-editor";
 import { CanvasAppearanceEditor } from "./components/canvas-appearance-editor";
-import { UpdateAnnouncementEditor } from "./components/update-announcement-editor";
-import { DEFAULT_UPDATE_ANNOUNCEMENT, normalizeUpdateAnnouncement, validateUpdateAnnouncement, type UpdateAnnouncement } from "@/lib/update-announcement";
+import { CreationShortcutsEditor } from "./components/creation-shortcuts-editor";
+import { DEFAULT_CREATION_SHORTCUTS, validCreationShortcut, type CreationShortcut } from "@/lib/creation-shortcuts";
 import { App, Button, Tabs, Form, Input } from "antd";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useBlocker } from "react-router";
@@ -30,7 +30,7 @@ export default function AppearanceSettingsPage() {
     const [setting, setSetting] = useState<AdminAppearance | null>(null);
     const [brandName, setBrandName] = useState("");
     const [canvas, setCanvas] = useState<CanvasAppearance>(DEFAULT_CANVAS_APPEARANCE);
-    const [updates, setUpdates] = useState<UpdateAnnouncement>(DEFAULT_UPDATE_ANNOUNCEMENT);
+    const [creationShortcuts, setCreationShortcuts] = useState<CreationShortcut[]>(DEFAULT_CREATION_SHORTCUTS);
     const [canvasUploading, setCanvasUploading] = useState(false);
     const [brandSlug, setBrandSlug] = useState("");
     const [authHeroTitle, setAuthHeroTitle] = useState("");
@@ -63,7 +63,7 @@ export default function AppearanceSettingsPage() {
 
     const dirty =
         Boolean(setting) &&
-        (JSON.stringify(updates) !== JSON.stringify(normalizeUpdateAnnouncement(setting?.updates)) ||
+        (JSON.stringify(creationShortcuts) !== JSON.stringify(setting?.creationShortcuts ?? DEFAULT_CREATION_SHORTCUTS) ||
             JSON.stringify(canvas) !== JSON.stringify(setting?.canvas || DEFAULT_CANVAS_APPEARANCE) ||
             canvasUploading ||
             brandName.trim() !== setting?.brandName ||
@@ -91,7 +91,7 @@ export default function AppearanceSettingsPage() {
         setSetting({ ...value, skinThemes: themes, skinId: selectedID });
         setBrandName(value.brandName);
         setCanvas(value.canvas || DEFAULT_CANVAS_APPEARANCE);
-        setUpdates(normalizeUpdateAnnouncement(value.updates));
+        setCreationShortcuts(value.creationShortcuts ?? DEFAULT_CREATION_SHORTCUTS);
         setBrandSlug(value.brandSlug);
         setAuthHeroTitle(value.authHeroTitle);
         setAuthHeroDescription(value.authHeroDescription);
@@ -145,7 +145,7 @@ export default function AppearanceSettingsPage() {
         if (blocker.state !== "blocked") return;
         modal.confirm({
             title: "放弃站点及外观调整？",
-            content: "当前品牌、画布 Agent、更新公告、SEO、备案、皮肤或媒体配置尚未保存，离开后草稿会丢失。线上站点不会改变。",
+            content: "当前品牌、画布 Agent、SEO、备案、皮肤或媒体配置尚未保存，离开后草稿会丢失。线上站点不会改变。",
             okText: "放弃并离开",
             cancelText: "继续编辑",
             okButtonProps: { danger: true },
@@ -202,7 +202,7 @@ export default function AppearanceSettingsPage() {
     const discardDraft = () => {
         if (!setting || saving || restoring || canvasUploading) return;
         setCanvas(setting.canvas || DEFAULT_CANVAS_APPEARANCE);
-        setUpdates(normalizeUpdateAnnouncement(setting.updates));
+        setCreationShortcuts(setting.creationShortcuts ?? DEFAULT_CREATION_SHORTCUTS);
         setBrandName(setting.brandName);
         setBrandSlug(setting.brandSlug);
         setAuthHeroTitle(setting.authHeroTitle);
@@ -234,7 +234,7 @@ export default function AppearanceSettingsPage() {
         }
         modal.confirm({
             title: "放弃调整并重新读取？",
-            content: "重新读取会丢弃当前品牌、画布 Agent、更新公告、SEO、备案、皮肤和待上传文件。",
+            content: "重新读取会丢弃当前品牌、画布 Agent、SEO、备案、皮肤和待上传文件。",
             okText: "放弃并刷新",
             cancelText: "继续编辑",
             okButtonProps: { danger: true },
@@ -245,9 +245,8 @@ export default function AppearanceSettingsPage() {
     const restoreBuiltInAppearance = () => {
         if (!setting?.configured || saving || refreshing || restoring || canvasUploading) return;
         modal.confirm({
-            title: "恢复影策默认品牌标识？",
-            content:
-                "品牌名称、英文标识、Logo、画布 Agent 名称/文案/形象、更新公告、登录页文案、视频、封面、SEO、备案和皮肤主题会立即恢复为项目内置值；自定义公告会清空并关闭，普通用户看到暂无产品公告，管理员仍可查看技术更新记录。已上传文件仍保留在存储资源中，不会被删除。",
+            title: "恢复 KIVAO 默认品牌标识？",
+            content: "品牌名称、英文标识、Logo、画布 Agent 名称/文案/形象、登录页文案、视频、封面、SEO、备案和皮肤主题会立即恢复为项目内置值。已上传文件仍保留在存储资源中，不会被删除。",
             okText: "恢复默认",
             cancelText: "取消",
             okButtonProps: { danger: true },
@@ -261,7 +260,7 @@ export default function AppearanceSettingsPage() {
                     Object.values(inputRefs).forEach((ref) => {
                         if (ref.current) ref.current.value = "";
                     });
-                    message.success("已恢复影策默认品牌标识");
+                    message.success("已恢复 KIVAO 默认品牌标识");
                 } catch (error) {
                     message.error(error instanceof Error ? error.message : "恢复默认外观失败");
                     throw error;
@@ -274,15 +273,15 @@ export default function AppearanceSettingsPage() {
 
     const save = async () => {
         if (!setting || saving || restoring || canvasUploading) return;
-        const updatesError = validateUpdateAnnouncement(updates);
-        if (updatesError) {
-            setActiveTab("updates");
-            message.error(updatesError);
-            return;
-        }
         if (![canvas.agentName, canvas.panelTitle, canvas.welcomeTitle, canvas.inputPlaceholder].every((text) => text.trim())) {
             setActiveTab("canvas");
             message.error("请填写助手名称、面板标题、欢迎标题和输入框提示");
+            return;
+        }
+        const nextShortcuts = creationShortcuts.map((item) => ({ ...item, group: item.group.trim(), title: item.title.trim(), target: item.target.trim() }));
+        if (nextShortcuts.length > 10 || nextShortcuts.some((item) => !validCreationShortcut(item))) {
+            setActiveTab("creation");
+            message.error("请检查创作入口：最多 10 个，分组和标题各 1–20 字，选择有效图标及站内创作链接。");
             return;
         }
         const nextBrandName = brandName.trim();
@@ -367,7 +366,9 @@ export default function AppearanceSettingsPage() {
             }
             const updated = await updateAdminAppearance({
                 canvas,
-                updates,
+                creationShortcuts: nextShortcuts,
+                // 移除展示入口，不清空已保存的历史公告配置。
+                updates: setting.updates,
                 brandName: nextBrandName,
                 brandSlug: nextBrandSlug,
                 authHeroTitle: nextAuthHeroTitle,
@@ -477,7 +478,7 @@ export default function AppearanceSettingsPage() {
                                     <strong>{dirty ? "站点配置有调整待保存" : "站点及外观已与服务端同步"}</strong>
                                     <AdminStatusBadge label={dirty ? "尚未生效" : "服务端当前值"} tone={dirty ? "warning" : "neutral"} />
                                 </div>
-                                <p>{dirty ? "切换分类保留草稿；保存修改会一次应用品牌、登录页、更新公告、SEO、备案和皮肤调整。" : "按分类管理站点配置；欢迎页开关独立即时保存，其余修改统一保存。"}</p>
+                                <p>{dirty ? "切换分类保留草稿；保存修改会一次应用品牌、登录页、SEO、备案和皮肤调整。" : "按分类管理站点配置；欢迎页开关独立即时保存，其余修改统一保存。"}</p>
                             </div>
                         </div>
                         <div className="admin-appearance-command-actions">
@@ -487,7 +488,7 @@ export default function AppearanceSettingsPage() {
                                 </Button>
                             ) : null}
                             <Button icon={<RotateCcw className="size-4" />} loading={restoring} disabled={!setting.configured || saving || refreshing || canvasUploading} onClick={restoreBuiltInAppearance}>
-                                恢复影策默认
+                                恢复 KIVAO 默认
                             </Button>
                             <Button icon={<RefreshCw className="size-4" />} loading={refreshing} disabled={saving || restoring || canvasUploading} onClick={requestRefresh}>
                                 刷新状态
@@ -503,6 +504,15 @@ export default function AppearanceSettingsPage() {
                         activeKey={activeTab}
                         onChange={setActiveTab}
                         items={[
+                            {
+                                key: "creation",
+                                label: "创作入口",
+                                children: (
+                                    <SettingsSectionCard title="创作入口" description="设置创作首页输入框下方的分组快捷入口，点击仅跳转，不自动生成或创建画布。">
+                                        <CreationShortcutsEditor value={creationShortcuts} onChange={setCreationShortcuts} disabled={saving || refreshing || restoring} />
+                                    </SettingsSectionCard>
+                                ),
+                            },
                             {
                                 key: "brand",
                                 label: "品牌识别",
@@ -792,7 +802,6 @@ export default function AppearanceSettingsPage() {
                                 ),
                             },
                             { key: "canvas", label: "画布配置", children: <CanvasAppearanceEditor value={canvas} onChange={setCanvas} disabled={saving || refreshing || restoring || canvasUploading} onUploading={setCanvasUploading} /> },
-                            { key: "updates", label: "更新公告", children: <UpdateAnnouncementEditor value={updates} onChange={setUpdates} disabled={saving || refreshing || restoring || canvasUploading} onUploading={setCanvasUploading} /> },
                         ]}
                     />
                 </div>

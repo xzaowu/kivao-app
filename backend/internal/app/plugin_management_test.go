@@ -11,7 +11,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestApplicationPluginUsesUserStateUnderPlatformAvailability(t *testing.T) {
+func TestApplicationPluginsUseGlobalStateForEveryUser(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+newID()+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
@@ -25,33 +25,39 @@ func TestApplicationPluginUsesUserStateUnderPlatformAvailability(t *testing.T) {
 	}
 	svc := &Service{repo: repository.New(db), pluginRuntime: center}
 	user := &model.User{ID: "user-1", Role: model.UserRoleUser}
+	other := &model.User{ID: "user-2", Role: model.UserRoleUser}
 	admin := &model.User{ID: "admin-1", Role: model.UserRoleAdmin}
-
-	states, err := svc.PluginStatesForUser(user)
-	if err != nil {
-		t.Fatal(err)
-	}
-	initial := states[WorkflowPluginRunningHub]
-	if !initial.PlatformAvailable || initial.UserEnabled || initial.EffectiveEnabled || !initial.CanToggle {
-		t.Fatalf("initial RunningHub state = %#v", initial)
-	}
-
-	enabled, err := svc.SetUserPluginEnabled(user, WorkflowPluginRunningHub, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !enabled.UserConfigured || !enabled.UserEnabled || !enabled.EffectiveEnabled {
-		t.Fatalf("enabled RunningHub state = %#v", enabled)
-	}
-	if _, err := svc.SetPluginPlatformAvailability(user, WorkflowPluginRunningHub, false); err == nil {
-		t.Fatal("ordinary user changed platform plugin availability")
-	}
-	disabled, err := svc.SetPluginPlatformAvailability(admin, WorkflowPluginRunningHub, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if disabled.PlatformAvailable || disabled.EffectiveEnabled || disabled.EnabledUserCount != 1 {
-		t.Fatalf("platform-disabled RunningHub state = %#v", disabled)
+	for pluginID := range officialApplicationPolicies {
+		t.Run(pluginID, func(t *testing.T) {
+			for index, actor := range []*model.User{user, other} {
+				if err := svc.repo.SaveUserPluginState(&model.UserPluginState{ID: newID(), UserID: actor.ID, PluginID: pluginID, Enabled: index == 0}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for _, available := range []bool{true, false} {
+				if _, err := svc.SetPluginPlatformAvailability(admin, pluginID, available); err != nil {
+					t.Fatal(err)
+				}
+				for _, actor := range []*model.User{user, other, admin} {
+					states, err := svc.PluginStatesForUser(actor)
+					if err != nil {
+						t.Fatal(err)
+					}
+					state := states[pluginID]
+					if state.EffectiveEnabled != available || state.PlatformAvailable != available || state.CanToggle || state.UserEnabled || state.UserConfigured {
+						t.Fatalf("global state for %s = %#v", actor.ID, state)
+					}
+					if _, err := svc.SetUserPluginEnabled(actor, pluginID, !available); err == nil {
+						t.Fatal("user activation endpoint bypassed global management")
+					}
+					if actor != admin {
+						if _, err := svc.SetPluginPlatformAvailability(actor, pluginID, !available); err == nil {
+							t.Fatal("ordinary user changed global availability")
+						}
+					}
+				}
+			}
+		})
 	}
 	if err := svc.RequireWorkflowPluginForUser(user.ID, "runninghub-workflow-image"); err == nil {
 		t.Fatal("platform-disabled workflow was accepted for a new user request")
@@ -87,9 +93,9 @@ func TestPaymentContributionInfersPaymentManagementKind(t *testing.T) {
 	}
 }
 
-func TestArtCritiqueIsUserToggleableApplication(t *testing.T) {
+func TestArtCritiqueIsGloballyManagedApplication(t *testing.T) {
 	policy := pluginManagement(PluginAIArtCritique, "bundled")
-	if policy.Origin != PluginOriginOfficial || policy.Kind != PluginKindApplication || policy.ActivationScope != PluginScopeUser || policy.ConfigurationScope != PluginConfigurationNone {
+	if policy.Origin != PluginOriginOfficial || policy.Kind != PluginKindApplication || policy.ActivationScope != PluginScopeSystem || policy.ConfigurationScope != PluginConfigurationNone {
 		t.Fatalf("AI art critique policy = %#v", policy)
 	}
 }
@@ -97,14 +103,14 @@ func TestArtCritiqueIsUserToggleableApplication(t *testing.T) {
 // Regression: editor-shell was missing from officialApplicationPolicies, so the
 // backend classified it as a system protocol and reported it to the admin page
 // as "管理员已停用该插件" even though nothing disabled it.
-func TestEditorShellIsUserToggleableApplication(t *testing.T) {
+func TestEditorShellIsGloballyManagedApplication(t *testing.T) {
 	policy := pluginManagement(PluginEditorShell, "bundled")
-	if policy.Origin != PluginOriginOfficial || policy.Kind != PluginKindApplication || policy.ActivationScope != PluginScopeUser || policy.ConfigurationScope != PluginConfigurationNone {
+	if policy.Origin != PluginOriginOfficial || policy.Kind != PluginKindApplication || policy.ActivationScope != PluginScopeSystem || policy.ConfigurationScope != PluginConfigurationNone {
 		t.Fatalf("editor shell policy = %#v", policy)
 	}
 }
 
-func TestEditorShellReportsPlatformAvailableWithoutPlatformState(t *testing.T) {
+func TestEditorShellWaitsForAdministratorWithoutPlatformState(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+newID()+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
@@ -127,10 +133,7 @@ func TestEditorShellReportsPlatformAvailableWithoutPlatformState(t *testing.T) {
 	if !ok {
 		t.Fatalf("editor shell missing from plugin states: %#v", states)
 	}
-	if !state.PlatformAvailable || !state.CanToggle {
-		t.Fatalf("editor shell should be a user-toggleable application, got %#v", state)
-	}
-	if state.BlockedReason == "管理员已停用该插件" {
-		t.Fatalf("editor shell reported as admin-disabled: %#v", state)
+	if state.PlatformAvailable || state.CanToggle || state.EffectiveEnabled {
+		t.Fatalf("editor shell should wait for global activation, got %#v", state)
 	}
 }

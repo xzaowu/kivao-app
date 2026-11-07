@@ -92,11 +92,10 @@ const CONVERSATION_AUTOSAVE_MAX_WAIT_MS = 3000;
 const EMPTY_REFERENCES: CanvasResourceReference[] = [];
 
 /**
- * 平台唯一的 Agent 面板，挂在用户布局上，所有页面共用同一份对话。
- * 画布编辑器通过 useGlobalAgentStore 发布当前画布；发送时有画布就绑定该画布，
- * 离开画布后下一轮不再携带画布 ID（后端只开放无画布工具）。
+ * 唯一 Agent 实例挂在用户布局，仅画布编辑器展示界面并发布当前画布上下文。
+ * 离开画布只隐藏界面，保留已有对话、运行及事件连接。
  */
-export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
+export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel({ visible }: { visible: boolean }) {
     // 只订阅渲染要用的字段。画布每次选中、拖动或编辑都会重发上下文；订阅整份会让面板和全部消息跟着重渲染。
     // 选中节点只在发送时读取，审批目标节点状态只在有审批时订阅（见 approvalTargetGenerating）。
     const canvasId = useGlobalAgentStore((state) => state.canvas?.canvasId ?? "");
@@ -1363,6 +1362,8 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
         void saveCloudAgentConversations(id === activeConversationId ? null : activeConversationId, next, accountScope).catch((cause) => { if (accountIsCurrent()) setCloudHistoryError(String(cause)); });
     };
 
+    if (!visible) return null;
+
     return (
         <>
             <AgentLauncher theme={theme} statusColor={statusColor} approvalPending={Boolean(approval)} reducedMotion={Boolean(reducedMotion)} status={status} hidden={open} onOpen={onOpen} />
@@ -1590,7 +1591,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                                         submitDisabled={otherAgentRunning && !pendingSubmission.current?.request || Boolean(run && connectionStatus !== "connected" && !pendingSubmission.current?.request) || !historyHydrated || !pendingHydrated || Boolean(canvasId && !cloudHistoryReady && !pendingSubmission.current?.request) || Boolean(cloudOpeningId) || Boolean(modelRestoreError && !pendingSubmission.current?.request)}
                                         sending={busy}
                                         running={running}
-                                        placeholder={running ? "运行中可直接插话，会在它下一步生效" : "输入操作指导；用 @ 引用画布节点，用 / 或 、 引用 Skills"}
+                                        placeholder={running ? "运行中可直接插话，会在它下一步生效" : "输入操作指导，@引用素材/技能"}
                                         theme={theme}
                                         onPromptChange={setPrompt}
                                         onSubmit={() => void submit()}

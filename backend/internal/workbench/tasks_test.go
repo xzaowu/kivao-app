@@ -95,7 +95,7 @@ func TestValidateTaskCapabilitiesInputContract(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			err := validateTaskCapabilities(KindVideo, capability, test.refs)
+			err := validateTaskCapabilities(KindVideo, capability, test.refs, nil)
 			if (err == nil) != test.want {
 				t.Fatalf("validateTaskCapabilities() error = %v, want success = %t", err, test.want)
 			}
@@ -106,7 +106,7 @@ func TestValidateTaskCapabilitiesInputContract(t *testing.T) {
 func TestValidateTaskCapabilitiesLegacyWithoutSlots(t *testing.T) {
 	capability := map[string]any{"referenceKinds": []any{"image"}}
 	refs := []TaskReference{{ResourceID: "image-1", Kind: "image"}}
-	if err := validateTaskCapabilities(KindImage, capability, refs); err != nil {
+	if err := validateTaskCapabilities(KindImage, capability, refs, nil); err != nil {
 		t.Fatalf("legacy reference without slot was rejected: %v", err)
 	}
 }

@@ -13,7 +13,8 @@ describe("workspace route loading", () => {
 
         expect(deferred).toContain("<WorkspaceRouteLoader />");
         expect(deferred).not.toContain("FullScreenLoader");
-        expect(router).toContain("fullScreenDeferred(<LoginPage />)");
+        expect(router).toContain('<AuthDialogEntry mode="login" />');
+        expect(router).toContain("<AuthDialogLayout />");
         expect(router).toContain("fullScreenDeferred(<SharedCanvasPage />)");
     });
 
@@ -81,12 +82,9 @@ describe("workspace route loading", () => {
         expect(wallet).toContain("WALLET_STALE_TIME_MS");
     });
 
-    test("defers modal-only markdown runtimes until interaction", () => {
-        const changelogButton = source("../src/components/layout/app-changelog-modal.tsx");
+    test("defers the system announcement runtime until interaction", () => {
         const announcements = source("../src/components/layout/system-announcement-center.tsx");
 
-        expect(changelogButton).toContain('lazy(() => import("@/components/layout/app-changelog-dialog")');
-        expect(changelogButton).not.toContain('from "react-markdown"');
         expect(announcements).toContain('lazy(() => import("@/components/ui/aceternity/announcement-timeline-modal")');
     });
 

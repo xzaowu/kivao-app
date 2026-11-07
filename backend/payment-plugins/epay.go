@@ -16,10 +16,11 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	paymentsdk "yingce/backend/payment-sdk"
 )
 
 const (
-	epayPluginVersion = "1.0.9"
+	epayPluginVersion = "1.0.10"
 	epayQRLifetime    = 10 * time.Minute
 	maxEpayResponse   = 2 << 20
 )
@@ -41,6 +42,7 @@ func (p *EpayProvider) Descriptor() Descriptor {
 		ID: ProviderEpay, PluginID: PluginEpay, PluginVersion: epayPluginVersion,
 		Name: "易支付", Icon: "assets/icon.svg", CheckoutMode: "redirect",
 		IdentityFields:      []string{"pid"},
+		PaymentMethods:      []paymentsdk.PaymentMethod{{ID: "alipay", Label: "支付宝"}, {ID: "wxpay", Label: "微信支付"}, {ID: "qqpay", Label: "QQ 钱包"}, {ID: "usdt", Label: "USDT"}},
 		NotificationSuccess: NotificationResponse{Status: 200, ContentType: "text/plain; charset=utf-8", Body: "success"},
 		NotificationFailure: NotificationResponse{Status: 400, ContentType: "text/plain; charset=utf-8", Body: "failure"},
 	}
@@ -71,6 +73,9 @@ func (p *EpayProvider) ValidateConfig(config Config) error {
 	if _, err := epayGateway(config); err != nil {
 		return err
 	}
+	if _, _, err := paymentsdk.AvailablePaymentMethods(p.Descriptor(), config); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -81,11 +86,15 @@ func (p *EpayProvider) CreateOrder(ctx context.Context, config Config, request C
 	if request.AmountFen <= 0 || request.Currency != "CNY" || strings.TrimSpace(request.MerchantOrderNo) == "" || strings.TrimSpace(request.NotifyURL) == "" {
 		return Checkout{}, errors.New("易支付下单参数无效")
 	}
+	method, err := paymentsdk.ResolvePaymentMethod(p.Descriptor(), config, request.PaymentMethod)
+	if err != nil {
+		return Checkout{}, err
+	}
 
 	params := map[string]string{
 		"pid":          strings.TrimSpace(config["pid"]),
 		"name":         epayTitle(request.Description, request.MerchantOrderNo),
-		"type":         epayPayType(config),
+		"type":         method,
 		"money":        formatEpayAmount(request.AmountFen),
 		"out_trade_no": request.MerchantOrderNo,
 		"notify_url":   request.NotifyURL,
@@ -377,14 +386,6 @@ func epayCheckoutMode(config Config) string {
 		return "qr_code"
 	}
 	return "redirect"
-}
-
-func epayPayType(config Config) string {
-	payType := strings.TrimSpace(config["payType"])
-	if payType == "" {
-		return "alipay"
-	}
-	return payType
 }
 
 // mapi 是服务端下单，网关看不到买家的浏览器，只能靠 device 决定给什么支付页。

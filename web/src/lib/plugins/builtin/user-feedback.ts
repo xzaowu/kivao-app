@@ -25,14 +25,6 @@ registerPlugin(userFeedbackPlugin);
 
 export function useUserFeedbackEnabled(): boolean {
     return usePluginStore((state) => {
-        const pluginState = state.pluginStates[USER_FEEDBACK_PLUGIN_ID];
-        if (pluginState && typeof pluginState.effectiveEnabled === "boolean") {
-            return pluginState.effectiveEnabled;
-        }
-        const installation = state.installations.find((item) => item.manifest.id === USER_FEEDBACK_PLUGIN_ID);
-        if (installation && typeof installation.enabled === "boolean") {
-            return installation.enabled;
-        }
-        return true;
+        return state.pluginStates[USER_FEEDBACK_PLUGIN_ID]?.effectiveEnabled === true;
     });
 }

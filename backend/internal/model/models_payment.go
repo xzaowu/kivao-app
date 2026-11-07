@@ -107,6 +107,7 @@ type PaymentOrder struct {
 	StorageDurationDays   int                `json:"storageDurationDays" gorm:"not null;default:0"`
 	StockReserved         bool               `json:"-" gorm:"not null;default:false"`
 	ProviderID            string             `json:"providerId" gorm:"size:80;index;uniqueIndex:idx_payment_provider_trade,priority:1"`
+	PaymentMethod         string             `json:"paymentMethod,omitempty" gorm:"size:40;not null;default:''"`
 	PluginID              string             `json:"pluginId" gorm:"size:120;index"`
 	PluginVersion         string             `json:"pluginVersion" gorm:"size:40"`
 	ProviderConfigID      string             `json:"providerConfigId" gorm:"size:36;index"`

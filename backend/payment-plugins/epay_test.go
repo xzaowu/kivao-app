@@ -60,6 +60,47 @@ func TestEpayV1CreateAndVerifyNotification(t *testing.T) {
 	}
 }
 
+func TestEpayMultiplePaymentMethodsSignSelectedType(t *testing.T) {
+	privateKey, publicKey := testRSAKeyPair(t)
+	for _, version := range []string{"0", "1"} {
+		t.Run(version, func(t *testing.T) {
+			calls := 0
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+				calls++
+				values := mustEpayForm(t, request)
+				if values["type"] != "wxpay" {
+					t.Fatal("selected payment method lost")
+				}
+				if version == "0" {
+					if values["sign"] != epayMD5Sign(values, "test-key") {
+						t.Fatal("invalid selected-method signature")
+					}
+					_, _ = writer.Write([]byte(`{"code":1,"payurl":"https://pay.example/selected"}`))
+				} else {
+					if err := rsaSHA256Verify(publicKey, []byte(epayCanonical(values)), values["sign"]); err != nil {
+						t.Fatal(err)
+					}
+					_, _ = writer.Write([]byte(`{"code":0,"pay_info":"https://pay.example/selected"}`))
+				}
+			}))
+			defer server.Close()
+			provider := NewEpayProvider(server.Client())
+			config := Config{"pid": "1001", "key": "test-key", "gateway": server.URL, "version": version, "payType": "alipay", "payTypes": "alipay,wxpay", "privateKey": testPrivatePEM(privateKey), "platformPublicKey": testPublicPEM(&privateKey.PublicKey)}
+			request := CreateRequest{MerchantOrderNo: "METHOD-TEST", AmountFen: 100, Currency: "CNY", NotifyURL: "https://merchant.example/notify", PaymentMethod: "wxpay"}
+			if _, err := provider.CreateOrder(context.Background(), config, request); err != nil {
+				t.Fatal(err)
+			}
+			request.PaymentMethod = "qqpay"
+			if _, err := provider.CreateOrder(context.Background(), config, request); err == nil {
+				t.Fatal("disabled method submitted")
+			}
+			if calls != 1 {
+				t.Fatal("invalid method reached gateway")
+			}
+		})
+	}
+}
+
 func TestEpayV1QueryAndLocalClose(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.URL.Path != "/api.php" || request.URL.Query().Get("act") != "order" {

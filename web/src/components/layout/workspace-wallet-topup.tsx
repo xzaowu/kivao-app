@@ -146,6 +146,7 @@ export function WalletTopupPanel({
     selectedProduct,
     onSelectProduct,
     selectedProviderId,
+    selectedPaymentMethod,
     onSelectProvider,
     creating,
     onPay,
@@ -162,7 +163,8 @@ export function WalletTopupPanel({
     selectedProduct?: TopupProduct;
     onSelectProduct: (id: string) => void;
     selectedProviderId: string;
-    onSelectProvider: (id: string) => void;
+    selectedPaymentMethod: string;
+    onSelectProvider: (id: string, method?: string) => void;
     creating: boolean;
     onPay: () => void;
     storageUsage?: AccountFileStorageUsage;
@@ -170,6 +172,8 @@ export function WalletTopupPanel({
     onCleanAssets: () => void;
 }) {
     const groupsRef = useRef<HTMLDivElement>(null);
+    const selectedMethods = providers.find((provider) => provider.id === selectedProviderId)?.paymentMethods;
+    const methodReady = !selectedMethods?.length || selectedMethods.some((method) => method.id === selectedPaymentMethod);
 
     useEffect(() => {
         if (loading || !focusKind) return;
@@ -232,17 +236,26 @@ export function WalletTopupPanel({
                     </div>
                     {providers.length ? (
                         <div className="workspace-wallet-providers" role="radiogroup" aria-label="支付方式">
-                            {providers.map((provider) => (
-                                <button key={provider.id} type="button" role="radio" aria-checked={selectedProviderId === provider.id} className={selectedProviderId === provider.id ? "is-selected" : ""} onClick={() => onSelectProvider(provider.id)}>
-                                    <CreditCard />
-                                    {provider.name}
-                                </button>
-                            ))}
+                            {providers.flatMap((provider) =>
+                                (provider.paymentMethods?.length ? provider.paymentMethods : [{ id: "", label: "" }]).map((method) => (
+                                    <button
+                                        key={`${provider.id}:${method.id}`}
+                                        type="button"
+                                        role="radio"
+                                        aria-checked={selectedProviderId === provider.id && selectedPaymentMethod === method.id}
+                                        className={selectedProviderId === provider.id && selectedPaymentMethod === method.id ? "is-selected" : ""}
+                                        onClick={() => onSelectProvider(provider.id, method.id)}
+                                    >
+                                        <CreditCard />
+                                        {method.label ? `${provider.name} · ${method.label}` : provider.name}
+                                    </button>
+                                )),
+                            )}
                         </div>
                     ) : (
                         <span className="wallet-topup-checkout-hint">暂无可用支付渠道，请联系管理员</span>
                     )}
-                    <Button type="primary" size="large" loading={creating} disabled={!selectedProduct || !selectedProduct.canPurchase || !providers.length || !selectedProviderId} onClick={onPay}>
+                    <Button type="primary" size="large" loading={creating} disabled={!selectedProduct || !selectedProduct.canPurchase || !providers.length || !selectedProviderId || !methodReady} onClick={onPay}>
                         立即支付
                     </Button>
                 </footer>

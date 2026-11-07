@@ -13,6 +13,12 @@ var (
 	ErrTradeBillNotFound = errors.New("payment provider trade bill not found")
 )
 
+const (
+	RPCCodeOrderNotFound     = "order_not_found"
+	RPCCodeOrderNotPaid      = "order_not_paid"
+	RPCCodeTradeBillNotFound = "trade_bill_not_found"
+)
+
 type Config map[string]string
 
 type Descriptor struct {
@@ -23,6 +29,7 @@ type Descriptor struct {
 	Icon                string               `json:"icon"`
 	CheckoutMode        string               `json:"checkoutMode"`
 	IdentityFields      []string             `json:"identityFields,omitempty"`
+	PaymentMethods      []PaymentMethod      `json:"paymentMethods,omitempty"`
 	NotificationSuccess NotificationResponse `json:"notificationSuccess,omitempty"`
 	NotificationFailure NotificationResponse `json:"notificationFailure,omitempty"`
 }
@@ -34,6 +41,7 @@ type NotificationResponse struct {
 }
 
 type CreateRequest struct {
+	PaymentMethod   string `json:"paymentMethod,omitempty"`
 	MerchantOrderNo string
 	Description     string
 	AmountFen       int64

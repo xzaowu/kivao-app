@@ -57,6 +57,7 @@ import { CanvasVideoFrameDialog } from "@/components/canvas/canvas-video-frame-d
 import { CanvasVideoSegmentDialog } from "@/components/canvas/canvas-video-segment-dialog";
 import { CanvasVideoEnhanceDialog } from "@/components/canvas/canvas-video-enhance-dialog";
 import { listVideoEnhanceModels } from "@/lib/canvas/canvas-video-enhance";
+import { CanvasVideoDepthPanel } from "@/components/canvas/canvas-video-depth-panel";
 import { CanvasTimelineDialog } from "@/components/canvas/canvas-timeline-dialog";
 import { syncNodeSubtitlesToTimeline } from "@/lib/timeline/timeline-build";
 import { CanvasNodeAnglePanel } from "@/components/canvas/canvas-node-angle-dialog";
@@ -953,7 +954,8 @@ function CanvasViewportPage() {
         enhanceDialogNodeId,
         setEnhanceDialogNodeId,
         openVideoEnhance,
-        enhanceVideoNode,
+        processVideoNode,
+        createVideoDepthNode,
     } = useCanvasMediaTools({
         projectId,
         domainProjectId: linkedProjectId,
@@ -2224,6 +2226,15 @@ function CanvasViewportPage() {
     const renderCanvasNodePanel = useCallback(
         (panelNode: CanvasNodeData) => {
             if (panelNode.type === CanvasNodeType.Script || panelNode.type === CanvasNodeType.Drawing) return null;
+            const depth = panelNode.metadata?.videoDepthCapture;
+            if (depth) {
+                const source = nodesRef.current.find(node => node.id === depth.sourceNodeId);
+                return <CanvasVideoDepthPanel key={panelNode.id} source={source} config={effectiveConfig} savedModel={depth.model}
+                    isRunning={isCanvasNodeGenerating(panelNode, runningNodeId)} completed={panelNode.metadata?.status === "success"} failed={panelNode.metadata?.status === "error"}
+                    onClose={() => setDialogNodeId(null)}
+                    onModelChange={model => handleConfigNodeChange(panelNode.id, { videoDepthCapture: { ...depth, model } })}
+                    onConfirm={model => panelNode.metadata?.taskId ? handleRetryNode(panelNode) : source ? processVideoNode(source, { model }, panelNode.id) : undefined} />;
+            }
             return panelNode.type === CanvasNodeType.Config ? (
                 <CanvasConfigComposer
                     nodeId={panelNode.id}
@@ -2299,6 +2310,8 @@ function CanvasViewportPage() {
             configInputsById,
             effectiveConfig,
             handleConfigNodeChange,
+            handleRetryNode,
+            processVideoNode,
             handleGenerateNode,
             handleNodePromptChange,
             handleRemoveNodeReference,
@@ -2478,6 +2491,12 @@ function CanvasViewportPage() {
     );
 
     // 世界层是 memo 组件；连线回调保持稳定，悬停等页面状态变化时不必重排整层节点和连线。
+    const handleMediaPlayRequest = useCallback((nodeId: string) => {
+        const selection = new Set([nodeId]);
+        selectedNodeIdsRef.current = selection;
+        setSelectedNodeIds(selection);
+        setSelectedConnectionId(null);
+    }, []);
     const handleConnectionSelect = useCallback((connectionId: string) => {
         setSelectedConnectionId(connectionId);
         setSelectedNodeIds(new Set());
@@ -2964,6 +2983,7 @@ function CanvasViewportPage() {
                                                     onConnectionSelect={handleConnectionSelect}
                                                     onConnectionContextMenu={handleConnectionContextMenu}
                                                     onNodeMouseDown={handleNodeMouseDown}
+                                                    onMediaPlayRequest={handleMediaPlayRequest}
                                                     onNodeHoverStart={handleCanvasNodeHoverStart}
                                                     onNodeHoverEnd={handleCanvasNodeHoverEnd}
                                                     onConnectStart={handleConnectStart}
@@ -3117,6 +3137,8 @@ function CanvasViewportPage() {
                             !isCanvasNodeMoving ? (
                                 <CanvasNodePanelOverlay
                                     node={dialogNode}
+                                    panelWidth={dialogNode.metadata?.videoDepthCapture ? 360 : undefined}
+                                    panelHeight={dialogNode.metadata?.videoDepthCapture ? 240 : undefined}
                                     viewport={viewport}
                                     containerRef={containerRef}
                                     allowOverflow={dialogNode.type !== CanvasNodeType.Config}
@@ -3235,6 +3257,7 @@ function CanvasViewportPage() {
                                 onExtractAudioFromVideo={(node) => void extractAudioFromVideo(node)}
                                 onTrimVideoSegments={openVideoSegmentExtractor}
                                 onEnhanceVideo={hasVideoEnhanceModels ? openVideoEnhance : undefined}
+                                onDepthCapture={createVideoDepthNode}
                                 onSubtitles={(node) => setSubtitleNodeId(node.id)}
                                 onTimeline={(node) => setTimelineNodeId(node.id)}
                                 onVersions={(node) => setMediaVersionNodeId(node.id)}
@@ -3389,7 +3412,7 @@ function CanvasViewportPage() {
                                     open={Boolean(enhanceNode)}
                                     config={effectiveConfig}
                                     onClose={() => setEnhanceDialogNodeId(null)}
-                                    onConfirm={(params) => void enhanceVideoNode(enhanceNode, params)}
+                                    onConfirm={(params) => void processVideoNode(enhanceNode, params)}
                                 />
                             ) : null}
 

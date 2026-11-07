@@ -8,6 +8,7 @@ import { aceternityMotion } from "@/lib/aceternity-motion";
 import { canvasOverlayBounds, observeCanvasOverlayBounds, placeCanvasNodePanel, updateCanvasNodePanelBounds } from "@/lib/canvas/canvas-overlay-layout";
 import { subscribeCanvasGraphicsViewportPreview, subscribeCanvasNodeDragPreview, subscribeCanvasViewportPreview } from "@/lib/canvas/canvas-live-viewport";
 import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
+import { useUserStore } from "@/stores/use-user-store";
 import { CanvasNodeType, type CanvasNodeData, type ConnectionHandle, type Position, type ViewportTransform } from "@/types/canvas";
 import { useCanvasNodeResizeMotion } from "./canvas-node-resize-motion";
 
@@ -232,11 +233,13 @@ export function CanvasConnectionCreateMenu({
     const theme = canvasThemes[useActiveTheme()];
     const reducedMotion = useReducedMotion();
     const menuRef = useRef<HTMLDivElement>(null);
+    const nodeFeatures = useUserStore((state) => state.features);
+    const drawingEnabled = canCreateDrawing && nodeFeatures.canvasDrawingEnabled;
     const [activeOption, setActiveOption] = useState<string | null>(null);
     const lastPointerRef = useRef<Position | null>(null);
     const { bringToFront, zIndex } = useCanvasOverlayLayer("connection-create-menu", "var(--z-modal-overlay)");
     const menuWidth = Math.min(288, viewportSize.width - 24);
-    const menuHeight = canCreateDrawing ? 448 : 404;
+    const menuHeight = 360 + (drawingEnabled ? 44 : 0) + (nodeFeatures.canvasConversionEnabled ? 44 : 0);
     const gap = 12;
     const initialPosition = getConnectionMenuPosition(pending.position, viewport, viewportSize, menuWidth, menuHeight, gap);
 
@@ -344,7 +347,7 @@ export function CanvasConnectionCreateMenu({
                     disabledReason={getDisabledReason(CanvasNodeType.Config)}
                     onClick={() => onCreate(CanvasNodeType.Config)}
                 />
-                {canCreateDrawing ? (
+                {drawingEnabled ? (
                     <ConnectionCreateOption
                         expanded={activeOption === "绘图"}
                         motionEnabled={!reducedMotion}
@@ -373,15 +376,17 @@ export function CanvasConnectionCreateMenu({
                     disabledReason={getDisabledReason(CanvasNodeType.Audio)}
                     onClick={() => onCreate(CanvasNodeType.Audio)}
                 />
-                <ConnectionCreateOption
-                    expanded={activeOption === "转换"}
-                    motionEnabled={!reducedMotion}
-                    icon={<ArrowRightLeft className="size-4" />}
-                    title="转换"
-                    description="本地处理图片或视频"
-                    disabledReason={getDisabledReason(CanvasNodeType.MediaConversion)}
-                    onClick={() => onCreate(CanvasNodeType.MediaConversion)}
-                />
+                {nodeFeatures.canvasConversionEnabled ? (
+                    <ConnectionCreateOption
+                        expanded={activeOption === "转换"}
+                        motionEnabled={!reducedMotion}
+                        icon={<ArrowRightLeft className="size-4" />}
+                        title="转换"
+                        description="本地处理图片或视频"
+                        disabledReason={getDisabledReason(CanvasNodeType.MediaConversion)}
+                        onClick={() => onCreate(CanvasNodeType.MediaConversion)}
+                    />
+                ) : null}
             </div>
         </motion.div>
     );

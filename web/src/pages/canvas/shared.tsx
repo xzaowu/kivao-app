@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as R
 import { App, Button } from "antd";
 import { Clapperboard, Eye, FileText, Image as ImageIcon, LockKeyhole, LogIn, Send, Share2, Video } from "lucide-react";
 import { Link, useParams } from "react-router";
+import { useAuthDialogStore } from "@/stores/use-auth-dialog-store";
 import { nanoid } from "nanoid";
 
 import { ConnectionPath } from "@/components/canvas/canvas-connections";
@@ -255,7 +256,7 @@ export default function SharedCanvasPage() {
                     <span className="max-w-[45vw] truncate text-base font-semibold">{title}</span>
                     <span className="inline-flex items-center gap-1 text-xs" style={{ color: theme.node.muted }}><Eye className="size-3.5" />只读分享</span>
                 </div>
-                <Link className="pointer-events-auto" to="/login"><Button type="text" icon={<LogIn className="size-4" />}>登录</Button></Link>
+                <Button className="pointer-events-auto" type="text" icon={<LogIn className="size-4" />} onClick={() => useAuthDialogStore.getState().openDialog()}>登录</Button>
             </header>
 
             <CanvasViewport containerRef={containerRef} viewport={viewport} appearance={appearance} backgroundMode={backgroundMode} onViewportChange={onViewportChange} onViewportPreviewChange={(next) => { viewportRef.current = next; }} onCanvasDeselect={() => { setSelectedNodeId(null); setContextMenu(null); }} onContextMenu={(event) => openContextMenu(event)} onDrop={(event) => { event.preventDefault(); unauthorized(); }}>

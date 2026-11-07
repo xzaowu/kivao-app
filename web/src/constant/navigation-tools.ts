@@ -1,4 +1,4 @@
-import { Blocks, CircleDollarSign, Clapperboard, Images, LibraryBig, ListTodo, PanelsTopLeft, Settings, PenTool } from "lucide-react";
+import { CircleDollarSign, Clapperboard, Images, LibraryBig, ListTodo, PanelsTopLeft, Settings, PenTool } from "lucide-react";
 
 export const navigationTools = [
     {
@@ -35,12 +35,6 @@ export const navigationTools = [
         slug: "skills",
         label: "技能库",
         icon: LibraryBig,
-        section: "工作台管理",
-    },
-    {
-        slug: "plugins",
-        label: "插件中心",
-        icon: Blocks,
         section: "工作台管理",
     },
     {

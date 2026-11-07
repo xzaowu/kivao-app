@@ -3,7 +3,7 @@ import { ImageParameterFields } from "@/components/image-parameter-fields";
 import { imageResolutionUsesQuality, imageSizePresets } from "@/lib/image-size-presets";
 import { createPortal } from "react-dom";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode, type RefObject } from "react";
-import { Button, Popover } from "antd";
+import { Button, Grid, Popover } from "antd";
 import { useWorkspaceTopBarMount } from "@/components/layout/workspace-top-bar-extension";
 import { Tooltip } from "@/components/ui/base/tooltip";
 import { Reorder, LayoutGroup, motion, useReducedMotion } from "motion/react";
@@ -12,7 +12,6 @@ import { ArrowUp, ChevronDown, ChevronLeft, ChevronRight, Clapperboard, Clock3, 
 import { WorkingGlow } from "@/components/ai/working-indicator";
 import { formatVideoResolutionLabel as videoResolutionLabel } from "@/lib/video-generation-options";
 import { CanvasResourceMentionTextarea } from "@/components/canvas/canvas-resource-mention-textarea";
-import { VoiceRecordingButton } from "@/components/conversation/voice-recording-button";
 import { HoverBorderGradient } from "@/components/ui/aceternity/hover-border-gradient";
 import { SpotlightSurface } from "@/components/ui/aceternity/spotlight-surface";
 import { ModelPicker } from "@/components/model-picker";
@@ -46,6 +45,7 @@ const CanvasPromptOptimizerDrawer = lazy(() => import("@/components/canvas/canva
 export const creationAssetCategoryLabels: Record<string, string> = { all: "全部素材", ...ASSET_CATEGORY_LABELS };
 
 export function CreationWorkspaceToolbar({ shots, onJumpToShot, onNewConversation, onOpenHistory, onContinueCanvas, openingCanvas }: { shots: CreationShotRailEntry[]; onJumpToShot: (shot: CreationShotRailEntry) => void; onNewConversation: () => void; onOpenHistory: () => void; onContinueCanvas: () => void; openingCanvas: boolean }) {
+    const screens = Grid.useBreakpoint();
     const [railOpen, setRailOpen] = useState(false);
     const railRef = useRef<HTMLDivElement>(null);
     useEffect(() => {
@@ -78,8 +78,8 @@ export function CreationWorkspaceToolbar({ shots, onJumpToShot, onNewConversatio
             <Tooltip title="历史对话"><button type="button" aria-label="查看历史对话" className="creation-toolbar-action" onClick={onOpenHistory}><History /></button></Tooltip>
         </div>
     </header>;
-    if (mount) return createPortal(toolbar, mount);
-    if (mount === null) return null;
+    if (screens.md && mount) return createPortal(toolbar, mount);
+    if (screens.md && mount === null) return null;
     return toolbar;
 }
 
@@ -138,6 +138,7 @@ type ComposerProps = {
 type CreationReferenceFilter = "all" | "image" | "video" | "audio" | "file";
 
 export function CreationComposer(props: ComposerProps) {
+    const [expanded, setExpanded] = useState(false);
     const [previewUrl, setPreviewUrl] = useState("");
     const [previewType, setPreviewType] = useState<"image" | "video">("image");
     const [promptOptimizerOpen, setPromptOptimizerOpen] = useState(false);
@@ -299,14 +300,19 @@ export function CreationComposer(props: ComposerProps) {
     };
     const composer = <HoverBorderGradient as="div" duration={2.2} containerClassName="creation-composer-shell" className="creation-composer-shell-inner">
         <SpotlightSurface
-            className={`creation-chat-composer is-${props.variant}`}
+            className={`creation-chat-composer is-${props.variant}${expanded ? " is-expanded" : ""}`}
             contentClassName="contents"
             spotlightColor="color-mix(in srgb, var(--user-ink) 12%, transparent)"
             spotlightRadius={280}
         >
         <div className="creation-chat-writing-surface">
             <div className="creation-chat-editor">
-                <CanvasResourceMentionTextarea ref={props.composerFocusRef} value={props.prompt} references={props.references} mentionMenuWidth={400} sendOnEnter onFocus={props.onPromptFocus} onChange={props.setPrompt} onSubmit={props.onSubmit} containerClassName="creation-chat-mention-container" className="creation-chat-mention-editor creation-scrollbar" style={{ color: "var(--creation-text)" }} placeholder={props.placeholderOverride || (props.variant === "empty" ? emptyPlaceholder : placeholder)} aria-label="创作提示词，可使用 @ 引用当前参考内容或技能；回车发送，Shift+回车换行" spellCheck disabled={interactionBusy} activeDropReferenceId={dropTargetReferenceId} onReferenceFilesDrop={(reference, files) => { const target = props.references.find((item) => item.id === reference.id); if (target?.attachmentId) props.onReplaceReferenceFiles(target.attachmentId, files); }} />
+                <Tooltip title={expanded ? "缩小输入框" : "扩大输入框"}>
+                    <button type="button" className="creation-composer-expand" aria-label={expanded ? "缩小输入框" : "扩大输入框"} aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}>
+                        {expanded ? <Minimize2 /> : <Maximize2 />}
+                    </button>
+                </Tooltip>
+                <CanvasResourceMentionTextarea ref={props.composerFocusRef} value={props.prompt} references={props.references} mentionMenuWidth={400} sendOnEnter onFocus={props.onPromptFocus} onChange={props.setPrompt} onSubmit={props.onSubmit} containerClassName="creation-chat-mention-container" className="creation-chat-mention-editor creation-scrollbar" style={{ color: "var(--creation-text)" }} placeholder={`${props.placeholderOverride || (props.variant === "empty" ? emptyPlaceholder : placeholder)}，@引用素材/技能`} aria-label="创作提示词，可使用 @ 引用当前参考内容或技能；回车发送，Shift+回车换行" spellCheck disabled={interactionBusy} activeDropReferenceId={dropTargetReferenceId} onReferenceFilesDrop={(reference, files) => { const target = props.references.find((item) => item.id === reference.id); if (target?.attachmentId) props.onReplaceReferenceFiles(target.attachmentId, files); }} />
                 {props.attachments.length ? <div className={`creation-reference-panel${trackState.isExpanded ? " is-expanded" : ""}`} aria-busy={interactionBusy}>
                     {trackState.isExpanded ? <div className="creation-reference-panel-header">
                         <div className="creation-reference-filter-tabs" role="group" aria-label="筛选参考内容">
@@ -377,11 +383,6 @@ export function CreationComposer(props: ComposerProps) {
             <div className="creation-chat-controls">
                 {props.variant === "thread" ? <ModePicker mode={props.mode} onModeChange={props.onModeChange} /> : null}
                 {referencesSupported && !props.attachments.length ? <Tooltip title={addReferenceLabel}><button type="button" className="creation-chat-control" onClick={props.onOpenLibrary} disabled={interactionBusy || !canAddMoreReferences} aria-label={addReferenceLabel}><Plus aria-hidden="true" /><span>参考内容</span></button></Tooltip> : null}
-                <VoiceRecordingButton
-                    className="creation-voice-trigger"
-                    disabled={interactionBusy}
-                    onTranscribed={(text) => props.setPrompt(props.prompt.trim() ? `${props.prompt} ${text}` : text)}
-                />
                 {canOptimizePrompt ? <Tooltip title="用 AI 优化提示词">
                     <button
                         type="button"

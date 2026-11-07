@@ -105,5 +105,29 @@ func (s *Service) SkillPresets() ([]SkillPreset, error) {
 			return nil, fmt.Errorf("场景预设 %s 的推荐理由为空或超过 200 字", id)
 		}
 	}
-	return file.Presets, nil
+	if s.repo == nil {
+		return file.Presets, nil
+	}
+	ids, err := s.repo.PublicSkillIDs(seedIDs)
+	if err != nil {
+		return nil, err
+	}
+	available := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		available[id] = true
+	}
+	presets := make([]SkillPreset, 0, len(file.Presets))
+	for _, preset := range file.Presets {
+		complete := true
+		for _, id := range preset.SkillIDs {
+			if !available[id] {
+				complete = false
+				break
+			}
+		}
+		if complete {
+			presets = append(presets, preset)
+		}
+	}
+	return presets, nil
 }

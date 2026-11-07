@@ -4,10 +4,11 @@ import { ArrowLeft, ArrowRight, LockKeyhole, Mail, ShieldCheck, TriangleAlert } 
 import { Link, useNavigate, useSearchParams } from "react-router";
 
 import { getAuthSettings, resetPassword, sendPasswordResetEmailCode } from "@/services/api/auth";
+import { safeAuthNext, type AuthFormProps } from "@/lib/auth-navigation";
 
 type RecoveryStage = "request" | "reset";
 
-export default function ForgotPasswordPage() {
+export default function ForgotPasswordPage({ nextPath, onSuccess, onBusyChange, onBackLogin }: AuthFormProps & { onBackLogin?: () => void } = {}) {
     const navigate = useNavigate();
     const [params] = useSearchParams();
     const { message } = App.useApp();
@@ -20,7 +21,10 @@ export default function ForgotPasswordPage() {
     const [sendingCode, setSendingCode] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [countdown, setCountdown] = useState(0);
-    const next = safeNext(params.get("next"));
+    const next = safeAuthNext(nextPath ?? params.get("next"));
+    useEffect(() => {
+        onBusyChange?.(submitting || sendingCode);
+    }, [submitting, sendingCode, onBusyChange]);
     const loginURL = `/login?next=${encodeURIComponent(next)}`;
 
     useEffect(() => {
@@ -51,7 +55,7 @@ export default function ForgotPasswordPage() {
             setEmail(normalizedEmail);
             setCountdown(60);
             if (advance) setStage("reset");
-            message.success("如果该邮箱已绑定可找回的账号，验证码将发送到邮箱");
+            message.success("如果该邮箱已绑定可找回的账号，验证码将发送到邮箱。未收到请检查垃圾邮件。");
         } catch (error) {
             message.error(error instanceof Error ? error.message : "发送验证码失败");
         } finally {
@@ -74,7 +78,8 @@ export default function ForgotPasswordPage() {
         try {
             await resetPassword({ email: email.trim(), emailCode, password });
             message.success("密码已重置，请使用新密码登录");
-            navigate(loginURL, { replace: true });
+            if (onSuccess) onSuccess();
+            else navigate(loginURL, { replace: true });
         } catch (error) {
             message.error(error instanceof Error ? error.message : "密码重置失败");
         } finally {
@@ -111,7 +116,7 @@ export default function ForgotPasswordPage() {
                 <Button type="primary" htmlType="submit" size="large" block loading={sendingCode} disabled={emailEnabled === false} icon={<ArrowRight className="size-4" />} iconPlacement="end">
                     发送验证码
                 </Button>
-                <BackToLogin to={loginURL} />
+                <BackToLogin to={loginURL} onClick={onBackLogin} />
             </form>
         );
     }
@@ -144,6 +149,7 @@ export default function ForgotPasswordPage() {
                     </Button>
                 </div>
             </AuthField>
+            <p className="auth-scene-muted m-0 text-xs leading-5">未收到验证码？请检查垃圾邮件或广告邮件文件夹。</p>
             <div className="grid gap-4 sm:grid-cols-2">
                 <AuthField label="新密码" htmlFor="recovery-password">
                     <Input.Password
@@ -175,7 +181,7 @@ export default function ForgotPasswordPage() {
             <Button type="primary" htmlType="submit" size="large" block loading={submitting} icon={<ArrowRight className="size-4" />} iconPlacement="end">
                 重置密码
             </Button>
-            <BackToLogin to={loginURL} />
+            <BackToLogin to={loginURL} onClick={onBackLogin} />
         </form>
     );
 }
@@ -191,13 +197,20 @@ function AuthField({ label, htmlFor, children }: { label: string; htmlFor: strin
     );
 }
 
-function BackToLogin({ to }: { to: string }) {
+function BackToLogin({ to, onClick }: { to: string; onClick?: () => void }) {
     return (
         <div className="text-center">
-            <Link to={to} className="auth-scene-link inline-flex min-h-8 items-center gap-2 rounded-sm text-xs transition-colors">
-                <ArrowLeft className="size-3.5" />
-                返回登录
-            </Link>
+            {onClick ? (
+                <button type="button" onClick={onClick} className="auth-scene-link inline-flex min-h-8 items-center gap-2 rounded-sm text-xs transition-colors">
+                    <ArrowLeft className="size-3.5" />
+                    返回登录
+                </button>
+            ) : (
+                <Link to={to} className="auth-scene-link inline-flex min-h-8 items-center gap-2 rounded-sm text-xs transition-colors">
+                    <ArrowLeft className="size-3.5" />
+                    返回登录
+                </Link>
+            )}
         </div>
     );
 }
@@ -209,9 +222,4 @@ function Notice({ icon, children }: { icon: ReactNode; children: ReactNode }) {
             {children}
         </div>
     );
-}
-
-function safeNext(value: string | null) {
-    if (!value || !value.startsWith("/") || value.startsWith("//")) return "/";
-    return value;
 }

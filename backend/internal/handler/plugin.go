@@ -69,8 +69,7 @@ func RegisterPluginRoutes(r *gin.RouterGroup, svc *service.Service) {
 	})
 	pluginRoutes := r.Group("/plugins")
 	pluginRoutes.Use(requirePluginCenterAccess(svc))
-	// The frontend plugin center is the single management surface. Protocol
-	// plugins are returned as kind=protocol records alongside UI plugins.
+	// Plugin management lives in the admin UI; user activation is rejected.
 	pluginRoutes.GET("", func(c *gin.Context) {
 		user, err := currentUser(c, svc)
 		if err != nil {

@@ -24,15 +24,17 @@ const (
 )
 
 type PaymentProviderView struct {
-	ID                string `json:"id"`
-	PluginID          string `json:"pluginId"`
-	Name              string `json:"name"`
-	Icon              string `json:"icon"`
-	CheckoutMode      string `json:"checkoutMode"`
-	Enabled           bool   `json:"enabled"`
-	PluginEnabled     bool   `json:"pluginEnabled"`
-	Configured        bool   `json:"configured"`
-	CloseAfterMinutes int    `json:"closeAfterMinutes"`
+	PaymentMethods       []payment.PaymentMethod `json:"paymentMethods,omitempty"`
+	DefaultPaymentMethod string                  `json:"defaultPaymentMethod,omitempty"`
+	ID                   string                  `json:"id"`
+	PluginID             string                  `json:"pluginId"`
+	Name                 string                  `json:"name"`
+	Icon                 string                  `json:"icon"`
+	CheckoutMode         string                  `json:"checkoutMode"`
+	Enabled              bool                    `json:"enabled"`
+	PluginEnabled        bool                    `json:"pluginEnabled"`
+	Configured           bool                    `json:"configured"`
+	CloseAfterMinutes    int                     `json:"closeAfterMinutes"`
 }
 
 type AdminPaymentProviderView struct {
@@ -73,6 +75,7 @@ type TopupProductRequest struct {
 }
 
 type CreatePaymentOrderRequest struct {
+	PaymentMethod  string `json:"paymentMethod,omitempty"`
 	ProductID      string `json:"productId"`
 	ProviderID     string `json:"providerId"`
 	IdempotencyKey string `json:"idempotencyKey"`
@@ -86,6 +89,7 @@ type PaymentCheckoutView struct {
 }
 
 type PaymentOrderView struct {
+	PaymentMethod       string                   `json:"paymentMethod,omitempty"`
 	ID                  string                   `json:"id"`
 	UserID              string                   `json:"userId,omitempty"`
 	MerchantOrderNo     string                   `json:"merchantOrderNo"`
@@ -142,12 +146,44 @@ func (s *Service) CreatePaymentOrder(ctx context.Context, actor *model.User, req
 	}
 	productID := strings.TrimSpace(request.ProductID)
 	providerID := strings.TrimSpace(request.ProviderID)
-	if existing, err := s.repo.PaymentOrderByIdempotency(actor.ID, idempotencyKey); err == nil {
+	requestedMethod := strings.TrimSpace(request.PaymentMethod)
+	if len(requestedMethod) > 40 {
+		return nil, BadAuthRequest("支付方式无效")
+	}
+	existingView := func(existing *model.PaymentOrder) (*PaymentOrderView, error) {
 		if existing.ProductID != productID || existing.ProviderID != providerID {
 			return nil, NewAppError(http.StatusConflict, "支付幂等标识已用于不同的商品或支付渠道")
 		}
+		if existing.PaymentMethod == requestedMethod {
+			result := paymentOrderView(*existing)
+			return &result, nil
+		}
+		if existing.PaymentMethod != "" && requestedMethod != "" {
+			return nil, NewAppError(http.StatusConflict, "支付幂等标识已用于不同的支付方式")
+		}
+		provider, _, values, err := s.paymentRuntimeForOrder(existing)
+		if err != nil {
+			return nil, err
+		}
+		method, err := payment.ResolvePaymentMethod(provider.Descriptor(), values, requestedMethod)
+		if err != nil {
+			return nil, BadAuthRequest(err.Error())
+		}
+		stored := existing.PaymentMethod
+		if stored == "" {
+			stored, err = payment.ResolvePaymentMethod(provider.Descriptor(), values, "")
+		}
+		if err != nil {
+			return nil, err
+		}
+		if stored != method {
+			return nil, NewAppError(http.StatusConflict, "支付幂等标识已用于不同的支付方式")
+		}
 		result := paymentOrderView(*existing)
 		return &result, nil
+	}
+	if existing, err := s.repo.PaymentOrderByIdempotency(actor.ID, idempotencyKey); err == nil {
+		return existingView(existing)
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
 	}
@@ -172,6 +208,14 @@ func (s *Service) CreatePaymentOrder(ctx context.Context, actor *model.User, req
 	if !view.Enabled || !view.Configured || config == nil {
 		return nil, Forbidden("支付渠道未启用或尚未配置")
 	}
+	values, err := s.decryptPaymentConfig(config)
+	if err != nil {
+		return nil, err
+	}
+	method, err := payment.ResolvePaymentMethod(provider.Descriptor(), values, requestedMethod)
+	if err != nil {
+		return nil, BadAuthRequest(err.Error())
+	}
 	activeCount, err := s.repo.ActivePaymentOrderCount(actor.ID)
 	if err != nil {
 		return nil, err
@@ -181,7 +225,8 @@ func (s *Service) CreatePaymentOrder(ctx context.Context, actor *model.User, req
 	}
 	now := time.Now()
 	order := &model.PaymentOrder{
-		ID: newID(), UserID: actor.ID, IdempotencyKey: idempotencyKey, MerchantOrderNo: newID(),
+		PaymentMethod: method,
+		ID:            newID(), UserID: actor.ID, IdempotencyKey: idempotencyKey, MerchantOrderNo: newID(),
 		ProductID: product.ID, ProductName: product.Name, ProductKind: topupProductKind(product.Kind),
 		StorageBytes: product.StorageBytes, StorageDurationDays: product.StorageDurationDays, ProviderID: provider.Descriptor().ID,
 		PluginID: provider.Descriptor().PluginID, PluginVersion: provider.Descriptor().PluginVersion, ProviderConfigID: config.ID, ProviderConfigVersion: config.Version,
@@ -197,16 +242,11 @@ func (s *Service) CreatePaymentOrder(ctx context.Context, actor *model.User, req
 		return nil, err
 	}
 	if !created {
-		view := paymentOrderView(*order)
-		return &view, nil
-	}
-	values, err := s.decryptPaymentConfig(config)
-	if err != nil {
-		_ = s.repo.SetPaymentOrderCreateFailure(order.ID, safePaymentError(err))
-		return nil, err
+		return existingView(order)
 	}
 	baseURL := strings.TrimRight(values["publicBaseUrl"], "/")
 	checkout, err := provider.CreateOrder(ctx, values, payment.CreateRequest{
+		PaymentMethod:   order.PaymentMethod,
 		MerchantOrderNo: order.MerchantOrderNo, Description: product.Name, AmountFen: order.AmountFen,
 		Currency: order.Currency, ExpiresAt: order.ExpiresAt,
 		NotifyURL: baseURL + "/api/payments/notify/" + url.PathEscape(order.ProviderID) + "/" + url.PathEscape(config.ID),
@@ -291,6 +331,7 @@ func (s *Service) RefreshPaymentCheckout(ctx context.Context, actor *model.User,
 	}
 	baseURL := strings.TrimRight(values["publicBaseUrl"], "/")
 	checkout, err := provider.CreateOrder(ctx, values, payment.CreateRequest{
+		PaymentMethod:   order.PaymentMethod,
 		MerchantOrderNo: order.MerchantOrderNo, Description: order.ProductName, AmountFen: order.AmountFen,
 		Currency: order.Currency, ExpiresAt: order.ExpiresAt,
 		NotifyURL: baseURL + "/api/payments/notify/" + url.PathEscape(order.ProviderID) + "/" + url.PathEscape(config.ID),
@@ -576,7 +617,8 @@ func paymentOrderView(order model.PaymentOrder) PaymentOrderView {
 		}
 	}
 	return PaymentOrderView{
-		ID: order.ID, UserID: order.UserID, MerchantOrderNo: order.MerchantOrderNo, ProductID: order.ProductID, ProductName: order.ProductName,
+		PaymentMethod: order.PaymentMethod,
+		ID:            order.ID, UserID: order.UserID, MerchantOrderNo: order.MerchantOrderNo, ProductID: order.ProductID, ProductName: order.ProductName,
 		ProductKind: topupProductKind(order.ProductKind), StorageBytes: order.StorageBytes, StorageDurationDays: order.StorageDurationDays,
 		ProviderID: order.ProviderID, AmountFen: order.AmountFen, Currency: order.Currency,
 		CreditsMicrocredits: order.CreditsMicrocredits, Status: order.Status, ProviderStatus: order.ProviderStatus,

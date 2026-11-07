@@ -27,6 +27,7 @@ import (
 const ossSettingKey = "oss"
 const encryptedSettingPrefix = "enc:v1:"
 const defaultOSSPathPrefix = "open-ai-canvas"
+const defaultUserOSSPathPrefix = "kivao"
 
 const (
 	aliyunOSSProvider  = "aliyun"
@@ -190,6 +191,9 @@ func (s *Service) UpdateUserOSSSetting(actor *model.User, req OSSSettingRequest)
 	if err != nil {
 		return nil, err
 	}
+	if strings.Trim(strings.TrimSpace(req.PathPrefix), "/") == "" {
+		req.PathPrefix = defaultUserOSSPathPrefix
+	}
 	next, err := ossSettingFromRequest(req, currentValue)
 	if err != nil {
 		return nil, err
@@ -277,7 +281,9 @@ func (s *Service) readOSSSetting() (*model.SystemSetting, ossSettingValue, error
 func (s *Service) readUserOSSSetting(userID string) (*model.UserOSSSetting, ossSettingValue, error) {
 	setting, err := s.repo.LatestUserOSSSetting(userID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, normalizeOSSSetting(defaultOSSSetting()), nil
+		value := defaultOSSSetting()
+		value.PathPrefix = defaultUserOSSPathPrefix
+		return nil, normalizeOSSSetting(value), nil
 	}
 	if err != nil {
 		return nil, ossSettingValue{}, err

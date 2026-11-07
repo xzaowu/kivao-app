@@ -41,6 +41,10 @@ type FeatureAvailability struct {
 	TimelineTranscriptionEnabled bool `json:"timelineTranscriptionEnabled"`
 	ImageWorkbenchEnabled        bool `json:"imageWorkbenchEnabled"`
 	VideoWorkbenchEnabled        bool `json:"videoWorkbenchEnabled"`
+	CanvasConversionEnabled      bool `json:"canvasConversionEnabled"`
+	CanvasDrawingEnabled         bool `json:"canvasDrawingEnabled"`
+	CanvasFolderEnabled          bool `json:"canvasFolderEnabled"`
+	CanvasFrameEnabled           bool `json:"canvasFrameEnabled"`
 }
 
 type PublicFeatureAvailability struct {
@@ -65,6 +69,10 @@ func DefaultFeatureAvailability() FeatureAvailability {
 		TimelineTranscriptionEnabled: true,
 		ImageWorkbenchEnabled:        false,
 		VideoWorkbenchEnabled:        false,
+		CanvasConversionEnabled:      false,
+		CanvasDrawingEnabled:         false,
+		CanvasFolderEnabled:          false,
+		CanvasFrameEnabled:           false,
 	}
 }
 
@@ -185,7 +193,7 @@ func (s *Service) readFeatureAvailability() (*model.SystemSetting, FeatureAvaila
 	if err != nil {
 		return nil, FeatureAvailability{}, err
 	}
-	// 以全开放默认值为基底，避免已有三字段配置在升级后因缺少新字段而意外关闭功能。
+	// 按各功能默认值补齐旧配置中缺少的字段。
 	value := DefaultFeatureAvailability()
 	if strings.TrimSpace(setting.ValueJSON) == "" || json.Unmarshal([]byte(setting.ValueJSON), &value) != nil {
 		return nil, FeatureAvailability{}, errors.New("功能开放配置格式无效")

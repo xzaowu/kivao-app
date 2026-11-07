@@ -25,34 +25,14 @@ export type ExternalAssetSourceState = {
 export function useExternalAssetSources(open: boolean): ExternalAssetSourceState {
     const hydrated = usePluginStore((state) => state.hydrated);
     const installations = usePluginStore((state) => state.installations);
-    const needsEagle = open && hydrated && installations.some((installation) => installation.manifest.id === "eagle-asset-connector");
-    const [eagleLoaded, setEagleLoaded] = useState(false);
     const [loadedSources, setLoadedSources] = useState<LoadedAssetSource[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
 
-    useEffect(() => {
-        if (!needsEagle) {
-            setEagleLoaded(true);
-            return;
-        }
-
-        let cancelled = false;
-        setEagleLoaded(false);
-        void import("@/lib/plugins/builtin/eagle")
-            .catch(() => undefined)
-            .finally(() => {
-                if (!cancelled) setEagleLoaded(true);
-            });
-        return () => {
-            cancelled = true;
-        };
-    }, [needsEagle]);
-
     const sources = useMemo(() => {
-        if (!hydrated || (needsEagle && !eagleLoaded)) return [];
-        return createHostedAssetSources(installations);
-    }, [eagleLoaded, hydrated, installations, needsEagle]);
+        if (!hydrated) return [];
+        return createHostedAssetSources(installations.filter((item) => item.manifest.id !== "eagle-asset-connector"));
+    }, [hydrated, installations]);
 
     useEffect(() => {
         const controller = new AbortController();

@@ -1,5 +1,7 @@
 import type { Skill, SkillCategory } from "@/services/api/skills";
 
+export const skillReviewLabels: Record<number, string> = { 1: "已上架", 2: "待审核", 3: "未通过", 4: "已下架" };
+
 export const fallbackSkillCategories: SkillCategory[] = [
     { value: "drama", label: "短剧影视" },
     { value: "ecommerce", label: "电商营销" },

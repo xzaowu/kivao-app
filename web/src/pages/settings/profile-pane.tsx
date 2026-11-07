@@ -244,7 +244,7 @@ export function ProfilePane() {
             setEmailTicket({ value: result.ticket, expiresAt: receivedAt + result.expiresIn * 1000 });
             setRetryAt(receivedAt + result.retryAfter * 1000);
             setNow(receivedAt);
-            message.success("验证码已发送到新邮箱");
+            message.success("验证码已发送到新邮箱，未收到请检查垃圾邮件。");
         } catch (error) {
             if (error instanceof ApiError && error.retryAfterMs) setRetryAt(Date.now() + error.retryAfterMs);
             setError("email", errorMessage(error, "发送验证码失败，请重试"));
@@ -487,7 +487,7 @@ export function ProfilePane() {
                                     </div>
                                     {emailTicket ? (
                                         <p className="profile-hint" role="status">
-                                            {ticketSeconds ? `验证码已发送，${Math.ceil(ticketSeconds / 60)} 分钟内有效。` : "验证码已过期，请重新发送。"}
+                                            {ticketSeconds ? `验证码已发送，${Math.ceil(ticketSeconds / 60)} 分钟内有效。未收到请检查垃圾邮件或广告邮件文件夹。` : "验证码已过期，请重新发送。"}
                                         </p>
                                     ) : null}
                                     {errors.email ? (
