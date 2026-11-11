@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"errors"
 	"strings"
 	"time"
 
@@ -339,17 +340,37 @@ func visibleAPICallLogQuery(query *gorm.DB) *gorm.DB {
 }
 
 func (r *Repository) AsyncMediaAPICallRoot(log model.ApiCallLog) (*model.ApiCallLog, error) {
-	var root model.ApiCallLog
 	query := r.db.Where("capability = ? AND request_kind = ?", log.Capability, "create")
 	if log.TaskID != "" {
 		query = query.Where("task_id = ?", log.TaskID)
 	} else {
 		query = query.Where("user_id = ? AND channel_id = ? AND provider_request_id = ?", log.UserID, log.ChannelID, log.ProviderRequestID)
 	}
-	if err := query.Order("created_at desc").First(&root).Error; err != nil {
+	for _, field := range [][2]string{{"user_id", log.UserID}, {"channel_id", log.ChannelID}, {"billing_order_id", log.BillingOrderID}} {
+		if field[1] != "" {
+			query = query.Where(field[0]+" = ?", field[1])
+		}
+	}
+	if log.ProviderRequestID != "" {
+		var root model.ApiCallLog
+		err := query.Session(&gorm.Session{}).Where("provider_request_id = ?", log.ProviderRequestID).Order("created_at desc").First(&root).Error
+		if err == nil {
+			return &root, nil
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
+	}
+	// 自定义响应中的任务 ID 可能仅适配器认识。只允许唯一且没有冲突 ID 的根日志兜底；
+	// 同一任务的多个尝试不能靠「最新一条」猜测，否则迟到失败会误改新请求并错误退款。
+	var roots []model.ApiCallLog
+	if err := query.Order("created_at desc").Limit(2).Find(&roots).Error; err != nil {
 		return nil, err
 	}
-	return &root, nil
+	if len(roots) != 1 || (log.ProviderRequestID != "" && roots[0].ProviderRequestID != "") {
+		return nil, gorm.ErrRecordNotFound
+	}
+	return &roots[0], nil
 }
 
 // VideoAPICallRoot 保留旧调用面的兼容别名。

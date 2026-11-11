@@ -103,7 +103,7 @@ func runProtocolAdapterTaskWithPolicy(ctx context.Context, input canvasGeneratio
 			taskID = extracted
 		}
 		if created.Status == protocol.StatusFailed || created.Status == protocol.StatusCancelled {
-			return nil, protocolResultError(created.Message, taskID)
+			return nil, protocolTaskFailure(ctx, created.Status, created.Message, taskID)
 		}
 		if created.Status == protocol.StatusSucceeded {
 			return finishProtocolAdapterResult(ctx, input, adapter, request, taskID, created.Result, policy)
@@ -128,7 +128,7 @@ func runProtocolAdapterTaskWithPolicy(ctx context.Context, input canvasGeneratio
 		if err != nil {
 			return videoPollOutcome{}, err
 		}
-		body, err := executeProtocolRequest(withProviderRequestKind(ctx, "poll"), input.Config, spec)
+		body, err := executeProtocolRequest(withProtocolPollAnalytics(ctx, taskID), input.Config, spec)
 		if err != nil {
 			return videoPollOutcome{}, err
 		}
@@ -144,13 +144,24 @@ func runProtocolAdapterTaskWithPolicy(ctx context.Context, input canvasGeneratio
 			result, err := finishProtocolAdapterResult(ctx, input, adapter, request, taskID, state.Result, policy)
 			return videoPollOutcome{Done: err == nil, Result: result}, err
 		case protocol.StatusFailed, protocol.StatusCancelled:
-			return videoPollOutcome{}, protocolResultError(state.Message, taskID)
+			return videoPollOutcome{}, protocolTaskFailure(ctx, state.Status, state.Message, taskID)
 		}
 		if detached {
 			return videoPollOutcome{}, detachedProtocolPending(taskID, state.Stage, state.QueueAhead)
 		}
 		return videoPollOutcome{}, nil
 	})
+}
+
+// 轮询关联适配器已解析出的任务 ID，避免把每次 HTTP 响应的 request_id 当成生成任务 ID。
+func withProtocolPollAnalytics(ctx context.Context, taskID string) context.Context {
+	ctx = withProviderRequestKind(ctx, "poll")
+	metadata, ok := ctx.Value(providerAnalyticsKey{}).(providerAnalyticsContext)
+	if !ok {
+		return ctx
+	}
+	metadata.ProviderRequestID = taskID
+	return context.WithValue(ctx, providerAnalyticsKey{}, metadata)
 }
 
 func extractProviderTaskID(body []byte) (string, error) {
@@ -183,7 +194,7 @@ func queryProtocolAdapterVideoTask(ctx context.Context, input canvasGenerationIn
 	if err != nil {
 		return nil, "", err
 	}
-	body, err := executeProtocolRequest(withProviderRequestKind(ctx, "poll"), input.Config, spec)
+	body, err := executeProtocolRequest(withProtocolPollAnalytics(ctx, taskID), input.Config, spec)
 	if err != nil {
 		return nil, "", err
 	}
@@ -197,7 +208,7 @@ func queryProtocolAdapterVideoTask(ctx context.Context, input canvasGenerationIn
 		result, err := finishProtocolAdapterResult(ctx, input, adapter, request, taskID, state.Result, defaultVideoPollPolicy())
 		return result, providerStatus, err
 	case protocol.StatusFailed, protocol.StatusCancelled:
-		return nil, providerStatus, protocolResultError(state.Message, taskID)
+		return nil, providerStatus, protocolTaskFailure(ctx, state.Status, state.Message, taskID)
 	case protocol.StatusPending, protocol.StatusProcessing:
 		return nil, providerStatus, nil
 	default:

@@ -3,12 +3,14 @@
 package app
 
 import (
+	"context"
 	"errors"
 	stdlog "log"
 	"time"
 
 	"gorm.io/gorm"
 	"yingce/backend/internal/model"
+	"yingce/backend/internal/protocol"
 )
 
 func (s *Service) LogAPICall(log model.ApiCallLog) error {
@@ -92,6 +94,10 @@ func (s *Service) mergeAsyncMediaAPICallLog(log model.ApiCallLog) (bool, error) 
 	if err != nil {
 		return false, err
 	}
+	if protocol.NormalizeStatus(root.ProviderStatus) == protocol.StatusSucceeded && protocol.NormalizeStatus(log.ProviderStatus) != protocol.StatusSucceeded {
+		// 已拿到成功结果后的矛盾/迟到轮询单独保留；不能抹掉成功证据再自动退款。
+		return false, nil
+	}
 	if log.RequestKind == "poll" {
 		root.PollCount++
 		if log.ResponseBody != "" {
@@ -128,6 +134,55 @@ func (s *Service) mergeAsyncMediaAPICallLog(log model.ApiCallLog) (bool, error) 
 		root.CachedTokens = log.CachedTokens
 	}
 	return true, s.repo.Save(root)
+}
+
+// recordProviderTaskTerminalFailure 把适配器解析出的失败/取消终态写到本次上游任务的 create 根日志。
+// 视频、图片的轮询日志会合并进根日志，音频不合并；两种情况下计费都只看根日志，所以统一改根日志。
+// 缺失、无法对应或写回失败都向计费传递待核对标记，不因丢失审计证据自动退款。
+func recordProviderTaskTerminalFailure(ctx context.Context, failure providerTaskTerminalError) error {
+	metadata, ok := ctx.Value(providerAnalyticsKey{}).(providerAnalyticsContext)
+	if !ok || metadata.Service == nil || metadata.Service.repo == nil {
+		return nil
+	}
+	probe := model.ApiCallLog{TaskID: metadata.TaskID, UserID: metadata.UserID, ChannelID: metadata.ChannelID, BillingOrderID: metadata.BillingOrderID, Capability: metadata.Capability, ProviderRequestID: firstNonEmpty(failure.TaskID, metadata.ProviderRequestID)}
+	if probe.TaskID == "" && probe.ProviderRequestID == "" {
+		return nil
+	}
+	if err := metadata.Service.markAPICallRootTerminalFailure(probe, failure); err != nil {
+		stdlog.Printf("provider terminal state log update failed: task_id=%s provider_request_id=%s error=%v", probe.TaskID, probe.ProviderRequestID, err)
+		return err
+	}
+	return nil
+}
+
+func (s *Service) markAPICallRootTerminalFailure(probe model.ApiCallLog, failure providerTaskTerminalError) error {
+	root, err := s.repo.AsyncMediaAPICallRoot(probe)
+	if err != nil {
+		return err
+	}
+	if protocol.NormalizeStatus(root.ProviderStatus) == protocol.StatusSucceeded {
+		return errors.New("provider terminal failure conflicts with a successful result")
+	}
+	code := "task_failed"
+	if failure.Status == protocol.StatusCancelled {
+		code = "task_cancelled"
+	}
+	changed := root.Status != model.ApiCallStatusFailed
+	root.Status = model.ApiCallStatusFailed
+	// 日志侧已识别出失败时保留它记下的上游错误码和原文，只补缺失字段。
+	if root.ErrorCode == "" {
+		root.ErrorCode, changed = code, true
+	}
+	if root.Error == "" {
+		root.Error, changed = truncateRunes(failure.Message, 2_000), true
+	}
+	if status := protocol.NormalizeStatus(root.ProviderStatus); status != protocol.StatusFailed && status != protocol.StatusCancelled {
+		root.ProviderStatus, changed = string(failure.Status), true
+	}
+	if !changed {
+		return nil
+	}
+	return s.repo.Save(root)
 }
 
 func (s *Service) APICallLogs(actor *model.User, limit int) ([]model.ApiCallLog, error) {

@@ -453,6 +453,9 @@ func recordProviderRequest(req *http.Request, startedAt time.Time, statusCode in
 		}
 	}
 	metadata.Service.EnrichAPICallLog(&callLog, responseBody)
+	if metadata.RequestKind == "poll" && metadata.ProviderRequestID != "" {
+		callLog.ProviderRequestID = metadata.ProviderRequestID
+	}
 	callLog.Error = withUserVisibleLogError(requestErr, callLog.Error)
 	if err := metadata.Service.LogAPICall(callLog); err != nil {
 		if !channelSlotFailure && metadata.Billing != nil {
