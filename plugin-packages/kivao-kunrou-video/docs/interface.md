@@ -5,7 +5,9 @@
 执行，并复用权限、出站保护、媒体保存和任务状态处理。
 
 <!-- YINGCE_MANIFEST_CONTRACT_START -->
-## 完整 Manifest 合同
+## Manifest 完整接口定义
+
+以下 JSON 与插件包内实际 `manifest.json` 逐字段一致，覆盖插件身份、权限、配置、鉴权、参数、校验、创建、Agent、查询、取消、结果下载、响应和 Agent 响应映射。`documentation` 字段的值就是当前完整文档；为避免文档在自身内部无限递归，JSON 中仅用等义占位文本表示正文。
 
 ```json
 {
