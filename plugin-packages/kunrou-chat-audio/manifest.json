@@ -1,0 +1,290 @@
+{
+  "apiVersion": "yingce.plugin/v2",
+  "id": "kunrou-chat-audio",
+  "name": "坤肉音频",
+  "version": "1.0.0",
+  "author": "KIVAO",
+  "description": "坤肉 Chat Completions 语音与音乐生成协议。",
+  "documentation": "# 坤肉音频\n\n通过坤肉 Chat Completions 接口生成语音或音乐，作为独立的音频协议插件安装，不替换文本 Chat、OpenAI Speech 或异步音频协议。\n\n- 接口：`POST https://api.kunrouai.com/v1/chat/completions`，非流式 JSON。\n- 文档：[坤肉音频生成](https://doc.kunrouai.com/#audio)。\n- 提示词描述朗读内容、曲风、人声、语言及情绪；补充音频说明合并到同一条用户消息。\n- 音色与语速通过提示词描述；保留前端默认音色与默认速度，不把 OpenAI 的音色名称传给坤肉。\n- 格式支持 MP3、WAV、M4A，以模型实际返回为准；现有界面可直接选择 MP3、WAV。\n- 当前 Lyria 文档要求请求模型为 `lyria-3.5-m`、`lyria-3-pro-m`，后台产品标识可保留不带后缀的名称。\n- 返回音频 URL 后复用宿主的安全下载和资源持久化，不把 Markdown 文本当作音频。\n\n模型价格和启用状态由后台单独配置。目录价格不等于当前账户成本；未确认价格的模型保持停用。插件测试使用本地 Stub，不能替代真实渠道验收。\n\n---\n\n# 坤肉音频接口\n\n## 身份与请求\n\n- 插件及 Provider ID：`kunrou-chat-audio`。\n- 能力：`audio`；声明式运行，无外部可执行程序。\n- Base URL：`https://api.kunrouai.com`；渠道内现有 `apiKey` 用 Bearer 鉴权，插件不保存真实密钥。\n- 创建：`POST /v1/chat/completions`，`Content-Type: application/json`。\n- `model` 取后台上游模型 ID；`messages` 仅包含一条 `user` 消息，内容为提示词及可选音频说明。\n- 固定 `stream: false`、`n: 1`。`audio_format` 取 `request.extra.audioFormat`，默认 `mp3`。\n- `reference_images` 从已有图片引用取 URL / data URL。文档规定单张不超过 5 MiB；本插件不新增上传入口。\n- 可选扩展通过 `providerOptions.kunrou-chat-audio` 的 `instrumental`、`lyrics`、`duration`、`bpm` 传入。不新增用户参数面板，时长和节奏也可写在提示词中。\n- 不发送 OpenAI 专属的 `voice`、`speed` 或 `response_format`。非默认音色/速度和不支持的格式在发出请求前报错，不静默忽略。\n\n## 响应与失败\n\n- 从 `data[].url` 提取音频，映射 `mime_type` 为 MIME 类型，标记临时结果，由宿主下载保存。\n- 音频 URL 缺失、上游 `error` / `error.code` 或无效 JSON 都保持失败；不将普通文本或 Markdown 链接伪装成音频。\n- 无轮询和自动重试创建接口，避免对状态未知的音乐任务重复扣费。\n- 响应 `usage` 可以为零；该插件不据此猜测免费或改写模型计费方式。\n\n## 模型映射与计费边界\n\n| 后台产品标识 | 上游请求模型 | 说明 |\n| --- | --- | --- |\n| `gemini-3.8-flash-tts` | 同名 | 文本转语音；价格页标注按秒，先核定成本与售价 |\n| `grok-voice-latest` | 同名 | 文本转语音 |\n| `lyria-3.5` | `lyria-3.5-m` | 按当前接口文档的请求 ID 配置 |\n| `lyria-3-pro` | `lyria-3-pro-m` | 按当前接口文档的请求 ID 配置 |\n| `suno-v6-mini` | 同名 | 目录声明使用 Chat 接口；保留待真实调用验收 |\n\n模型及渠道不由插件自动启用，不修改其他模型、数据库 Schema 或既有插件。\n\n<!-- YINGCE_MANIFEST_CONTRACT_START -->\n## Manifest 完整接口定义\n\n以下 JSON 与插件包内实际 `manifest.json` 逐字段一致，覆盖插件身份、权限、配置、鉴权、参数、校验、创建、Agent、查询、取消、结果下载、响应和 Agent 响应映射。`documentation` 字段的值就是当前完整文档；为避免文档在自身内部无限递归，JSON 中仅用等义占位文本表示正文。\n\n```json\n{\n  \"apiVersion\": \"yingce.plugin/v2\",\n  \"id\": \"kunrou-chat-audio\",\n  \"name\": \"坤肉音频\",\n  \"version\": \"1.0.0\",\n  \"author\": \"KIVAO\",\n  \"description\": \"坤肉 Chat Completions 语音与音乐生成协议。\",\n  \"documentation\": \"<当前插件的完整 documentation，由 README.md 与 docs/interface.md 拼接而成；为避免 JSON 递归，此处不重复展开正文。>\",\n  \"permissions\": [\n    \"generation.run\",\n    \"media.read\"\n  ],\n  \"configuration\": {\n    \"fields\": [\n      {\n        \"name\": \"apiKey\",\n        \"type\": \"secret\",\n        \"label\": \"API Key\",\n        \"required\": true\n      }\n    ]\n  },\n  \"contributes\": {\n    \"providers\": [\n      {\n        \"id\": \"kunrou-chat-audio\",\n        \"label\": \"坤肉音频 · Chat Completions\",\n        \"capabilities\": [\n          \"audio\"\n        ],\n        \"scopes\": [\n          \"admin.system-channel\",\n          \"user.custom-channel\",\n          \"canvas\",\n          \"creation\",\n          \"agent\"\n        ],\n        \"baseUrl\": \"https://api.kunrouai.com\",\n        \"auth\": {\n          \"type\": \"bearer\",\n          \"field\": \"apiKey\"\n        },\n        \"parameters\": [\n          {\n            \"name\": \"model\",\n            \"type\": \"string\",\n            \"required\": true,\n            \"mapping\": \"model\",\n            \"description\": \"后台配置的上游音频模型 ID。\"\n          },\n          {\n            \"name\": \"prompt\",\n            \"type\": \"string\",\n            \"required\": true,\n            \"mapping\": \"messages[0].content\",\n            \"description\": \"朗读内容或音乐描述，音色与语速可写在提示词中。\"\n          },\n          {\n            \"name\": \"providerOptions\",\n            \"type\": \"object\",\n            \"required\": false,\n            \"mapping\": \"instrumental/lyrics/duration/bpm\",\n            \"description\": \"可选的音乐参数。\"\n          }\n        ],\n        \"validations\": [\n          {\n            \"assert\": {\n              \"$in\": [\n                {\n                  \"$ref\": \"request.model\"\n                },\n                [\n                  \"gemini-3.8-flash-tts\",\n                  \"grok-voice-latest\",\n                  \"lyria-3.5-m\",\n                  \"lyria-3-pro-m\",\n                  \"suno-v6-mini\"\n                ]\n              ]\n            },\n            \"message\": \"请选择已配置的坤肉音频模型；Lyria 请求 ID 需要 -m 后缀\"\n          },\n          {\n            \"assert\": {\n              \"$gt\": [\n                {\n                  \"$len\": {\n                    \"$ref\": \"request.prompt\"\n                  }\n                },\n                0\n              ]\n            },\n            \"message\": \"请输入朗读内容或音乐描述\"\n          },\n          {\n            \"assert\": {\n              \"$in\": [\n                {\n                  \"$coalesce\": [\n                    {\n                      \"$ref\": \"request.extra.audioFormat\"\n                    },\n                    \"mp3\"\n                  ]\n                },\n                [\n                  \"mp3\",\n                  \"wav\",\n                  \"m4a\"\n                ]\n              ]\n            },\n            \"message\": \"坤肉音频仅支持 MP3、WAV 或 M4A 格式\"\n          },\n          {\n            \"assert\": {\n              \"$eq\": [\n                {\n                  \"$toFloat\": {\n                    \"$coalesce\": [\n                      {\n                        \"$ref\": \"request.extra.audioSpeed\"\n                      },\n                      1\n                    ]\n                  }\n                },\n                1\n              ]\n            },\n            \"message\": \"坤肉音频请保留默认速度，在提示词中描述语速\"\n          },\n          {\n            \"assert\": {\n              \"$eq\": [\n                {\n                  \"$coalesce\": [\n                    {\n                      \"$ref\": \"request.extra.audioVoice\"\n                    },\n                    \"alloy\"\n                  ]\n                },\n                \"alloy\"\n              ]\n            },\n            \"message\": \"坤肉音频请保留默认音色，在提示词中描述声音\"\n          }\n        ],\n        \"create\": {\n          \"method\": \"POST\",\n          \"path\": \"/v1/chat/completions\",\n          \"contentType\": \"application/json\",\n          \"body\": {\n            \"model\": {\n              \"$ref\": \"request.model\"\n            },\n            \"messages\": [\n              {\n                \"role\": \"user\",\n                \"content\": {\n                  \"$concat\": [\n                    {\n                      \"$ref\": \"request.prompt\"\n                    },\n                    {\n                      \"$if\": {\n                        \"condition\": {\n                          \"$ref\": \"request.extra.audioInstructions\"\n                        },\n                        \"then\": {\n                          \"$concat\": [\n                            \"\\n\",\n                            {\n                              \"$ref\": \"request.extra.audioInstructions\"\n                            }\n                          ]\n                        },\n                        \"else\": \"\"\n                      }\n                    }\n                  ]\n                }\n              }\n            ],\n            \"audio_format\": {\n              \"$coalesce\": [\n                {\n                  \"$ref\": \"request.extra.audioFormat\"\n                },\n                \"mp3\"\n              ]\n            },\n            \"n\": 1,\n            \"stream\": false,\n            \"reference_images\": {\n              \"$omitEmpty\": {\n                \"$map\": {\n                  \"from\": {\n                    \"$ref\": \"request.images\"\n                  },\n                  \"as\": \"image\",\n                  \"in\": {\n                    \"$ref\": \"image.value\"\n                  }\n                }\n              }\n            },\n            \"instrumental\": {\n              \"$omitEmpty\": {\n                \"$ref\": \"request.providerOptions.kunrou-chat-audio.instrumental\"\n              }\n            },\n            \"lyrics\": {\n              \"$omitEmpty\": {\n                \"$ref\": \"request.providerOptions.kunrou-chat-audio.lyrics\"\n              }\n            },\n            \"duration\": {\n              \"$omitEmpty\": {\n                \"$ref\": \"request.providerOptions.kunrou-chat-audio.duration\"\n              }\n            },\n            \"bpm\": {\n              \"$omitEmpty\": {\n                \"$ref\": \"request.providerOptions.kunrou-chat-audio.bpm\"\n              }\n            }\n          }\n        },\n        \"response\": {\n          \"status\": {\n            \"$if\": {\n              \"condition\": {\n                \"$ref\": \"response.data.0.url\"\n              },\n              \"then\": \"succeeded\",\n              \"else\": \"failed\"\n            }\n          },\n          \"audios\": {\n            \"$map\": {\n              \"from\": {\n                \"$ref\": \"response.data\"\n              },\n              \"as\": \"audio\",\n              \"in\": {\n                \"url\": {\n                  \"$ref\": \"audio.url\"\n                },\n                \"mimeType\": {\n                  \"$ref\": \"audio.mime_type\"\n                }\n              }\n            }\n          },\n          \"errorPaths\": [\n            \"error\",\n            \"error.code\"\n          ],\n          \"message\": {\n            \"$coalesce\": [\n              {\n                \"$ref\": \"response.error.message\"\n              },\n              {\n                \"$ref\": \"response.message\"\n              },\n              {\n                \"$if\": {\n                  \"condition\": {\n                    \"$ref\": \"response.data.0.url\"\n                  },\n                  \"then\": \"\",\n                  \"else\": \"音频接口未返回 data[].url\"\n                }\n              }\n            ]\n          },\n          \"resultEphemeral\": true,\n          \"usage\": {\n            \"$ref\": \"response.usage\"\n          }\n        }\n      }\n    ]\n  }\n}\n```\n<!-- YINGCE_MANIFEST_CONTRACT_END -->\n",
+  "permissions": [
+    "generation.run",
+    "media.read"
+  ],
+  "configuration": {
+    "fields": [
+      {
+        "name": "apiKey",
+        "type": "secret",
+        "label": "API Key",
+        "required": true
+      }
+    ]
+  },
+  "contributes": {
+    "providers": [
+      {
+        "id": "kunrou-chat-audio",
+        "label": "坤肉音频 · Chat Completions",
+        "capabilities": [
+          "audio"
+        ],
+        "scopes": [
+          "admin.system-channel",
+          "user.custom-channel",
+          "canvas",
+          "creation",
+          "agent"
+        ],
+        "baseUrl": "https://api.kunrouai.com",
+        "auth": {
+          "type": "bearer",
+          "field": "apiKey"
+        },
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "mapping": "model",
+            "description": "后台配置的上游音频模型 ID。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": true,
+            "mapping": "messages[0].content",
+            "description": "朗读内容或音乐描述，音色与语速可写在提示词中。"
+          },
+          {
+            "name": "providerOptions",
+            "type": "object",
+            "required": false,
+            "mapping": "instrumental/lyrics/duration/bpm",
+            "description": "可选的音乐参数。"
+          }
+        ],
+        "validations": [
+          {
+            "assert": {
+              "$in": [
+                {
+                  "$ref": "request.model"
+                },
+                [
+                  "gemini-3.8-flash-tts",
+                  "grok-voice-latest",
+                  "lyria-3.5-m",
+                  "lyria-3-pro-m",
+                  "suno-v6-mini"
+                ]
+              ]
+            },
+            "message": "请选择已配置的坤肉音频模型；Lyria 请求 ID 需要 -m 后缀"
+          },
+          {
+            "assert": {
+              "$gt": [
+                {
+                  "$len": {
+                    "$ref": "request.prompt"
+                  }
+                },
+                0
+              ]
+            },
+            "message": "请输入朗读内容或音乐描述"
+          },
+          {
+            "assert": {
+              "$in": [
+                {
+                  "$coalesce": [
+                    {
+                      "$ref": "request.extra.audioFormat"
+                    },
+                    "mp3"
+                  ]
+                },
+                [
+                  "mp3",
+                  "wav",
+                  "m4a"
+                ]
+              ]
+            },
+            "message": "坤肉音频仅支持 MP3、WAV 或 M4A 格式"
+          },
+          {
+            "assert": {
+              "$eq": [
+                {
+                  "$toFloat": {
+                    "$coalesce": [
+                      {
+                        "$ref": "request.extra.audioSpeed"
+                      },
+                      1
+                    ]
+                  }
+                },
+                1
+              ]
+            },
+            "message": "坤肉音频请保留默认速度，在提示词中描述语速"
+          },
+          {
+            "assert": {
+              "$eq": [
+                {
+                  "$coalesce": [
+                    {
+                      "$ref": "request.extra.audioVoice"
+                    },
+                    "alloy"
+                  ]
+                },
+                "alloy"
+              ]
+            },
+            "message": "坤肉音频请保留默认音色，在提示词中描述声音"
+          }
+        ],
+        "create": {
+          "method": "POST",
+          "path": "/v1/chat/completions",
+          "contentType": "application/json",
+          "body": {
+            "model": {
+              "$ref": "request.model"
+            },
+            "messages": [
+              {
+                "role": "user",
+                "content": {
+                  "$concat": [
+                    {
+                      "$ref": "request.prompt"
+                    },
+                    {
+                      "$if": {
+                        "condition": {
+                          "$ref": "request.extra.audioInstructions"
+                        },
+                        "then": {
+                          "$concat": [
+                            "\n",
+                            {
+                              "$ref": "request.extra.audioInstructions"
+                            }
+                          ]
+                        },
+                        "else": ""
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "audio_format": {
+              "$coalesce": [
+                {
+                  "$ref": "request.extra.audioFormat"
+                },
+                "mp3"
+              ]
+            },
+            "n": 1,
+            "stream": false,
+            "reference_images": {
+              "$omitEmpty": {
+                "$map": {
+                  "from": {
+                    "$ref": "request.images"
+                  },
+                  "as": "image",
+                  "in": {
+                    "$ref": "image.value"
+                  }
+                }
+              }
+            },
+            "instrumental": {
+              "$omitEmpty": {
+                "$ref": "request.providerOptions.kunrou-chat-audio.instrumental"
+              }
+            },
+            "lyrics": {
+              "$omitEmpty": {
+                "$ref": "request.providerOptions.kunrou-chat-audio.lyrics"
+              }
+            },
+            "duration": {
+              "$omitEmpty": {
+                "$ref": "request.providerOptions.kunrou-chat-audio.duration"
+              }
+            },
+            "bpm": {
+              "$omitEmpty": {
+                "$ref": "request.providerOptions.kunrou-chat-audio.bpm"
+              }
+            }
+          }
+        },
+        "response": {
+          "status": {
+            "$if": {
+              "condition": {
+                "$ref": "response.data.0.url"
+              },
+              "then": "succeeded",
+              "else": "failed"
+            }
+          },
+          "audios": {
+            "$map": {
+              "from": {
+                "$ref": "response.data"
+              },
+              "as": "audio",
+              "in": {
+                "url": {
+                  "$ref": "audio.url"
+                },
+                "mimeType": {
+                  "$ref": "audio.mime_type"
+                }
+              }
+            }
+          },
+          "errorPaths": [
+            "error",
+            "error.code"
+          ],
+          "message": {
+            "$coalesce": [
+              {
+                "$ref": "response.error.message"
+              },
+              {
+                "$ref": "response.message"
+              },
+              {
+                "$if": {
+                  "condition": {
+                    "$ref": "response.data.0.url"
+                  },
+                  "then": "",
+                  "else": "音频接口未返回 data[].url"
+                }
+              }
+            ]
+          },
+          "resultEphemeral": true,
+          "usage": {
+            "$ref": "response.usage"
+          }
+        }
+      }
+    ]
+  }
+}
