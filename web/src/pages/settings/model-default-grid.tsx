@@ -1,6 +1,7 @@
 import { AudioLines, Check, Film, Image, MessageSquareText } from "lucide-react";
 
 import { ModelIcon } from "@/components/model-picker";
+import { isDirectSystemModel } from "@/lib/model-selection";
 import { cn } from "@/lib/utils";
 import {
     filterModelsByCapability,
@@ -50,6 +51,9 @@ export function ModelDefaultGrid({ config, onChange }: { config: AiConfig; onCha
                                     const channel = resolveModelChannel(config, model);
                                     const selected = config[group.modelKey] === model;
                                     const cost = channel.modelCosts?.find((item) => item.model === modelOptionName(model));
+                                    const directSystemModel = isDirectSystemModel(config, model);
+                                    const modelName = (directSystemModel && cost?.channelLabel?.trim()) || modelDisplayName(config, model);
+                                    const groupName = directSystemModel ? cost?.displayName?.trim() || "未分类" : "";
                                     return (
                                         <button
                                             key={model}
@@ -67,7 +71,8 @@ export function ModelDefaultGrid({ config, onChange }: { config: AiConfig; onCha
                                                     <ModelIcon config={config} model={model} />
                                                 </span>
                                                 <span className="min-w-0 flex-1">
-                                                    <span className="block truncate text-xs font-semibold">{modelDisplayName(config, model)}</span>
+                                                    {groupName && groupName !== modelName ? <span className="mb-0.5 block truncate text-[var(--fs-tiny)] text-foreground/55" title={groupName}>{groupName}</span> : null}
+                                                    <span className="block break-words text-xs font-semibold" title={modelName}>{modelName}</span>
                                                     <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[var(--fs-tiny)] text-foreground/45">
                                                         <span className="max-w-full truncate">{channel.scope === "system" ? "系统模型" : channel.name || "未命名渠道"}</span>
                                                         <span className="model-default-option-scope">{channel.scope === "system" ? "系统" : "自定义"}</span>
