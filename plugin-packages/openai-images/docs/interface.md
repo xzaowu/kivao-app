@@ -42,7 +42,8 @@
 | `create.body.prompt` | `{"$ref":"request.prompt"}` |
 | `create.body.n` | `{"$omitEmpty":{"$if":{"condition":{"$gt":[{"$ref":"request.imageCount"},0]},"then":{"$ref":"request.imageCount"},"else":1}}}` |
 | `create.body.size` | `{"$omitEmpty":{"$if":{"condition":{"$in":[{"$lower":{"$trim":{"$ref":"request.aspectRatio"}}},["","auto"]]},"then":null,"else":{"$ref":"request.aspectRatio"}}}}` |
-| `create.body.quality` | `{"$omitEmpty":{"$switch":{"cases":[{"when":{"$in":[{"$lower":{"$trim":{"$ref":"request.quality"}}},["1k"]]},"then":"low"},{"when":{"$in":[{"$lower":{"$trim":{"$ref":"request.quality"}}},["2k"]]},"then":"medium"},{"when":{"$in":[{"$lower":{"$trim":{"$ref":"request.quality"}}},["4k"]]},"then":"high"},{"when":{"$in":[{"$lower":{"$trim":{"$ref":"request.quality"}}},["","auto"]]},"then":null}],"default":{"$ref":"request.quality"}}}}` |
+| `create.body.resolution` | `{"$omitEmpty":{"$ref":"request.resolution"}}` |
+| `create.body.quality` | `{"$omitEmpty":{"$if":{"condition":{"$in":[{"$lower":{"$trim":{"$ref":"request.quality"}}},["","auto"]]},"then":null,"else":{"$ref":"request.quality"}}}}` |
 | `create.body.background` | `{"$omitEmpty":{"$coalesce":[{"$ref":"request.providerOptions.openai-image.background"},{"$if":{"condition":{"$eq":[{"$ref":"request.extra.transparentBackground"},"true"]},"then":"transparent","else":null}}]}}` |
 | `create.body.output_format` | `{"$omitEmpty":{"$coalesce":[{"$ref":"request.providerOptions.openai-image.output_format"},"png"]}}` |
 | `create.body.output_compression` | `{"$omitEmpty":{"$ref":"request.providerOptions.openai-image.output_compression"}}` |
@@ -87,7 +88,7 @@
 
 ## 兼容边界
 
-无参考图走 JSON generations；有参考图或蒙版走 multipart edits（官方与 LiteLLM 等网关的通用格式），单张参考图用 image 字段、多张用 image[]，蒙版用 mask。quality 的 1k/2k/4k 映射为 OpenAI low/medium/high。
+无参考图走 JSON generations；有参考图或蒙版走 multipart edits，单张参考图用 image 字段、多张用 image[]，蒙版用 mask。保留现有模型参数声明，quality 和 resolution 使用已校验的值。
 
 <!-- YINGCE_MANIFEST_CONTRACT_START -->
 ## Manifest 完整接口定义
@@ -99,7 +100,7 @@
   "apiVersion": "yingce.plugin/v2",
   "id": "openai-images",
   "name": "OpenAI Images",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "author": "OpenAI / 影策",
   "description": "OpenAI Images 独立请求协议插件。",
   "documentation": "<当前插件的完整 documentation，由 README.md 与 docs/interface.md 拼接而成；为避免 JSON 递归，此处不重复展开正文。>",
@@ -194,6 +195,72 @@
             "required": false,
             "mapping": "provider-specific fields",
             "description": "插件命名空间内的厂商扩展字段。"
+          }
+        ],
+        "imageParameters": [
+          {
+            "name": "size",
+            "label": "画幅 / 尺寸",
+            "type": "string",
+            "binding": "aspectRatio",
+            "encoding": "pixels",
+            "pricing": true
+          },
+          {
+            "name": "imageResolution",
+            "label": "分辨率",
+            "type": "string",
+            "binding": "resolution",
+            "enabled": false,
+            "pricing": true
+          },
+          {
+            "name": "quality",
+            "label": "图片质量",
+            "type": "string",
+            "binding": "quality",
+            "pricing": true
+          },
+          {
+            "name": "count",
+            "label": "生成数量",
+            "type": "integer",
+            "binding": "imageCount",
+            "min": 1,
+            "max": 100,
+            "step": 1,
+            "default": 1
+          },
+          {
+            "name": "transparentBackground",
+            "label": "透明背景",
+            "type": "boolean",
+            "binding": "transparentBackground",
+            "default": false,
+            "enabled": false
+          },
+          {
+            "name": "outputFormat",
+            "label": "输出格式",
+            "type": "string",
+            "binding": "providerOptions.openai-image.output_format",
+            "values": [
+              "png",
+              "jpeg",
+              "webp"
+            ],
+            "default": "png",
+            "enabled": false
+          },
+          {
+            "name": "outputCompression",
+            "label": "压缩质量",
+            "type": "integer",
+            "binding": "providerOptions.openai-image.output_compression",
+            "min": 0,
+            "max": 100,
+            "step": 1,
+            "enabled": false
           }
         ],
         "create": {
@@ -407,81 +474,31 @@
                 }
               }
             },
+            "resolution": {
+              "$omitEmpty": {
+                "$ref": "request.resolution"
+              }
+            },
             "quality": {
               "$omitEmpty": {
-                "$switch": {
-                  "cases": [
-                    {
-                      "when": {
-                        "$in": [
-                          {
-                            "$lower": {
-                              "$trim": {
-                                "$ref": "request.quality"
-                              }
-                            }
-                          },
-                          [
-                            "1k"
-                          ]
-                        ]
+                "$if": {
+                  "condition": {
+                    "$in": [
+                      {
+                        "$lower": {
+                          "$trim": {
+                            "$ref": "request.quality"
+                          }
+                        }
                       },
-                      "then": "low"
-                    },
-                    {
-                      "when": {
-                        "$in": [
-                          {
-                            "$lower": {
-                              "$trim": {
-                                "$ref": "request.quality"
-                              }
-                            }
-                          },
-                          [
-                            "2k"
-                          ]
-                        ]
-                      },
-                      "then": "medium"
-                    },
-                    {
-                      "when": {
-                        "$in": [
-                          {
-                            "$lower": {
-                              "$trim": {
-                                "$ref": "request.quality"
-                              }
-                            }
-                          },
-                          [
-                            "4k"
-                          ]
-                        ]
-                      },
-                      "then": "high"
-                    },
-                    {
-                      "when": {
-                        "$in": [
-                          {
-                            "$lower": {
-                              "$trim": {
-                                "$ref": "request.quality"
-                              }
-                            }
-                          },
-                          [
-                            "",
-                            "auto"
-                          ]
-                        ]
-                      },
-                      "then": null
-                    }
-                  ],
-                  "default": {
+                      [
+                        "",
+                        "auto"
+                      ]
+                    ]
+                  },
+                  "then": null,
+                  "else": {
                     "$ref": "request.quality"
                   }
                 }

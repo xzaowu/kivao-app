@@ -261,8 +261,75 @@ for (const [id, name, vendor, baseUrl] of [
 
 add({
   id: "openai-images", providerId: "openai-image", name: "OpenAI Images", vendor: "OpenAI", capability: "image",
+  version: "2.1.0",
+  imageParameters: [
+    {
+      "name": "size",
+      "label": "画幅 / 尺寸",
+      "type": "string",
+      "binding": "aspectRatio",
+      "encoding": "pixels",
+      "pricing": true
+    },
+    {
+      "name": "imageResolution",
+      "label": "分辨率",
+      "type": "string",
+      "binding": "resolution",
+      "enabled": false,
+      "pricing": true
+    },
+    {
+      "name": "quality",
+      "label": "图片质量",
+      "type": "string",
+      "binding": "quality",
+      "pricing": true
+    },
+    {
+      "name": "count",
+      "label": "生成数量",
+      "type": "integer",
+      "binding": "imageCount",
+      "min": 1,
+      "max": 100,
+      "step": 1,
+      "default": 1
+    },
+    {
+      "name": "transparentBackground",
+      "label": "透明背景",
+      "type": "boolean",
+      "binding": "transparentBackground",
+      "default": false,
+      "enabled": false
+    },
+    {
+      "name": "outputFormat",
+      "label": "输出格式",
+      "type": "string",
+      "binding": "providerOptions.openai-image.output_format",
+      "values": [
+        "png",
+        "jpeg",
+        "webp"
+      ],
+      "default": "png",
+      "enabled": false
+    },
+    {
+      "name": "outputCompression",
+      "label": "压缩质量",
+      "type": "integer",
+      "binding": "providerOptions.openai-image.output_compression",
+      "min": 0,
+      "max": 100,
+      "step": 1,
+      "enabled": false
+    }
+  ],
   baseUrl: "https://api.openai.com", auth: bearer, params: imageParams,
-  notes: "无参考图走 JSON generations；有参考图或蒙版走 multipart edits（官方与 LiteLLM 等网关的通用格式），单张参考图用 image 字段、多张用 image[]，蒙版用 mask。quality 的 1k/2k/4k 映射为 OpenAI low/medium/high。",
+  notes: "无参考图走 JSON generations；有参考图或蒙版走 multipart edits，单张参考图用 image 字段、多张用 image[]，蒙版用 mask。保留现有模型参数声明，quality 和 resolution 使用已校验的值。",
   create: {
     method: "POST",
     path: "/v1/images/generations",
@@ -279,17 +346,8 @@ add({
       prompt: ref("request.prompt"),
       n: omit(conditional(gt(ref("request.imageCount"), 0), ref("request.imageCount"), 1)),
       size: omit(conditional({ $in: [lower(trim(ref("request.aspectRatio"))), ["", "auto"]] }, null, ref("request.aspectRatio"))),
-      quality: omit({
-        $switch: {
-          cases: [
-            { when: { $in: [lower(trim(ref("request.quality"))), ["1k"]] }, then: "low" },
-            { when: { $in: [lower(trim(ref("request.quality"))), ["2k"]] }, then: "medium" },
-            { when: { $in: [lower(trim(ref("request.quality"))), ["4k"]] }, then: "high" },
-            { when: { $in: [lower(trim(ref("request.quality"))), ["", "auto"]] }, then: null }
-          ],
-          default: ref("request.quality")
-        }
-      }),
+      resolution: omit(ref("request.resolution")),
+      quality: omit(conditional({ $in: [lower(trim(ref("request.quality"))), ["", "auto"]] }, null, ref("request.quality"))),
       background: omit(coalesce(
         ref("request.providerOptions.openai-image.background"),
         conditional(eq(ref("request.extra.transparentBackground"), "true"), "transparent", null)
@@ -1359,7 +1417,7 @@ function manifestFor(spec) {
     apiVersion: "yingce.plugin/v2",
     id: spec.id,
     name: spec.name,
-    version: "2.0.0",
+    version: spec.version || "2.0.0",
     author: `${spec.vendor} / 影策`,
     description: `${spec.name} 独立请求协议插件。`,
     documentation: `# ${spec.name}\n\n完整字段、映射、响应、鉴权和兼容边界见包内 README.md 与 docs/interface.md。\n\n## 影策运行时合同\n\n用户只操作统一的文本、图片或视频能力；插件负责把统一请求转换为 ${spec.name} 上游协议。`,
@@ -1375,6 +1433,7 @@ function manifestFor(spec) {
         requiresPublicMediaUrls: spec.requiresPublicMediaUrls === true,
         auth: spec.auth,
         parameters: parameters(spec.params),
+        ...(spec.imageParameters ? { imageParameters: spec.imageParameters } : {}),
         ...(spec.validations ? { validations: spec.validations } : {}),
         create: spec.create,
         ...(spec.agent ? { agent: spec.agent } : {}),
