@@ -874,6 +874,10 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel({ visib
         if (!accountIsCurrent() || pendingSubmission.current) return;
         const activeRun = run;
         if (!value || !activeRun?.id || busy || connectionStatus !== "connected" || currentScope.current !== conversationScope || !historyHydrated) return;
+        if (canvasId && activeRun.canvasId && canvasId !== activeRun.canvasId) {
+            void appMessage.warning("请回到本轮运行的画布插话，或等本轮结束后在当前画布发送");
+            return;
+        }
         const scope = conversationScope;
         const messageId = `user-${createClientUUID()}`;
         setBusy(true);

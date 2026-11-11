@@ -9955,7 +9955,7 @@
 }
 
 .admin-channel-modal .ant-modal-body {
-    max-height: min(70vh, 620px);
+    max-height: min(620px, calc(100dvh - 172px));
     overflow-y: auto;
 }
 

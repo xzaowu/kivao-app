@@ -79,6 +79,7 @@ export function CanvasProjectAssetModal({
     return (
         <AssetLibraryPickerModal
             remoteLibrary={!detail}
+            acceptRemoteItems={!detail}
             open={open}
             mediaKinds={["image", "video", "audio", "text"]}
             items={pickerItems}
@@ -101,12 +102,17 @@ export function CanvasProjectAssetModal({
                     : undefined
             }
             onClose={onClose}
-            onConfirm={async (ids) => {
+            onConfirm={async (ids, pickedItems) => {
                 const payloads = await Promise.all(
                     ids.map(async (id) => {
                         const external = externalAssetSources.items.find((item) => item.id === id)?.external;
                         if (external) return externalAssetToInsertPayload(external);
                         const item = items.find((candidate) => candidate.id === id);
+                        // 自由画布服务端分页的素材未必已缓存；按 ID 重新读取完整的授权记录。
+                        if (!item && !detail && pickedItems?.some((picked) => picked.id === id && picked.asset)) {
+                            const { asset } = await getRemoteAsset(id);
+                            return toInsertPayload({ id, category: normalizeAssetCategory(asset.category), media: asset });
+                        }
                         if (!item) throw new Error("所选资产已不存在，请重新选择");
                         if (!item.project?.visual && (item.media || item.character || !item.project)) return toInsertPayload(item);
                         const { asset } = await getRemoteAsset(item.project.id);
