@@ -5,6 +5,12 @@ description: 从产品功能快速定位主要代码入口
 
 # 代码功能地图
 
+## 媒体响应与短剧参考模式
+
+- `plugin-packages/generate-catalog.mjs`：即梦成功码、Novita 任务信封和 NewAPI 嵌套失败原因；对应五个包的源码、内嵌文档和归档同步。`backend/internal/protocol/official_catalog_test.go` 验证归档实际解析，`app/provider_error.go` 保持业务失败与成功信封的区别。
+- `backend/internal/app/provider_protocol.go`、`provider_protocol_result.go`：可轮询媒体结果的就绪判定；`protocol_late_media_test.go` 覆盖分离恢复、截止时间、缺少任务/查询接口和独立结果接口，不调用真实模型。
+- `backend/internal/app/drama_models.go`、`drama_segment_video.go`：目录参考图能力匹配和实际任务生成方式；`drama_catalog_reference_test.go` 覆盖真实尾帧引用、逻辑模型权限和提交准入。
+
 ## 协议失败与预演台高度
 
 - `backend/internal/app/provider_protocol_result.go`、`admin_api_call_log.go`、`task_billing.go`：协议明确终态、同一次上游请求的日志关联及待核对/退款边界；`provider_terminal_billing_test.go` 使用本地 HTTP 替身及 SQLite/独立 PostgreSQL schema 验证。
