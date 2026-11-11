@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"image"
 	"image/png"
 	"net/http"
@@ -203,6 +204,13 @@ func TestMediaRecoveryRegistrationRollbackAndRetryWithoutDownload(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := os.Stat(s.mediaTempPath(temp)); !os.IsNotExist(err) {
+		t.Fatalf("staging copy was not released after resource persistence: %v", err)
+	}
+	persisted, err := s.decodeMediaCheckpoint(task)
+	if err != nil || persisted.Items[0].TempName != "" || persisted.Items[0].ResourceID == "" {
+		t.Fatalf("durable checkpoint still depends on staging: %v", err)
+	}
 	encoded, _ := json.Marshal(output)
 	if err := db.Exec(`CREATE TRIGGER reject_media_asset BEFORE INSERT ON assets BEGIN SELECT RAISE(ABORT, 'injected asset failure'); END`).Error; err != nil {
 		t.Fatal(err)
@@ -215,9 +223,6 @@ func TestMediaRecoveryRegistrationRollbackAndRetryWithoutDownload(t *testing.T) 
 		t.Fatal("false succeeded task escaped transaction")
 	}
 	if err := db.Exec(`DROP TRIGGER reject_media_asset`).Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Remove(s.mediaTempPath(temp)); err != nil {
 		t.Fatal(err)
 	}
 	output, err = s.resumeTaskMedia(context.Background(), saved)
@@ -405,8 +410,127 @@ func TestMediaRecoveryExpiredLeaseAndStagingLimits(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer file.Close()
-	if _, err := s.newMediaTemp(1); err == nil {
-		t.Fatal("staging budget exceeded")
+	if _, err := s.newMediaTemp(1); err == nil || !retryableMediaRecovery(err) {
+		t.Fatalf("staging budget exhaustion must allow saving to retry: %v", err)
+	}
+}
+
+func TestMediaRecoveryRetainsStagingUntilCheckpointPersists(t *testing.T) {
+	s, db := newMediaRecoveryTestService(t)
+	task := seedMediaTask(t, db, providerConfig{})
+	temp, err := s.stageInlineMedia(mediaTestPNG(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkpoint := &mediaCheckpoint{Mode: "image", StartedAt: time.Now(), Items: []mediaCheckpointItem{{TempName: temp, MIMEType: "image/png"}}}
+	if err := s.saveMediaCheckpoint(task, checkpoint, "local_save"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`CREATE TRIGGER reject_media_checkpoint BEFORE UPDATE ON tasks WHEN NEW.media_stage = 'register' BEGIN SELECT RAISE(ABORT, 'injected checkpoint failure'); END`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.materializeTaskMedia(context.Background(), task, providerConfig{}, checkpoint); err == nil {
+		t.Fatal("checkpoint failure was ignored")
+	}
+	if _, err := os.Stat(s.mediaTempPath(temp)); err != nil {
+		t.Fatal("checkpoint failure discarded staging copy", err)
+	}
+	saved, err := s.repo.Task(task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	persisted, err := s.decodeMediaCheckpoint(saved)
+	if err != nil || persisted.Items[0].TempName != temp {
+		t.Fatalf("checkpoint failure lost its staging reference: %v", err)
+	}
+	if err := db.Exec(`DROP TRIGGER reject_media_checkpoint`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.resumeTaskMedia(context.Background(), saved); err != nil {
+		t.Fatal("ready resource could not resume", err)
+	}
+	if _, err := os.Stat(s.mediaTempPath(temp)); !os.IsNotExist(err) {
+		t.Fatalf("retry did not release staging copy: %v", err)
+	}
+}
+
+func TestMediaRecoveryStagingCleanupKeepsReferencesBeyondFirstThousand(t *testing.T) {
+	s, db := newMediaRecoveryTestService(t)
+	temp, err := s.stageInlineMedia(mediaTestPNG(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	unreferenced, err := s.stageInlineMedia(mediaTestPNG(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-25 * time.Hour)
+	for _, name := range []string{temp, unreferenced} {
+		if err := os.Chtimes(s.mediaTempPath(name), old, old); err != nil {
+			t.Fatal(err)
+		}
+	}
+	checkpoint, err := json.Marshal(mediaCheckpoint{Mode: "image", Items: []mediaCheckpointItem{{TempName: temp}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encrypted, err := s.encryptSettingSecret(string(checkpoint))
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := s.encryptSettingSecret(`{"mode":"image","items":[{"tempName":"result-other"}]}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tasks := make([]model.Task, 1002)
+	for index := range tasks {
+		tasks[index] = model.Task{ID: fmt.Sprintf("staging-%04d", index), UserID: "staging-user", Status: model.TaskStatusFailed, MediaRecoveryJSON: other, UpdatedAt: time.Now()}
+	}
+	tasks[len(tasks)-1].MediaRecoveryJSON = encrypted
+	if err := db.CreateInBatches(&tasks, 100).Error; err != nil {
+		t.Fatal(err)
+	}
+	file, err := s.newMediaTemp(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	if _, err := os.Stat(s.mediaTempPath(temp)); err != nil {
+		t.Fatal("cleanup lost a referenced staging file beyond first page", err)
+	}
+	if _, err := os.Stat(s.mediaTempPath(unreferenced)); !os.IsNotExist(err) {
+		t.Fatalf("cleanup retained an unreferenced expired file: %v", err)
+	}
+}
+
+func TestMediaRecoveryStagingCleanupFailsClosed(t *testing.T) {
+	for _, databaseFailure := range []bool{false, true} {
+		t.Run(fmt.Sprintf("databaseFailure=%t", databaseFailure), func(t *testing.T) {
+			s, db := newMediaRecoveryTestService(t)
+			temp, err := s.stageInlineMedia(mediaTestPNG(t))
+			if err != nil {
+				t.Fatal(err)
+			}
+			old := time.Now().Add(-25 * time.Hour)
+			if err := os.Chtimes(s.mediaTempPath(temp), old, old); err != nil {
+				t.Fatal(err)
+			}
+			if databaseFailure {
+				if err := db.Migrator().DropTable(&model.Task{}); err != nil {
+					t.Fatal(err)
+				}
+			} else if err := db.Create(&model.Task{ID: "invalid-checkpoint", UserID: "staging-user", Status: model.TaskStatusFailed, MediaRecoveryJSON: "invalid", UpdatedAt: time.Now()}).Error; err != nil {
+				t.Fatal(err)
+			}
+			file, err := s.newMediaTemp(1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer file.Close()
+			if _, err := os.Stat(s.mediaTempPath(temp)); err != nil {
+				t.Fatal("uncertain references must not delete a possible sole copy", err)
+			}
+		})
 	}
 }
 
