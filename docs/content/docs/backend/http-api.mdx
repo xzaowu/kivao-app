@@ -5,6 +5,22 @@ description: 信封、错误码与 OpenAPI
 
 # HTTP API 合同
 
+## 商品套图
+
+所有 `/ecommerce/*` 均需登录，读取有用户范围并返回 `private, no-store`。`GET /ecommerce/status` 返回开放和阶段模型配置是否完整；项目列表每页 20 条，仅含摘要；项目详情及 `/rounds?page=` 返回当前轮或独立的历史轮与脱敏任务。打开页面、刷新、历史和回执查询均不触发生成。
+
+`POST /ecommerce/projects` 使用客户端 UUID 与商品资料幂等创建；`PUT /projects/:id/draft` 携带 `revision`、`clientKey`、`newRound` 和完整 `draft`。已有受理任务的资料必须新建轮次；活动或状态无法确认的任务禁止归档进新轮。所有字段严格校验，拒绝未知属性和多段 JSON，写入体限制 128 KiB。
+
+`POST /projects/:id/quote` 用 `stage: vision | planning | image`、稳定 `requestId`、revision 和必要图片参数计算原生报价，不创建任务、不预占、不调用模型。`POST /projects/:id/tasks` 回传 `quoteHash`、`maxCharge` 和 `quoteExpiresAt`；任务绑定、任务创建及积分预占在同一数据库事务内提交。相同 requestId 与正文重放只返回原任务；价格或资料变化拒绝新提交。图片使用原生 `size/quality/imageResolution/count=1`，不传 `canvasSize`。
+
+`GET /projects/:id/receipts/:requestId` 未发现回执时返回 `{ task: null }`。前端在发送前持久化原请求；UNKNOWN 只能先查询，随后由用户确认重试完全相同的请求，不能因刷新或超时换 ID 自动重发。已失败或取消任务的费用未明确、取消仍在核对、作品待保存时，不允许重新生成；媒体恢复继续使用原生任务重试保存接口。
+
+用户可明确终止待确认请求并新建一轮：先固定读取的项目 revision，再查询原回执；找到原任务就恢复，空才提交同一 clientKey 的新轮 CAS，成功后清暂存。新轮与迟到的原任务都依赖相同旧 revision，不能同时写入成功；失败不清 UNKNOWN。不新增终止 API 或靠超时推断未受理。
+
+`POST /projects/:id/accept` 使用归属于该项目、该阶段的成功任务与可选方向 ID；阶段 JSON 不完整不能接受。`PATCH /projects/:id/images/:imageId` 修改标题、上图文案和提示词，不触发生成，不覆盖旧作品。关闭商品套图后保留只读历史与回执，未发出的工作在 worker 阶段再次拒绝并按原生流程退款；已受理上游工作及媒体恢复保持原路径。
+
+`GET/PUT /admin/ecommerce/settings` 仅管理员可用，配置 vision/planning 两个支持图片参考的平台文本模型，保存与审计同事务。用户实际任务仍按本人模型可见性、能力、费用及资源权限检查。完整字段见 OpenAPI，不允许在商品请求或浏览器暂存中传连接串、API Key、Header 或上游媒体地址。
+
 ## 易支付多支付方式
 
 易支付插件 1.0.10 的渠道配置增加 `payTypes` 多选（存储为英文逗号分隔字符串），`payType` 仍为默认方式且必须在列表中。后台只开放商户网关实际支持的方式；网关能力和币种不会因勾选选项自动开通或转换。旧配置未填写列表时沿用单个默认方式。

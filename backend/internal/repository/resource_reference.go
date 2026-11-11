@@ -127,6 +127,11 @@ func (r *Repository) ResourceReferenceSnapshotExcludingAssets(userID string, exc
 	if len(resourceIDs) == 0 {
 		return snapshot, nil
 	}
+	commerceDocuments, e := r.EcommerceDocuments(userID)
+	if e != nil {
+		return snapshot, e
+	}
+	snapshot.Documents = append(snapshot.Documents, commerceDocuments...)
 	history, err := r.CanvasHistoryResourceReferences(resourceIDs)
 	if err != nil {
 		return snapshot, err

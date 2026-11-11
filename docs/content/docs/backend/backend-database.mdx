@@ -15,6 +15,19 @@ description: 影策后端核心持久化表与状态边界
 
 复用 `system_settings` 的 `feature_availability` JSON，增加 `canvasConversionEnabled`、`canvasDrawingEnabled`、`canvasFolderEnabled`、`canvasFrameEnabled` 四个布尔值，默认关闭，旧 JSON 缺少字段时按关闭读取。管理员更新沿用既有审计；不新增表、列或迁移，不改写、删除已有画布节点及素材库文件夹。
 
+## 商品套图（Schema 80）
+
+KIVAO v80 `kivao_ecommerce_project_rounds` 只新增以下两张表。保留既有 78 `skill_publication_review`、79 `payment_order_method` 的名称、校验和、账本和业务语义；不照搬上游电商 79/93 或完整 Schema 98。
+
+| 表 | 数据 | 约束 |
+| --- | --- | --- |
+| `ecommerce_projects` | 用户、名称、状态、创建请求指纹、当前轮 ID、商品资料 JSON、当前方向/方案/任务引用 JSON、revision、时间 | 按用户查询；revision 比较更新；同一创建 ID 不同资料拒绝 |
+| `ecommerce_rounds` | 用户、所属项目、轮次序号、原资料与方案 JSON、归档时间 | 原当前轮 ID 作为主键；项目/轮次序号唯一；分页读取 |
+
+不新增模型密钥、媒体文件或积分表。任务和结算继续使用 `tasks`、`billing_orders`、积分账本及原生资源/素材表；`system_settings.kivao_ecommerce_stages_v1` 仅保存两个文本阶段的模型选择，`feature_availability.ecommerceEnabled` 默认 false。原图、当前轮、历史轮纳入资源删除引用校验；项目与轮次 JSON 纳入结构化存储配额。新建一轮在同一 CAS 事务内归档旧轮，不把所有历史复制进当前项目。
+
+有 Schema 80 的数据库不能直接交给严格要求 Schema 79 的旧镜像启动。后续发布必须单独完成 PG17 迁移、备份恢复及应用回退方案验收；优先使用支持 Schema 80 且关闭新功能的回退候选。不得为旧镜像启动而直接改迁移账本、删新表或覆盖已有业务数据。当前仅本地开发及隔离测试，未授权生产迁移。
+
 ## 深度动作捕捉节点
 
 工作台执行方式复用 `workbench_tools.capability_json` 中的 `processingOperation`，空值为普通生成，`depth_capture` 为深度动作捕捉；输入约束仍存于同一 JSON 的 `inputContract`。不新增表、列或迁移，不把模型密钥写入工具配置。工具创建后执行方式固定，保留既有任务快照语义；源视频归属与系统处理模型仍在服务端检查。

@@ -20,12 +20,18 @@ func (s *Service) processTask(ctx context.Context, task model.Task) (map[string]
 		return nil, nil, err
 	}
 	task.InputJSON = decryptedInput
+	if err := s.requireEcommerceExecution(task); err != nil {
+		return nil, nil, err
+	}
 	ctx = withTaskExecutionID(ctx, task.ID)
 	ctx = withProviderAnalytics(ctx, s, task)
 	ctx = context.WithValue(ctx, mediaExecutionTaskKey{}, task)
 
 	if task.Type == "canvas_text" || task.Type == "canvas_image" || task.Type == "canvas_video" || task.Type == "canvas_audio" {
 		result, err := s.processCanvasGenerationTask(ctx, task.UserID, task.ProjectID, task.Type, task.Prompt, task.InputJSON)
+		if err == nil {
+			err = s.validateEcommerceResult(task, result)
+		}
 		return result, nil, err
 	}
 	if strings.HasPrefix(task.Type, "video_") {

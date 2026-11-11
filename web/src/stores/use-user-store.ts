@@ -43,6 +43,7 @@ export type FeatureAvailability = {
     inspirationSourcesVisible: boolean;
     imageWorkbenchEnabled: boolean;
     videoWorkbenchEnabled: boolean;
+    ecommerceEnabled: boolean;
     canvasConversionEnabled: boolean;
     canvasDrawingEnabled: boolean;
     canvasFolderEnabled: boolean;
@@ -64,6 +65,7 @@ export const defaultFeatureAvailability: FeatureAvailability = {
     inspirationSourcesVisible: true,
     imageWorkbenchEnabled: false,
     videoWorkbenchEnabled: false,
+    ecommerceEnabled: false,
     canvasConversionEnabled: false,
     canvasDrawingEnabled: false,
     canvasFolderEnabled: false,

@@ -11,6 +11,8 @@ import RouteErrorPage from "@/pages/route-error";
 import { isGuestWorkspacePath } from "@/lib/guest-workspace";
 
 const AdminPage = lazy(() => import("@/pages/admin"));
+const EcommercePage = lazy(() => import("@/pages/ecommerce/ecommerce-page"));
+const EcommerceSettingsPage = lazyAdminPage(() => import("@/pages/admin/ecommerce-settings-page"));
 const AnalyticsPage = lazyAdminPage(() => import("@/pages/admin/admin-route-pages").then((module) => ({ default: module.AnalyticsPage })));
 const AnnouncementsPage = lazyAdminPage(() => import("@/pages/admin/admin-route-pages").then((module) => ({ default: module.AnnouncementsPage })));
 const BannerAnnouncementsPage = lazyAdminPage(() => import("@/pages/admin/admin-route-pages").then((module) => ({ default: module.BannerAnnouncementsPage })));
@@ -126,6 +128,7 @@ export const router = createBrowserRouter([
                 children: [
                     { path: "/", element: deferred(<CreatePage />) },
                     { path: "/create", element: deferred(<CreatePage />) },
+                    { path: "/ecommerce", element: <RequireAuth>{deferred(<EcommercePage />)}</RequireAuth> },
                     {
                         path: "/toolbox/image",
                         element: <RequireFeature feature="imageWorkbenchEnabled">{deferred(<ImageWorkbenchPage />)}</RequireFeature>,
@@ -219,6 +222,7 @@ export const router = createBrowserRouter([
                             { path: "announcements", element: <AnnouncementsPage /> },
                             { path: "banner-announcements", element: <BannerAnnouncementsPage /> },
                             { path: "agent-lessons", element: <AgentLessonsPage /> },
+                            { path: "ecommerce", element: <EcommerceSettingsPage /> },
                             { path: "resources", element: <StorageResourcesPage /> },
                             { path: "credit-operations", element: <CreditOperationsPage /> },
                             { path: "redemption-codes", element: <RedemptionCodesPage /> },

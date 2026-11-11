@@ -204,6 +204,11 @@ func (w *taskWorkerCoordinator) processClaimedTask(task *model.Task, globalSlot 
 	if err := json.Unmarshal([]byte(decryptedInput), &admissionInput); err != nil {
 		return err
 	}
+	admissionTask := *task
+	admissionTask.InputJSON = decryptedInput
+	if err := s.requireEcommerceExecution(admissionTask); err != nil {
+		return terminal.markPreparationFailure(task, "商品套图暂不可用", err, false, "商品套图未开放，上游请求未发出")
+	}
 	if err := s.requireCustomChannelsForTaskInput(admissionInput); err != nil {
 		// A reclaimed task may already have submitted upstream. Keep the existing
 		// review path for that evidence; only an unsent reservation is refundable.

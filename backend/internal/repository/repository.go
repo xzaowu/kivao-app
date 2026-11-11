@@ -112,6 +112,9 @@ func (r *Repository) UserStorageUsage(userID string) (UserStorageUsage, error) {
 		query = strings.ReplaceAll(query, ", '') AS BLOB))", ", ''))")
 	}
 	err := r.db.Raw(query, userID, userID, userID, userID, userID, userID, userID, userID, userID, userID, userID).Scan(&usage).Error
+	if err == nil {
+		err = r.addEcommerceStorageUsage(userID, &usage)
+	}
 	return usage, err
 }
 
@@ -132,6 +135,9 @@ func (r *Repository) UserStructuredStorageUsage(userID string) (UserStorageUsage
 		query = strings.ReplaceAll(query, ", '') AS BLOB))", ", ''))")
 	}
 	err := r.db.Raw(query, userID, userID, userID, userID).Scan(&usage).Error
+	if err == nil {
+		err = r.addEcommerceStorageUsage(userID, &usage)
+	}
 	return usage, err
 }
 

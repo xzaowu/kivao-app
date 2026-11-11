@@ -5,6 +5,16 @@ description: 从产品功能快速定位主要代码入口
 
 # 代码功能地图
 
+## 商品套图
+
+- `internal/ecommerce/contracts.go`：原图用途、两阶段提示词及严格 JSON 结果合同，不依赖 Provider 或数据库。
+- `internal/app/ecommerce.go`、`ecommerce_tasks.go`：项目/轮次、revision CAS、原生报价、稳定请求回执、任务绑定与积分预占事务；`internal/service/aliases_ecommerce.go` 为 handler 的稳定导入面。
+- `internal/repository/ecommerce.go`、`internal/model/models_ecommerce.go`：两张新增表、分页历史、结构化存储额度和资源引用保护；迁移注册在 `internal/database/migrations.go` 的 KIVAO v80。
+- `internal/handler/ecommerce.go`：登录态商品 API 与管理员阶段设置；合同在 `openapi.yaml`。通用任务入口拒绝伪造商品项目；重试需返回商品页重新确认报价。
+- `web/src/pages/ecommerce/`：商品资料、原图/素材库、方向与方案、图片参数、下载、独立轮次；`ecommerce-intents.ts` 负责账号隔离的请求暂存和 UNKNOWN 恢复。
+- `web/src/pages/admin/ecommerce-settings-page.tsx`：两个文本阶段的平台模型配置；开放开关沿用 `feature_availability`。
+- `internal/app/ecommerce_execution_test.go`：通过本地 HTTP Stub 验证原生 worker、两文本阶段、图片转存、积分结算及素材登记，不调用真实模型。
+
 ## 画布与素材稳定性
 
 - `web/src/lib/canvas/canvas-storage-revision.ts`：快照合并及明确删除墓碑。

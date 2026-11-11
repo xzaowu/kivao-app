@@ -22,6 +22,7 @@ type FeatureKey =
     | "systemPluginsVisibleToUsers"
     | "imageWorkbenchEnabled"
     | "videoWorkbenchEnabled"
+    | "ecommerceEnabled"
     | "canvasConversionEnabled"
     | "canvasDrawingEnabled"
     | "canvasFolderEnabled"
@@ -42,6 +43,7 @@ const editableFeatureKeys: FeatureKey[] = [
     "inspirationSourcesVisible",
     "imageWorkbenchEnabled",
     "videoWorkbenchEnabled",
+    "ecommerceEnabled",
     "frontendModelsEnabled",
     "pluginCenterEnabled",
     "systemPluginsVisibleToUsers",
@@ -52,6 +54,12 @@ const editableFeatureKeys: FeatureKey[] = [
 ];
 
 const workspaceFeatureRows: FeatureRow[] = [
+    {
+        key: "ecommerceEnabled",
+        title: "商品套图",
+        description: "开放商品识别、整套策划和出图；两个文本阶段也按模型计费。关闭后仍可查看已有作品。",
+        icon: <ImageIcon className="size-4" aria-hidden="true" />,
+    },
     {
         key: "shortDramaEnabled",
         title: "短剧创作",
@@ -412,6 +420,7 @@ function toEditablePayload(features: FeatureAvailability) {
         inspirationSourcesVisible: features.inspirationSourcesVisible,
         imageWorkbenchEnabled: features.imageWorkbenchEnabled,
         videoWorkbenchEnabled: features.videoWorkbenchEnabled,
+        ecommerceEnabled: features.ecommerceEnabled,
         frontendModelsEnabled: features.frontendModelsEnabled,
         pluginCenterEnabled: features.pluginCenterEnabled,
         systemPluginsVisibleToUsers: features.systemPluginsVisibleToUsers,
@@ -441,6 +450,7 @@ function parseFeatureAvailability(value: unknown): FeatureAvailability {
         inspirationSourcesVisible: record.inspirationSourcesVisible as boolean,
         imageWorkbenchEnabled: record.imageWorkbenchEnabled as boolean,
         videoWorkbenchEnabled: record.videoWorkbenchEnabled as boolean,
+        ecommerceEnabled: record.ecommerceEnabled as boolean,
         frontendModelsEnabled: record.frontendModelsEnabled as boolean,
         pluginCenterEnabled: record.pluginCenterEnabled as boolean,
         systemPluginsVisibleToUsers: record.systemPluginsVisibleToUsers as boolean,

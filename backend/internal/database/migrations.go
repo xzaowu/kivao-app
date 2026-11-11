@@ -12,7 +12,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const CurrentSchemaVersion int64 = 79
+const CurrentSchemaVersion int64 = 80
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -280,6 +280,9 @@ var schemaMigrations = []migration{
 			return nil
 		}
 		return tx.Migrator().AddColumn(&model.PaymentOrder{}, "PaymentMethod")
+	}},
+	{version: 80, name: "kivao_ecommerce_project_rounds", checksum: "sha256:kivao-ecommerce-project-rounds-v80-r1", apply: func(tx *gorm.DB) error {
+		return tx.AutoMigrate(&model.EcommerceProject{}, &model.EcommerceRound{})
 	}},
 }
 

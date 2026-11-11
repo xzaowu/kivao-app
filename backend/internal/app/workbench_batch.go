@@ -80,6 +80,19 @@ func (s *Service) WorkbenchBatchTask(userID, kind, batchID string, index int) (*
 // It is not part of the public task input returned to clients.
 func compactTaskInputJSON(raw string) string {
 	public := publicTaskInputJSON(raw)
+	var ecommerceInput struct {
+		Hash string `json:"ecommerceRequestHash"`
+	}
+	if json.Unmarshal([]byte(raw), &ecommerceInput) == nil && len(ecommerceInput.Hash) == 64 {
+		if _, err := hex.DecodeString(ecommerceInput.Hash); err == nil {
+			var compact map[string]any
+			if json.Unmarshal([]byte(public), &compact) == nil && compact != nil {
+				compact["ecommerceRequestHash"] = ecommerceInput.Hash
+				encoded, _ := json.Marshal(compact)
+				return string(encoded)
+			}
+		}
+	}
 	var input struct {
 		Hash string `json:"workbenchRequestHash"`
 	}

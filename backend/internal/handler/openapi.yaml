@@ -27,12 +27,199 @@ tags:
   - name: admin
   - name: skills
   - name: workbench
+  - name: ecommerce
+    description: 商品套图；默认关闭，识别、策划与逐张出图均需确认报价。
   - name: feedback
     description: 用户反馈与管理员收件箱
   - name: referral
     description: 推广中心：推广码、邀请记录与返佣
   - name: payments
 paths:
+  /ecommerce/status:
+    get:
+      tags: [ecommerce]
+      summary: 获取商品套图开放与阶段模型配置状态
+      responses:
+        "200": { $ref: "#/components/responses/Envelope" }
+  /ecommerce/projects:
+    get:
+      tags: [ecommerce]
+      summary: 当前账号的商品项目摘要，每页 20 条
+      parameters: [{ $ref: "#/components/parameters/EcommercePage" }]
+      responses:
+        "200": { $ref: "#/components/responses/Envelope" }
+    post:
+      tags: [ecommerce]
+      summary: 用稳定 UUID 创建商品项目；同 ID 不同资料返回 409
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [id, draft]
+              properties:
+                id: { type: string, format: uuid }
+                draft: { $ref: "#/components/schemas/EcommerceDraft" }
+      responses:
+        "200": { $ref: "#/components/responses/Envelope" }
+  /ecommerce/projects/{id}:
+    parameters: [{ $ref: "#/components/parameters/EcommerceProjectID" }]
+    get:
+      tags: [ecommerce]
+      summary: 只读当前轮资料、方案和脱敏任务，不触发报价或生成
+      responses:
+        "200": { $ref: "#/components/responses/Envelope" }
+  /ecommerce/projects/{id}/draft:
+    parameters: [{ $ref: "#/components/parameters/EcommerceProjectID" }]
+    put:
+      tags: [ecommerce]
+      summary: 保存资料或幂等新建轮次；revision 冲突返回 409
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [revision, clientKey, draft]
+              properties:
+                revision: { type: integer, minimum: 1 }
+                clientKey: { type: string, format: uuid }
+                newRound: { type: boolean }
+                draft: { $ref: "#/components/schemas/EcommerceDraft" }
+      responses:
+        "200": { $ref: "#/components/responses/Envelope" }
+  /ecommerce/projects/{id}/archive:
+    parameters: [{ $ref: "#/components/parameters/EcommerceProjectID" }]
+    post:
+      tags: [ecommerce]
+      summary: 归档项目，保留任务、作品及资源引用
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [revision]
+              properties:
+                revision: { type: integer, minimum: 1 }
+      responses:
+        "200": { $ref: "#/components/responses/Envelope" }
+  /ecommerce/projects/{id}/rounds:
+    parameters: [{ $ref: "#/components/parameters/EcommerceProjectID" }]
+    get:
+      tags: [ecommerce]
+      summary: 只读历史轮次，每页 20 条
+      parameters: [{ $ref: "#/components/parameters/EcommercePage" }]
+      responses:
+        "200": { $ref: "#/components/responses/Envelope" }
+  /ecommerce/projects/{id}/receipts/{requestId}:
+    parameters:
+      - { $ref: "#/components/parameters/EcommerceProjectID" }
+      - name: requestId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [ecommerce]
+      summary: 查询原请求回执；未找到返回 task null，不自动重发
+      responses:
+        "200": { $ref: "#/components/responses/Envelope" }
+  /ecommerce/projects/{id}/quote:
+    parameters: [{ $ref: "#/components/parameters/EcommerceProjectID" }]
+    post:
+      tags: [ecommerce]
+      summary: 计算原生任务报价，不创建任务、不预占、不调用模型
+      description: 返回 quoteHash、amountMicrocredits、billingMode、estimated、expiresAt；有效期 5 分钟。阶段模型与权限、能力、原图按服务端配置解析。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EcommerceTaskRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/Envelope" }
+  /ecommerce/projects/{id}/tasks:
+    parameters: [{ $ref: "#/components/parameters/EcommerceProjectID" }]
+    post:
+      tags: [ecommerce]
+      summary: 提交已确认报价的任务，任务绑定与积分预占原子提交
+      description: 必须回传完整报价摘要与最高费用。相同 requestId 与请求正文重放返回原任务；正文、revision 或报价变化拒绝新建。UNKNOWN 先查询回执，人工重试保持原请求不变。文本阶段也计费；不通过通用 tasks API 重试。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EcommerceTaskRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/Envelope" }
+  /ecommerce/projects/{id}/accept:
+    parameters: [{ $ref: "#/components/parameters/EcommerceProjectID" }]
+    post:
+      tags: [ecommerce]
+      summary: 使用已完成的识别或策划结果，不自动触发下一阶段
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [revision, taskId]
+              properties:
+                revision: { type: integer, minimum: 1 }
+                taskId: { type: string }
+                directionId: { type: string, enum: [direction-1, direction-2, direction-3, direction-4] }
+      responses:
+        "200": { $ref: "#/components/responses/Envelope" }
+  /ecommerce/projects/{id}/images/{imageId}:
+    parameters:
+      - { $ref: "#/components/parameters/EcommerceProjectID" }
+      - name: imageId
+        in: path
+        required: true
+        schema: { type: string }
+    patch:
+      tags: [ecommerce]
+      summary: 编辑方案，保留原作品；重新出图必须再次确认报价
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [revision, title, copy, prompt]
+              properties:
+                revision: { type: integer, minimum: 1 }
+                title: { type: string, maxLength: 100 }
+                copy: { type: string, maxLength: 1000 }
+                prompt: { type: string, maxLength: 6000 }
+      responses:
+        "200": { $ref: "#/components/responses/Envelope" }
+  /admin/ecommerce/settings:
+    get:
+      tags: [admin, ecommerce]
+      summary: 管理员读取两个实际文本阶段的模型选择，不含密钥
+      responses:
+        "200": { $ref: "#/components/responses/Envelope" }
+    put:
+      tags: [admin, ecommerce]
+      summary: 保存商品识别与整套策划模型，并记录管理员审计
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [vision, planning]
+              properties:
+                vision: { $ref: "#/components/schemas/EcommerceModelChoice" }
+                planning: { $ref: "#/components/schemas/EcommerceModelChoice" }
+      responses:
+        "200": { $ref: "#/components/responses/Envelope" }
   /payments/providers:
     get:
       tags: [payments]
@@ -2760,6 +2947,15 @@ paths:
           $ref: "#/components/responses/Error"
 components:
   parameters:
+    EcommerceProjectID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    EcommercePage:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 500, default: 1 }
     AgentRunID:
       name: id
       in: path
@@ -2772,6 +2968,52 @@ components:
       in: cookie
       name: open_ai_canvas_session
   schemas:
+    EcommerceDraft:
+      type: object
+      additionalProperties: false
+      required: [productName, description, platform, language, imageType, count, references]
+      properties:
+        productName: { type: string, minLength: 1, maxLength: 100 }
+        description: { type: string, maxLength: 4000 }
+        platform: { type: string, minLength: 1, maxLength: 80 }
+        language: { type: string, minLength: 1, maxLength: 40 }
+        imageType: { type: string, enum: [main, detail] }
+        count: { type: integer, minimum: 1, maximum: 8 }
+        references:
+          type: array
+          minItems: 1
+          maxItems: 8
+          items:
+            type: object
+            additionalProperties: false
+            required: [resourceId, role]
+            properties:
+              resourceId: { type: string }
+              role: { type: string, enum: [primary, detail, style] }
+    EcommerceModelChoice:
+      type: object
+      additionalProperties: false
+      description: logicalModelId 与 channelId/model 二选一，仅平台模型；实际能力和账号可见性由原生准入检查。
+      properties:
+        logicalModelId: { type: string, maxLength: 80 }
+        channelId: { type: string, maxLength: 80 }
+        model: { type: string, maxLength: 160 }
+    EcommerceTaskRequest:
+      type: object
+      additionalProperties: false
+      required: [revision, requestId, stage, maxCharge]
+      properties:
+        revision: { type: integer, minimum: 1 }
+        requestId: { type: string, format: uuid }
+        stage: { type: string, enum: [vision, planning, image] }
+        imageId: { type: string }
+        model: { $ref: "#/components/schemas/EcommerceModelChoice" }
+        size: { type: string }
+        quality: { type: string }
+        imageResolution: { type: string }
+        quoteHash: { type: string, pattern: '^[a-f0-9]{64}$' }
+        maxCharge: { type: integer, format: int64, minimum: 0 }
+        quoteExpiresAt: { type: string, format: date-time }
     CreationShortcut:
       type: object
       required: [group, title, icon, target]
