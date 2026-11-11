@@ -101,6 +101,10 @@ type Service struct {
 	approvedMediaWg          sync.WaitGroup
 	approvedMediaWaiters     map[string]context.CancelFunc
 	approvedMediaClosed      bool
+	approvalFollowUpMu       sync.Mutex
+	approvalFollowUpWg       sync.WaitGroup
+	approvalFollowUps        map[string]struct{}
+	approvalFollowUpClosed   bool
 	providerCatalogOnce      sync.Once
 	providerCatalog          *providercatalog.Source
 	userGroups               userGroupState

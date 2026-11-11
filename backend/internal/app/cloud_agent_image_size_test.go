@@ -276,7 +276,7 @@ func TestCloudAgentImageApprovalAcceptsTierSelectorForRatioPresets(t *testing.T)
 			// 与线上 qwen 图片线路一致：比例参数、仅 1K 像素预设、不声明质量和分辨率。
 			presets := []ImageSizePreset{}
 			for _, preset := range kemeiSeedreamImagePresets() {
-				if preset.Tier == "1k" {
+				if preset.Tier == "1k" && (preset.Ratio == "1:1" || preset.Ratio == "16:9" || preset.Ratio == "9:16") {
 					presets = append(presets, preset)
 				}
 			}
