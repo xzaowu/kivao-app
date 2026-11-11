@@ -182,7 +182,7 @@ func Prompt(stage string, draft Draft, directions *Directions, direction *Direct
 	if stage == "vision" {
 		return common + `输出格式：{"productSummary":"商品概况","confirmedFacts":["有依据的观察"],"uncertainFacts":["待确认资料"],"directions":[{"id":"direction-1","name":"方向标题","description":"构图、色彩、场景与光线"}]}。directions 必须恰好四项，ID 依次为 direction-1 至 direction-4。` + "\n用户数据：" + string(data)
 	}
-	return common + fmt.Sprintf(`依据用户已选方向策划恰好 %d 张协调但构图不同的商品图片。输出格式：{"summary":"整套叙事","images":[{"id":"image-1","title":"本张用途","copy":"面向消费者的上图文案，可为空","prompt":"可直接执行的完整生图提示词"}]}。图片 ID 从 image-1 依次递增。每张 prompt 独立包含商品身份、画面、已选方向、光线及版式约束，原图作为身份参考，不照抄背景。不要输出 taskId、URL 或内部核验说明。`, draft.Count) + "\n用户数据：" + string(data)
+	return common + fmt.Sprintf(`依据用户已选方向策划恰好 %d 张协调但构图不同的商品图片。输出格式：{"summary":"整套叙事","images":[{"id":"image-1","title":"本张用途","copy":"面向消费者的上图文案，可为空","prompt":"可直接执行的完整生图提示词"}]}。图片 ID 从 image-1 依次递增。每张 prompt 独立包含商品身份、画面、已选方向、光线及版式约束，原图作为身份参考，不照抄背景。copy 为空代表不新增文字，商品自身 Logo 与包装印刷保留。不要输出 taskId、URL 或内部核验说明。`, draft.Count) + "\n" + humanPhotographyRule + "\n" + layoutSafetyRule + "\n用户数据：" + string(data)
 }
 
 func ReferenceRoles(draft Draft) string {

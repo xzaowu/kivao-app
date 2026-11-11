@@ -7,7 +7,7 @@ description: 从产品功能快速定位主要代码入口
 
 ## 商品套图
 
-- `internal/ecommerce/contracts.go`：原图用途、两阶段提示词及严格 JSON 结果合同，不依赖 Provider 或数据库。
+- `internal/ecommerce/contracts.go`、`presentation.go`：原图用途、两阶段提示词及严格 JSON 结果合同；策划与原生出图共用安全排版、已审阅文案和人物摄影边界，不依赖 Provider 或数据库。
 - `internal/app/ecommerce.go`、`ecommerce_tasks.go`：项目/轮次、revision CAS、原生报价、稳定请求回执、任务绑定与积分预占事务；`internal/service/aliases_ecommerce.go` 为 handler 的稳定导入面。
 - `internal/repository/ecommerce.go`、`internal/model/models_ecommerce.go`：两张新增表、分页历史、结构化存储额度和资源引用保护；迁移注册在 `internal/database/migrations.go` 的 KIVAO v80。
 - `internal/handler/ecommerce.go`：登录态商品 API 与管理员阶段设置；合同在 `openapi.yaml`。通用任务入口拒绝伪造商品项目；重试需返回商品页重新确认报价。

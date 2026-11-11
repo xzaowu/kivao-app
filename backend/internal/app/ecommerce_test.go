@@ -472,3 +472,51 @@ func TestEcommerceStructuredResultRejectsInvalidOutputInDefaultMode(t *testing.T
 		t.Fatal(err)
 	}
 }
+
+func TestEcommercePresentationUsesNativeQuoteAndPreservesSavedPlan(t *testing.T) {
+	s, db, p := ecommerceFixture(t)
+	p = ecommerceReadyPlan(t, s, db, p)
+	copy := "  日常收纳，\n轻装出门。  "
+	var err error
+	p, err = s.EditEcommerceImage("user", p.ID, "image-1", EcommerceImageEdit{Revision: p.Revision, Title: "编辑后的方案名称", Copy: copy, Prompt: "完整展示商品；允许标题贴边出血"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := ecommerceQuoted(t, s, p, "image")
+	var before model.EcommerceProject
+	if err := db.First(&before, "id = ?", p.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := s.prepareEcommerceTask("user", p.ID, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(prepared.task.Prompt, "上图文案："+copy+"\n") || !strings.Contains(prepared.task.Prompt, "8%–92%") || strings.Contains(prepared.task.Prompt, "编辑后的方案名称") {
+		t.Fatal("native quote lost approved copy or used the UI title")
+	}
+	// Quoting must not rewrite the reviewed plan or reserve image credits.
+	var after model.EcommerceProject
+	if err := db.First(&after, "id = ?", p.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if before.PlanJSON != after.PlanJSON || before.Revision != after.Revision {
+		t.Fatal("quote mutated the saved plan")
+	}
+	assertWorkbenchBatchAccounting(t, db, 2)
+	task, err := s.SubmitEcommerceTask("user", p.ID, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stored model.Task
+	if err := db.First(&stored, "id = ?", task.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.Prompt != prepared.task.Prompt {
+		t.Fatal("quoted and admitted execution prompts diverged")
+	}
+	var input map[string]any
+	if json.Unmarshal([]byte(stored.InputJSON), &input) != nil || !strings.Contains(stored.InputJSON, "8%–92%") || strings.Contains(stored.InputJSON, "canvasSize") {
+		t.Fatal("native provider input lost presentation or parameters changed")
+	}
+	assertWorkbenchBatchAccounting(t, db, 3)
+}

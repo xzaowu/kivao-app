@@ -220,7 +220,7 @@ func (s *Service) prepareEcommerceTask(userID, projectID string, req EcommerceTa
 			return nil, BadAuthRequest("本张修改次数已达上限，请新建一轮")
 		}
 		prior = image.TaskID
-		prompt = image.Prompt + "\n上图文案：" + image.Copy + "\n" + ecommerce.ReferenceRoles(draft) + "\n以商品原图保持商品身份、Logo 与原色，参考图的背景不必复制。不得添加未证实的参数或功效。"
+		prompt = ecommerce.ImagePrompt(draft, *image)
 		refs := []workbench.TaskReference{}
 		for _, ref := range draft.References {
 			refs = append(refs, workbench.TaskReference{ResourceID: ref.ResourceID, Kind: "image"})
