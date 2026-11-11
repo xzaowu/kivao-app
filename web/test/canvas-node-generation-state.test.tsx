@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
+import type { ReactNode } from "react";
 
 import { CanvasNode } from "../src/components/canvas/canvas-node";
 import { canvasNodeCanResyncTask } from "../src/lib/canvas/canvas-task-state";
@@ -10,7 +11,7 @@ import { CanvasNodeType, type CanvasNodeData } from "../src/types/canvas";
 const noop = () => {};
 const createdAt = () => new Date(Date.now() - 103_000).toISOString();
 
-function renderNode(metadata: CanvasNodeData["metadata"], type: CanvasNodeData["type"] = CanvasNodeType.Image) {
+function renderNode(metadata: CanvasNodeData["metadata"], type: CanvasNodeData["type"] = CanvasNodeType.Image, renderNodeContent?: (node: CanvasNodeData) => ReactNode) {
     // SSR 读取共享时钟快照；渲染前刷新，避免依赖模块加载顺序。
     subscribeTaskTicker(() => {})();
     return renderToStaticMarkup(
@@ -32,6 +33,7 @@ function renderNode(metadata: CanvasNodeData["metadata"], type: CanvasNodeData["
             onOpenTaskDetails={noop}
             onRetry={noop}
             onReloadResource={noop}
+            renderNodeContent={renderNodeContent}
         />,
     );
 }
@@ -39,6 +41,15 @@ function renderNode(metadata: CanvasNodeData["metadata"], type: CanvasNodeData["
 const occurrences = (markup: string, text: string) => markup.split(text).length - 1;
 
 describe("画布节点生成中", () => {
+    test("分镜已有任务状态时不叠加徽章，缺少渲染器仍显示通用状态", () => {
+        for (const status of ["loading", "error"] as const) {
+            const markup = renderNode({ status }, CanvasNodeType.Script, () => <div>分镜脚本任务状态</div>);
+            expect(markup).toContain("分镜脚本任务状态");
+            expect(markup).not.toContain("canvas-node-status-chip");
+            expect(renderNode({ status }, CanvasNodeType.Script)).toContain(status === "loading" ? "canvas-gen" : "重新生成");
+        }
+    });
+
     test("保存阶段只说一次正在保存，不再重复后端阶段原文，也不叠加“生成中”徽章", () => {
         const markup = renderNode({ status: "loading", taskId: "3897c08303cb-task", taskStatus: "running", taskStage: "作品已生成，正在保存", taskMediaStage: "upload", taskCreatedAt: createdAt() });
         expect(markup).toContain('data-phase="saving"');

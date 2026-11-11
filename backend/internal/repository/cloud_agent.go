@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"reflect"
+	"strconv"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -346,18 +349,27 @@ func sameJSONDocument(left, right string) bool {
 	if leftErr != nil || rightErr != nil {
 		return left == right
 	}
-	leftCanonical, leftErr := json.Marshal(leftValue)
-	rightCanonical, rightErr := json.Marshal(rightValue)
-	return leftErr == nil && rightErr == nil && bytes.Equal(leftCanonical, rightCanonical)
+	return reflect.DeepEqual(leftValue, rightValue)
 }
+
+// A distinct type keeps JSON numbers distinct from user strings during comparison.
+type canonicalJSONNumber string
 
 func canonicalJSONValue(value any) any {
 	switch typed := value.(type) {
 	case json.Number:
-		if rational, ok := new(big.Rat).SetString(typed.String()); ok {
-			return rational.RatString()
+		raw := typed.String()
+		// Tool arguments pass through float64 before journal persistence. Preserve
+		// integer precision while accepting equivalent decimal round trips.
+		if strings.ContainsAny(raw, ".eE") {
+			if f, err := strconv.ParseFloat(raw, 64); err == nil {
+				raw = strconv.FormatFloat(f, 'g', -1, 64)
+			}
 		}
-		return typed.String()
+		if rational, ok := new(big.Rat).SetString(raw); ok {
+			return canonicalJSONNumber(rational.RatString())
+		}
+		return canonicalJSONNumber(raw)
 	case []any:
 		for index := range typed {
 			typed[index] = canonicalJSONValue(typed[index])
