@@ -5,6 +5,13 @@ description: 从产品功能快速定位主要代码入口
 
 # 代码功能地图
 
+## 音轨提取、连线与短剧派发
+
+- `web/src/lib/canvas/canvas-video-segment.ts`、`canvas-video-segment-args.ts`：MP3 容器、输出签名、无音轨提示与临时文件清理。
+- `canvas-batch-connection.ts`、`canvas-connection-hit.ts` 及 `web/src/pages/canvas/use-canvas-connection-controller.ts`：共用命中规则、拒绝原因和批量点击守卫；专项 DOM 测试保留真实节点与控制器，命中栈使用模拟数据。
+- `backend/internal/app/cloud_agent_video_operation.go`：按所选模型及参考素材解析视频操作；目录和任务准备共用规则，后续仍执行原生权限、能力与计费准入。
+- `backend/internal/app/drama_orchestrator.go`、`task_timeline.go`、`internal/repository/repository_drama.go`：任务准备与原子绑定、花费记录 CAS；`drama_task_transaction_test.go` 在 SQLite 或独立 PostgreSQL schema 验证积分预留回滚及重复派发。
+
 ## 积分、Agent 与交付恢复
 
 - `backend/internal/app/credit_policy.go`、`finance.go`、`model_catalog.go`、`logical_models_catalog.go`：策略实时读取、未配置零赠送及每次目录共用价格策略；`internal/auth` 的注册/登录/OAuth 路径区分新用户奖励与已有账号认证。
