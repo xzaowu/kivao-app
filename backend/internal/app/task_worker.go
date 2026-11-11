@@ -252,7 +252,11 @@ func (w *taskWorkerCoordinator) processClaimedTask(task *model.Task, globalSlot 
 		return terminal.markPreparationFailure(task, "路由准备失败", err, isRouteDispatchUncertain(err), "路由准备失败，上游请求未发出")
 	}
 	if err := s.taskBilling().MarkBillingRunning(task.BillingOrderID); err != nil {
-		return terminal.markPreparationFailure(task, "计费准备失败", err, false, "计费准备失败，上游请求未发出")
+		uncertain := task.ProviderRequestID != "" || s.taskBilling().BillingFailureRequiresReview(task.BillingOrderID, task.ID, err)
+		if routeAttempt != nil && (routeAttempt.DispatchState == "accepted" || routeAttempt.DispatchState == "submission_unknown") {
+			uncertain = true
+		}
+		return terminal.markPreparationFailure(task, "计费准备失败", err, uncertain, "计费准备失败，上游请求未发出")
 	}
 	routeResult, stateErr := s.routeExecutor().execute(ctx, task, routeAttempt)
 	if stateErr != nil {

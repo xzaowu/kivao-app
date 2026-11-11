@@ -527,6 +527,10 @@ func (s *Service) cloudAgentModelTaskRetryable(taskID string) bool {
 	if cloudAgentEmptyModelOutput(task) || cloudAgentStepTimedOut(task) {
 		return true
 	}
+	// 只扩展尚无已受理标识的 Agent 文本步骤；媒体保存与已提交任务不因此重新发起。
+	if diagnostic := taskExecutionDiagnostic(task); diagnostic != nil && diagnostic.Code == string(ReasonUpstreamDNSFailed) && task.Type == "canvas_text" && task.Status == model.TaskStatusFailed && task.ProviderRequestID == "" && task.MediaRecoveryJSON == "" && !diagnostic.TaskSubmitted && diagnostic.SubmissionOutcome != "accepted" && diagnostic.SubmissionOutcome != "submitted" {
+		return true
+	}
 	call, err := s.repo.LatestAPICallForTask(taskID)
 	if err != nil {
 		return false
