@@ -96,10 +96,10 @@ func TestDeclarativeProtocolLateMediaLifecycle(t *testing.T) {
 				}
 				ctx = withProviderAnalytics(ctx, nil, model.Task{ID: "local-task", Type: "canvas_" + tc.mode, ProviderRequestID: pending.TaskID})
 				output, err = runProtocolAdapterTaskWithPolicy(ctx, input, adapter, policy)
-				if output != nil || !errors.As(err, &pending) || !pending.Detached || pending.TaskID != "original-task" || polls.Load() != 1 {
-					t.Fatalf("empty completed result must keep the same pending task: output=%v err=%v", output, err)
+				// 已完成后的宽限期留在本次 worker；不能退回调度后无限重置计时。
+				if errors.As(err, &pending) || polls.Load() != 2 {
+					t.Fatalf("completed result must finish bounded polling in this worker: err=%v polls=%d", err, polls.Load())
 				}
-				output, err = runProtocolAdapterTaskWithPolicy(ctx, input, adapter, policy)
 			}
 			switch {
 			case tc.noTask || tc.noPoll:

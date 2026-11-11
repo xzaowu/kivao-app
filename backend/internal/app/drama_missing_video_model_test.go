@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"yingce/backend/internal/model"
@@ -46,8 +47,16 @@ func TestDramaEpisodeWithMissingVideoModelKeepsReferenceArray(t *testing.T) {
 			if err := json.Unmarshal(raw, &decoded); err != nil {
 				t.Fatal(err)
 			}
-			if string(decoded["references"]) != "[]" {
-				t.Fatalf("wire references = %s", decoded["references"])
+			if len(segment.Request.References) == 0 || string(decoded["references"]) == "null" {
+				t.Fatal("saved reference assignments were lost when the video model disappeared")
+			}
+			for _, ref := range segment.Request.References {
+				if ref.Sent || ref.CastID == "" {
+					t.Fatal("unavailable model references must remain assigned but unsent")
+				}
+			}
+			if strings.Contains(segment.Request.Warning, "record not found") || strings.Contains(segment.Request.Warning, original.ModelKey) {
+				t.Fatal("missing model warning exposed database or internal model identifiers")
 			}
 		}
 	}

@@ -23,15 +23,15 @@ func (w *taskWorkerCoordinator) processTimelineRender(task *model.Task, ctx cont
 	s := w.service
 	ffmpegBin, err := renderFfmpegBinary()
 	if err != nil {
-		return w.failTimelineTask(task, "渲染失败", err.Error())
+		return w.failTimelineTask(task, "合成环境不可用", err.Error())
 	}
 	var input timelineRenderInput
 	if err := json.Unmarshal([]byte(task.InputJSON), &input); err != nil {
-		return w.failTimelineTask(task, "渲染失败", "任务缺少有效的时间线快照")
+		return w.failTimelineTask(task, "合成输入无效", "任务缺少有效的时间线快照")
 	}
 	plan := buildRenderPlan(input.Timeline)
 	if !plan.HasMedia {
-		return w.failTimelineTask(task, "渲染失败", "时间线没有可渲染的媒体片段")
+		return w.failTimelineTask(task, "合成输入无效", "时间线没有可渲染的媒体片段")
 	}
 
 	if err := w.progress(task, "准备媒体…", 10); err != nil {
@@ -42,7 +42,7 @@ func (w *taskWorkerCoordinator) processTimelineRender(task *model.Task, ctx cont
 		defer cleanup()
 	}
 	if err != nil {
-		return w.failTimelineTask(task, "渲染失败", err.Error())
+		return w.failTimelineTask(task, "准备合成素材失败", "准备合成素材失败："+renderFailureReason(err))
 	}
 	for _, seg := range plan.Segments {
 		if seg.Source == nil || seg.Kind == "image" {
@@ -50,7 +50,7 @@ func (w *taskWorkerCoordinator) processTimelineRender(task *model.Task, ctx cont
 		}
 		hasAudio, probeErr := probeHasAudioStream(ctx, seg.Source.Path)
 		if probeErr != nil {
-			return w.failTimelineTask(task, "渲染失败", probeErr.Error())
+			return w.failTimelineTask(task, "检测素材音轨失败", "检测素材音轨失败："+renderFailureReason(probeErr))
 		}
 		seg.Source.HasAudio = hasAudio
 	}
@@ -79,19 +79,22 @@ func (w *taskWorkerCoordinator) processTimelineRender(task *model.Task, ctx cont
 	renderedPath := filepath.Join(workDir, "render-output.mp4")
 	file, err := os.Open(renderedPath)
 	if err != nil {
-		return w.failTimelineTask(task, "渲染失败", "读取渲染产物失败")
+		return w.failTimelineTask(task, "读取成片失败", "视频已合成，但读取成片失败："+renderFailureReason(err))
 	}
 	defer file.Close()
 	stat, err := file.Stat()
-	if err != nil || stat.Size() == 0 {
-		return w.failTimelineTask(task, "渲染失败", "渲染产物为空")
+	if err != nil {
+		return w.failTimelineTask(task, "检查成片失败", "视频已合成，但检查成片文件失败："+renderFailureReason(err))
+	}
+	if stat.Size() == 0 {
+		return w.failTimelineTask(task, "合成产物为空", "合成输出文件为空，请重试合成")
 	}
 	durationMs := planDurationMs(plan)
 	fileName := fmt.Sprintf("timeline-render-%s.mp4", time.Now().Format("20060102-150405"))
 	outWidth, outHeight := plan.size()
 	resource, _, err := s.storeResource(task.UserID, "media", fileName, "video/mp4", stat.Size(), outWidth, outHeight, durationMs, file, nil, false)
 	if err != nil || resource == nil {
-		return w.failTimelineTask(task, "渲染失败", "保存渲染产物失败")
+		return w.failTimelineTask(task, "保存成片失败", renderSaveFailureMessage(err))
 	}
 
 	result := timelineRenderResult{
@@ -103,7 +106,7 @@ func (w *taskWorkerCoordinator) processTimelineRender(task *model.Task, ctx cont
 	}
 	payload, err := json.Marshal(result)
 	if err != nil {
-		return w.failTimelineTask(task, "渲染失败", "渲染结果序列化失败")
+		return w.failTimelineTask(task, "登记成片结果失败", "成片已保存，但登记结果失败，请联系管理员检查任务记录")
 	}
 	task.Status = model.TaskStatusSucceeded
 	task.Stage = "渲染完成"

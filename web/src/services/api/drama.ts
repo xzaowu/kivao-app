@@ -411,6 +411,8 @@ export type DramaModelOption = {
     label: string;
     priceLabel: string;
     maxVideoSeconds?: number;
+    /** 仅视频模型：最少参考图数，包含可发送的首帧。 */
+    minReferenceImages?: number;
     /** 仅视频模型：支持图生视频，可用于尾帧续接；为 false 时只能并行出片。 */
     tailFrameChain?: boolean;
     /** 仅视频模型：能准确给出的作品画幅；不含作品画幅的模型不能用于该作品。 */
