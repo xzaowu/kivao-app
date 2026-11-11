@@ -112,7 +112,7 @@ func (s *Service) saveTaskCompletionWithinStorageQuota(task *model.Task, resultJ
 	if err != nil {
 		return err
 	}
-	publicInputJSON := publicTaskInputJSON(task.InputJSON)
+	publicInputJSON := compactTaskInputJSON(task.InputJSON)
 	taskDelta := int64(len(resultJSON) + len(publicInputJSON) - len(task.ResultJSON) - len(task.InputJSON))
 
 	results := make([]model.Result, 0, 2)

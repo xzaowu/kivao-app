@@ -102,6 +102,7 @@ export type CreateWorkbenchTaskInput = {
     logicalModelId?: string;
     channelId?: string;
     modelChoice?: { logicalModelId?: string; userChannelId?: string; modelName?: string };
+    batch?: { id: string; index: number; count: number };
     parameters?: Record<string, unknown>;
     references?: Array<{
         resourceId: string;
@@ -242,7 +243,14 @@ export async function createWorkbenchTask(input: WorkbenchTaskIntent) {
     const result = await http.post<WorkbenchTaskReceipt | WorkbenchTaskReceipt["task"]>("/workbench/tasks", input);
     const task = result && "task" in result ? result.task : result;
     if (!task?.id) throw new Error("任务已提交，但没有返回任务编号");
+    if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("wallet:updated"));
     return task;
+}
+
+export async function queryWorkbenchBatchTask(kind: WorkbenchKind, batchId: string, index: number) {
+    const result = await http.get<{ task: GenerationTask | null }>(`/workbench/batches/${encodeURIComponent(batchId)}/tasks/${index}`, { params: { kind } });
+    if (result.task?.id && typeof window !== "undefined") window.dispatchEvent(new CustomEvent("wallet:updated"));
+    return result.task;
 }
 
 export type WorkbenchTaskReceipt = {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 
 	"yingce/backend/internal/service"
@@ -44,6 +45,24 @@ func RegisterWorkbenchRoutes(r *gin.RouterGroup, svc *service.Service) {
 			return
 		}
 		ok(c, tasks)
+	})
+	r.GET("/workbench/batches/:batchId/tasks/:index", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		index, err := strconv.Atoi(c.Param("index"))
+		if err != nil {
+			fail(c, http.StatusBadRequest, errors.New("批量任务序号无效"))
+			return
+		}
+		task, err := svc.WorkbenchBatchTask(user.ID, c.Query("kind"), c.Param("batchId"), index)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, gin.H{"task": task})
 	})
 	r.POST("/workbench/tasks", func(c *gin.Context) {
 		user, err := currentUser(c, svc)

@@ -31,6 +31,7 @@ import { createAssetFolder, deleteAssetFolder, listAssetFolders, updateAssetFold
 import { assetCountMap, assetSearchText, readAssetGridDensity, assetKindIcons } from "./asset-library-format";
 import { ASSET_GRID_DENSITY_KEY, type LibraryAsset } from "./asset-library-format";
 import { selectAssetIds } from "./asset-library-selection";
+import { collectAssetLibraryIds, deleteAssetLibraryTrash } from "./asset-library-bulk";
 
 export { ASSET_GRID_DENSITY_KEY, type LibraryAsset, assetKindIcons } from "./asset-library-format";
 
@@ -431,11 +432,27 @@ export default function AssetsPage() {
     };
 
     const exportAllAssets = async () => {
-        if (!validAssets.length) {
-            message.warning("暂无素材可导出");
-            return;
+        if (batchWorking) return;
+        setBatchWorking(true);
+        try {
+            const ids = await collectAssetLibraryIds(viewMode === "trash" ? "archived" : "active", userId, pageSize);
+            if (!ids.length) {
+                message.warning("暂无素材可导出");
+                return;
+            }
+            await loadAssetsForUse(ids, { refresh: Boolean(userId) });
+            if ((useUserStore.getState().user?.id || "") !== userId) throw new Error("账号已切换，请重新导出素材");
+            const byId = new Map(useAssetStore.getState().assets.map((asset) => [asset.id, asset]));
+            await exportAssets(ids.map((id) => {
+                const asset = byId.get(id);
+                if (!asset) throw new Error("部分素材尚未加载，请重试");
+                return asset;
+            }));
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "导出素材失败");
+        } finally {
+            setBatchWorking(false);
         }
-        await exportAssets(validAssets);
     };
 
     const importAssetZip = async (file?: File) => {
@@ -450,8 +467,8 @@ export default function AssetsPage() {
                 addAsset(payload as Parameters<typeof addAsset>[0]);
             });
             message.success(`已导入 ${importedAssets.length} 个素材`);
-        } catch {
-            message.error("导入失败，请选择有效的素材压缩包");
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "导入失败，请选择有效的素材压缩包");
         } finally {
             if (assetInputRef.current) assetInputRef.current.value = "";
         }
@@ -483,14 +500,20 @@ export default function AssetsPage() {
     };
 
     const emptyTrash = async () => {
-        const count = trashAssets.length;
-        if (!count) return;
+        if (batchWorking) return;
+        setBatchWorking(true);
+        let deleted = 0;
         try {
-            await deleteAssetsWithRemoteSync(trashAssets.map((asset) => asset.id));
+            await deleteAssetLibraryTrash(userId, pageSize, (count) => { deleted = count; });
             setSelectedIds([]);
-            message.success(`已彻底清空回收站 ${count} 个素材`);
+            message.success(`已彻底清空回收站 ${deleted} 个素材`);
+            void invalidateAssetLibrary();
         } catch (error) {
-            message.error(error instanceof Error ? error.message : "清空回收站失败");
+            const reason = error instanceof Error ? error.message : "清空回收站失败";
+            if (deleted) message.warning(`已删除 ${deleted} 个素材，剩余未完成：${reason}`);
+            else message.error(reason);
+        } finally {
+            setBatchWorking(false);
         }
     };
 
@@ -550,7 +573,7 @@ export default function AssetsPage() {
                                 <div className="assets-header-action-buttons">
                                     {viewMode === "trash" ? (
                                         <>
-                                            {trashAssets.length > 0 ? (
+                                            {userId || trashAssets.length > 0 ? (
                                                 <Popconfirm
                                                     title="确定清空回收站吗？"
                                                     description="清空后所有回收站素材及其文件将被彻底永久删除，不可恢复。"
@@ -559,7 +582,7 @@ export default function AssetsPage() {
                                                     okButtonProps={{ danger: true }}
                                                     cancelText="取消"
                                                 >
-                                                    <Button danger icon={<Trash2 className="size-3.5" />}>
+                                                    <Button danger loading={batchWorking} icon={<Trash2 className="size-3.5" />}>
                                                         清空回收站
                                                     </Button>
                                                 </Popconfirm>

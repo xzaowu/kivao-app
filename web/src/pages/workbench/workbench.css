@@ -794,10 +794,29 @@
 .workbench-prompt-meta .ant-select {
     width: 148px;
 }
+.workbench-batch-status {
+    display: grid;
+    flex: 0 0 auto;
+    gap: var(--space-2);
+    padding: var(--space-3);
+    border: 1px solid var(--wb-edge);
+    border-radius: var(--radius-lg);
+    background: var(--wb-muted);
+    color: var(--wb-text-muted);
+    font-size: 12px;
+}
+.workbench-batch-status p {
+    margin: 0;
+}
+.workbench-batch-status > div {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+}
 .workbench-composer-dock {
     display: flex;
     align-items: center;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
     gap: 12px;
     min-width: 0;
     margin-top: 4px;
@@ -806,12 +825,12 @@
 }
 
 .workbench-composer-dock > .workbench-model-empty {
-    flex: 1 1 auto;
+    flex: 1 1 100%;
     min-width: 0;
 }
 
 .workbench-composer-dock > .workbench-model-picker {
-    flex: 1 1 auto;
+    flex: 1 1 100%;
     min-width: 0;
     width: auto !important;
     max-width: none;
@@ -845,7 +864,7 @@
 
 .workbench-submit-estimate {
     display: flex;
-    flex: 0 1 auto;
+    flex: 1 1 auto;
     align-items: baseline;
     gap: 8px;
     min-width: 0;
@@ -1204,6 +1223,36 @@
     padding: 8px 8px;
     color: white;
     font-size: 11px;
+}
+.workbench-result-images {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
+    align-content: safe center;
+    gap: var(--space-2);
+    flex: 1 1 auto;
+    width: 100%;
+    min-height: 0;
+    max-height: 66vh;
+    padding: var(--space-2);
+    overflow-y: auto;
+}
+.workbench-result-image {
+    display: block;
+    width: 100%;
+    height: auto;
+    object-fit: contain;
+}
+.workbench-result-load {
+    flex: 0 0 auto;
+    margin: 0;
+}
+.workbench-result-reload {
+    flex: 0 0 auto;
+    padding: var(--space-1) var(--space-2);
+    color: inherit;
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+    cursor: pointer;
 }
 .workbench-task-column {
     display: grid;

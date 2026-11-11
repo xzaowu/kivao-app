@@ -8,6 +8,8 @@ import { deleteAssetsWithRemoteSync, initializeRemoteUserDataSession, loadAssetL
 import { flushAssetStorePersistence, useAssetStore, type Asset } from "@/stores/use-asset-store";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { appQueryClient } from "@/lib/query-client";
+import { collectAssetLibraryIds, deleteAssetLibraryTrash } from "@/pages/assets/asset-library-bulk";
+import { useUserStore } from "@/stores/use-user-store";
 
 const originalAdapter = apiClient.defaults.adapter;
 let originalWindow: PropertyDescriptor | undefined;
@@ -40,6 +42,7 @@ const asset = (id: string): Asset =>
     }) as Asset;
 
 beforeEach(async () => {
+    useUserStore.setState({ user: { id: "batch-test-user" } as NonNullable<ReturnType<typeof useUserStore.getState>["user"]> });
     originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
     const storage = new Map<string, string>();
     const indexed = new Map<string, unknown>();
@@ -72,6 +75,7 @@ afterEach(async () => {
         appQueryClient.clear();
         apiClient.defaults.adapter = originalAdapter;
         resetRemoteUserDataSync();
+        useUserStore.setState({ user: null });
         useAssetStore.setState({ assets: [] });
         await flushAssetStorePersistence();
     } finally {
@@ -275,7 +279,7 @@ describe("素材批量删除", () => {
     test("素材页和选择器的批量及清空入口使用数组同步方法", () => {
         const page = readFileSync(new URL("../src/pages/assets/index.tsx", import.meta.url), "utf8");
         const picker = readFileSync(new URL("../src/components/assets/asset-library-picker-modal.tsx", import.meta.url), "utf8");
-        expect(page).toContain("deleteAssetsWithRemoteSync(trashAssets.map");
+        expect(page).toContain("deleteAssetLibraryTrash(userId, pageSize");
         expect(page).toContain("const ids = [...selectedIds]");
         expect(page).toContain("deleteAssetsWithRemoteSync(ids)");
         expect(page).not.toContain("validAssets.filter((asset) => selectedIds.includes(asset.id))");
@@ -283,5 +287,61 @@ describe("素材批量删除", () => {
         expect(page).toContain("count={selectedIds.length}");
         expect(picker).toContain("deleteAssetsWithRemoteSync(archivedSelectedIds)");
         expect(picker).toContain("deleteAssetsWithRemoteSync(toDelete.map");
+    });
+});
+
+describe("全量素材操作", () => {
+    test.each(["active", "archived"] as const)("%s 素材遍历服务端全部页面，不依赖本地缓存或页面筛选", async (status) => {
+        const requests: unknown[] = [];
+        apiClient.defaults.adapter = async (config) => {
+            requests.push(config.params);
+            const page = config.params.page;
+            return { config, headers: {}, status: 200, statusText: "OK", data: { code: 0, data: { assets: (page === 1 ? ["one", "two"] : ["three"]).map(asset), page, pageSize: 2, total: 3, hasMore: page === 1 }, msg: "ok" } };
+        };
+        expect(await collectAssetLibraryIds(status, "batch-test-user", 2)).toEqual(["one", "two", "three"]);
+        expect(requests).toEqual([{ page: 1, pageSize: 2, status }, { page: 2, pageSize: 2, status }]);
+        expect(useAssetStore.getState().assets).toEqual([]);
+    });
+
+    test("后续分页失败不以部分列表清空回收站", async () => {
+        const methods: string[] = [];
+        apiClient.defaults.adapter = async (config) => {
+            methods.push(config.method!);
+            if (config.params?.page === 2) throw new Error("第二页失败");
+            return { config, headers: {}, status: 200, statusText: "OK", data: { code: 0, data: { assets: [asset("first")], hasMore: true }, msg: "ok" } };
+        };
+        await expect(deleteAssetLibraryTrash("batch-test-user", 2, () => {})).rejects.toThrow("第二页失败");
+        expect(methods).toEqual(["get", "get"]);
+    });
+
+    test("先冻结完整 ID 集再分批删除，报告部分成功并停止于首个失败", async () => {
+        const requests: string[] = [];
+        const deleted: string[][] = [];
+        apiClient.defaults.adapter = async (config) => {
+            requests.push(`${config.method}:${config.params?.page || "delete"}`);
+            if (config.method === "post") {
+                const ids = JSON.parse(config.data);
+                if (ids.includes("third")) throw new Error("仍有画布引用");
+                deleted.push(ids);
+                return { config, headers: {}, status: 200, statusText: "OK", data: { code: 0, data: { ids }, msg: "ok" } };
+            }
+            return { config, headers: {}, status: 200, statusText: "OK", data: { code: 0, data: { assets: (config.params.page === 1 ? ["first", "second"] : ["third"]).map(asset), hasMore: config.params.page === 1 }, msg: "ok" } };
+        };
+        const progress: number[] = [];
+        await expect(deleteAssetLibraryTrash("batch-test-user", 2, (count) => progress.push(count))).rejects.toThrow("仍有画布引用");
+        expect(requests).toEqual(["get:1", "get:2", "post:delete", "post:delete"]);
+        expect(deleted).toEqual([["first", "second"]]);
+        expect(progress).toEqual([2]);
+    });
+
+    test("遍历时切换账号中止，不向新账号发出删除", async () => {
+        const requests: string[] = [];
+        apiClient.defaults.adapter = async (config) => {
+            requests.push(config.method!);
+            useUserStore.setState({ user: null });
+            return { config, headers: {}, status: 200, statusText: "OK", data: { code: 0, data: { assets: [asset("first")], hasMore: true }, msg: "ok" } };
+        };
+        await expect(deleteAssetLibraryTrash("batch-test-user", 2, () => {})).rejects.toThrow("账号已切换");
+        expect(requests).toEqual(["get"]);
     });
 });

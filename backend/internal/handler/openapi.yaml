@@ -2507,6 +2507,33 @@ paths:
           $ref: "#/components/responses/Envelope"
         "403":
           $ref: "#/components/responses/Error"
+  /workbench/batches/{batchId}/tasks/{index}:
+    get:
+      tags: [workbench]
+      summary: 查询当前用户的批量任务回执
+      description: 只读查询，返回 data.task 或 null。null 不能证明早先的请求不会继续提交，客户端必须保留未知状态，不能据此自动重发。
+      parameters:
+        - in: path
+          name: batchId
+          required: true
+          schema: { type: string, minLength: 8, maxLength: 64, pattern: '^[A-Za-z0-9_-]+$' }
+        - in: path
+          name: index
+          required: true
+          schema: { type: integer, minimum: 0, maximum: 19 }
+        - in: query
+          name: kind
+          required: true
+          schema: { type: string, enum: [image, video] }
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
   /workbench/tasks:
     get:
       tags: [workbench]
@@ -2532,7 +2559,7 @@ paths:
     post:
       tags: [workbench]
       summary: 创建工作台生成任务
-      description: 仅接受模型选择意图、资源 ID、提示词和允许的生成参数；toolId 可选，服务端校验开关、所选工具、资源、模型能力和账单，不接受客户端 providerConfig、密钥或上游 URL。
+      description: 仅接受模型选择意图、资源 ID、提示词和允许的生成参数；toolId 可选，服务端校验开关、所选工具、资源、模型能力和账单，不接受客户端 providerConfig、密钥或上游 URL。可选 batch 在任务保留期间按当前用户、kind、id 和 index 去重，同一项变更内容返回 409，不重新预占积分。
       requestBody:
         required: true
         content:
@@ -2540,19 +2567,30 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: [kind, prompt, model, modelChoice, parameters, references]
+              required: [kind]
               properties:
                 kind: { type: string, enum: [image, video] }
                 toolId: { type: string }
                 presetId: { type: string }
-                prompt: { type: string, minLength: 1, maxLength: 32000 }
+                prompt: { type: string, maxLength: 32000 }
+                userPrompt: { type: string, maxLength: 32000 }
                 model: { type: string }
                 logicalModelId: { type: string }
+                channelId: { type: string }
+                batch:
+                  type: object
+                  additionalProperties: false
+                  required: [id, index, count]
+                  properties:
+                    id: { type: string, minLength: 8, maxLength: 64, pattern: '^[A-Za-z0-9_-]+$' }
+                    index: { type: integer, minimum: 0, maximum: 19, description: 必须小于 count }
+                    count: { type: integer, minimum: 1, maximum: 20 }
                 modelChoice:
                   type: object
                   additionalProperties: false
                   properties:
                     logicalModelId: { type: string }
+                    userChannelId: { type: string }
                     modelName: { type: string }
                 workbench:
                   type: object
@@ -2567,8 +2605,9 @@ paths:
                   properties:
                     size: { type: string }
                     quality: { type: string }
+                    imageResolution: { type: string }
                     count: { type: integer, minimum: 1 }
-                    videoSeconds: { type: integer, minimum: 1 }
+                    seconds: { type: integer, minimum: 1 }
                     ratio: { type: string }
                     resolution: { type: string }
                     generateAudio: { type: boolean }
@@ -2579,11 +2618,12 @@ paths:
                   items:
                     type: object
                     additionalProperties: false
-                    required: [resourceId, kind, role]
+                    required: [resourceId, kind]
                     properties:
                       resourceId: { type: string }
                       kind: { type: string, enum: [image, video, audio] }
                       role: { type: string, enum: [reference, first_frame, last_frame] }
+                      slotKey: { type: string }
       responses:
         "200":
           $ref: "#/components/responses/Envelope"
@@ -2592,6 +2632,8 @@ paths:
         "401":
           $ref: "#/components/responses/Error"
         "403":
+          $ref: "#/components/responses/Error"
+        "409":
           $ref: "#/components/responses/Error"
   /admin/workbench/tools:
     get:

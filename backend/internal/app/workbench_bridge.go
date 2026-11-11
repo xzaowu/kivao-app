@@ -142,6 +142,27 @@ func (s *Service) CreateWorkbenchTask(userID string, req WorkbenchTaskInput, tra
 	} else {
 		return nil, BadAuthRequest("工作台类型无效")
 	}
+	taskID, fingerprint, err := workbenchBatchIdentity(userID, req)
+	if err != nil {
+		return nil, err
+	}
+	if taskID != "" {
+		if task, err := s.workbenchBatchTask(userID, taskID, fingerprint); err != nil || task != nil {
+			return task, err
+		}
+	}
+	task, err := s.createWorkbenchTask(userID, req, traceID, requestID, taskID, fingerprint)
+	if err != nil && taskID != "" {
+		// The task primary key and credit reservation share one transaction. A
+		// concurrent duplicate rolls back its reservation; return the committed receipt.
+		if existing, readErr := s.workbenchBatchTask(userID, taskID, fingerprint); readErr != nil || existing != nil {
+			return existing, readErr
+		}
+	}
+	return task, err
+}
+
+func (s *Service) createWorkbenchTask(userID string, req WorkbenchTaskInput, traceID, requestID, taskID, fingerprint string) (*model.Task, error) {
 	resolved, err := s.workbenchDomain().ResolveTask(userID, req)
 	if err != nil {
 		return nil, err
@@ -156,7 +177,13 @@ func (s *Service) CreateWorkbenchTask(userID string, req WorkbenchTaskInput, tra
 		return nil, BadAuthRequest("所选系统模型不可用")
 	}
 	resolved.Model = modelName
-	return s.CreateTask(userID, CreateTaskRequest{Type: resolved.TaskType, Operation: resolved.Operation, Prompt: resolved.Prompt, Model: resolved.Model, LogicalModelID: resolved.LogicalModelID, Input: resolved.Input, TraceID: traceID, RequestID: requestID, workbenchKind: req.Kind})
+	if req.Batch != nil {
+		metadata := resolved.Input["metadata"].(map[string]any)
+		snapshot := metadata["workbench"].(map[string]any)
+		snapshot["batch"] = req.Batch
+		resolved.Input["workbenchRequestHash"] = fingerprint
+	}
+	return s.CreateTask(userID, CreateTaskRequest{Type: resolved.TaskType, Operation: resolved.Operation, Prompt: resolved.Prompt, Model: resolved.Model, LogicalModelID: resolved.LogicalModelID, Input: resolved.Input, TraceID: traceID, RequestID: requestID, workbenchKind: req.Kind, workbenchTaskID: taskID})
 }
 
 func (s *Service) WorkbenchTasks(userID, kind string, activeOnly bool, limit int) ([]TaskSummary, error) {

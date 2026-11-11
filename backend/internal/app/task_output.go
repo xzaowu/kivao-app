@@ -8,6 +8,7 @@ import (
 
 	"yingce/backend/internal/kernel"
 	"yingce/backend/internal/model"
+	"yingce/backend/internal/workbench"
 )
 
 // TaskSummary 是任务列表/会话详情的读模型，不直接复用数据库 Task，避免把
@@ -53,6 +54,7 @@ type TaskClientContext struct {
 	NodeID                  string `json:"nodeId,omitempty"`
 	ConversationID          string `json:"conversationId,omitempty"`
 	MessageID               string `json:"messageId,omitempty"`
+	BatchID                 string `json:"batchId,omitempty"`
 	BatchIndex              int    `json:"batchIndex,omitempty"`
 	BatchCount              int    `json:"batchCount,omitempty"`
 	DomainProjectID         string `json:"domainProjectId,omitempty"`
@@ -64,8 +66,24 @@ type TaskClientContext struct {
 }
 
 type TaskBillingSummary struct {
-	AmountMicrocredits int64               `json:"amountMicrocredits"`
-	Status             model.BillingStatus `json:"status"`
+	AmountMicrocredits   int64 `json:"amountMicrocredits"`
+	ReservedMicrocredits int64 `json:"reservedMicrocredits"`
+	// Only settled orders have an actual charge; a reservation is not a charge.
+	ChargedMicrocredits  *int64              `json:"chargedMicrocredits,omitempty"`
+	RefundedMicrocredits int64               `json:"refundedMicrocredits"`
+	Status               model.BillingStatus `json:"status"`
+}
+
+func taskBillingSummary(order model.BillingOrder) *TaskBillingSummary {
+	summary := &TaskBillingSummary{
+		AmountMicrocredits: order.AmountMicrocredits, ReservedMicrocredits: order.AmountMicrocredits,
+		RefundedMicrocredits: order.RefundedAmountMicrocredits, Status: order.Status,
+	}
+	if order.Status == model.BillingStatusSettled {
+		charged := order.ActualAmountMicrocredits
+		summary.ChargedMicrocredits = &charged
+	}
+	return summary
 }
 
 func taskSummariesForOutput(tasks []model.Task) []TaskSummary {
@@ -77,7 +95,7 @@ func taskSummariesForOutputWithBilling(tasks []model.Task, orders map[string]mod
 	for _, task := range tasks {
 		summary := taskSummaryForOutput(task)
 		if order, ok := orders[task.ID]; ok {
-			summary.Billing = &TaskBillingSummary{AmountMicrocredits: order.AmountMicrocredits, Status: order.Status}
+			summary.Billing = taskBillingSummary(order)
 			if summary.ProviderRequestID == "" {
 				summary.ProviderRequestID = order.ProviderRequestID
 			}
@@ -150,7 +168,8 @@ func taskClientContext(raw string) *TaskClientContext {
 			WorkbenchPresetID   string `json:"workbenchPresetId"`
 			WorkbenchPresetName string `json:"workbenchPresetName"`
 			Workbench           struct {
-				References []json.RawMessage `json:"references"`
+				References []json.RawMessage    `json:"references"`
+				Batch      *workbench.TaskBatch `json:"batch"`
 			} `json:"workbench"`
 			Source          string `json:"source"`
 			NodeID          string `json:"nodeId"`
@@ -171,11 +190,18 @@ func taskClientContext(raw string) *TaskClientContext {
 	}
 	metadata := input.Metadata
 	context := &TaskClientContext{NodeID: metadata.NodeID}
-	if metadata.Source == "workbench" && metadata.WorkbenchToolID != "" && metadata.WorkbenchPresetID != "" {
-		context.WorkbenchToolID, context.WorkbenchToolName = metadata.WorkbenchToolID, metadata.WorkbenchToolName
-		context.WorkbenchPresetID, context.WorkbenchPresetName = metadata.WorkbenchPresetID, metadata.WorkbenchPresetName
-		context.WorkbenchReferenceCount = len(metadata.Workbench.References)
-		return context
+	if metadata.Source == "workbench" {
+		if metadata.WorkbenchToolID != "" && metadata.WorkbenchPresetID != "" {
+			context.WorkbenchToolID, context.WorkbenchToolName = metadata.WorkbenchToolID, metadata.WorkbenchToolName
+			context.WorkbenchPresetID, context.WorkbenchPresetName = metadata.WorkbenchPresetID, metadata.WorkbenchPresetName
+			context.WorkbenchReferenceCount = len(metadata.Workbench.References)
+		}
+		if batch := metadata.Workbench.Batch; batch != nil && workbench.ValidateTaskBatch(batch) == nil {
+			context.BatchID, context.BatchIndex, context.BatchCount = batch.ID, batch.Index, batch.Count
+		}
+		if context.WorkbenchToolID != "" || context.BatchID != "" {
+			return context
+		}
 	}
 	if metadata.Source == "create-page" && metadata.ConversationID != "" && metadata.MessageID != "" {
 		context.ConversationID = metadata.ConversationID
@@ -370,7 +396,22 @@ func publicWorkbenchInput(input map[string]any) map[string]any {
 		result["presetId"] = presetID
 	}
 	result["references"] = publicWorkbenchReferences(snapshot["references"], input)
+	if batch := publicWorkbenchBatch(snapshot["batch"]); batch != nil {
+		result["batch"] = batch
+	}
 	return result
+}
+
+func publicWorkbenchBatch(value any) *workbench.TaskBatch {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return nil
+	}
+	var batch *workbench.TaskBatch
+	if json.Unmarshal(encoded, &batch) != nil || workbench.ValidateTaskBatch(batch) != nil {
+		return nil
+	}
+	return batch
 }
 
 func publicWorkbenchParameters(kind string, snapshot, input map[string]any) map[string]any {

@@ -1,6 +1,9 @@
 import { saveAs } from "file-saver";
 import { readZip } from "@/lib/zip";
 import { MediaPackage } from "@/lib/media-package";
+import { createClientUUID } from "@/lib/client-id";
+import { getActiveUserScope } from "@/lib/user-scope";
+import { isResourceUrl } from "@/services/api/resources";
 import { setMediaBlob } from "@/services/file-storage";
 import { setImageBlob } from "@/services/image-storage";
 import type { Asset } from "@/stores/use-asset-store";
@@ -23,6 +26,10 @@ export async function exportAssets(assets: Asset[]): Promise<void> {
 }
 
 export async function readAssetPackage(file: File): Promise<Asset[]> {
+    const scope = getActiveUserScope();
+    const checkScope = () => {
+        if (getActiveUserScope() !== scope) throw new Error("账号已切换，请重新导入素材");
+    };
     const archive = await readZip(file);
     const manifestBlob = archive.get("assets.json");
     if (!manifestBlob) throw new Error("素材包缺少 assets.json");
@@ -64,6 +71,28 @@ export async function readAssetPackage(file: File): Promise<Asset[]> {
         if ("bytes" in entry && entry.bytes !== blob.size) throw new Error(`素材包文件大小不匹配：${entry.path}`);
         return { key: entry.storageKey, blob: blob.slice(0, blob.size, entry.mimeType) };
     });
-    for (const { key, blob } of writes) await (images.has(key) || key.startsWith("image:") ? setImageBlob(key, blob) : setMediaBlob(key, blob));
-    return manifest.assets as Asset[];
+    const importedMedia = new Map<string, { storageKey: string; url: string }>();
+    for (const { key, blob } of writes) {
+        checkScope();
+        const kind = images.has(key) || key.startsWith("image:") ? "image" : blob.type.startsWith("video/") ? "video" : blob.type.startsWith("audio/") ? "audio" : "file";
+        // Source resource IDs belong to the exporting account. Import into fresh local keys.
+        const storageKey = `${kind}:${scope}:${createClientUUID()}`;
+        const url = await (kind === "image" ? setImageBlob(storageKey, blob) : setMediaBlob(storageKey, blob));
+        importedMedia.set(key, { storageKey, url });
+    }
+    checkScope();
+    const assets = structuredClone(manifest.assets) as Asset[];
+    for (const asset of assets) {
+        delete asset.folderId;
+        delete asset.primaryVersionId;
+        if (asset.kind === "text" || asset.kind === "entity") continue;
+        const media = asset.data.storageKey ? importedMedia.get(asset.data.storageKey) : undefined;
+        if (!media) continue;
+        const previousURL = asset.kind === "image" ? asset.data.dataUrl : asset.data.url;
+        asset.data.storageKey = media.storageKey;
+        if (asset.kind === "image") asset.data.dataUrl = media.url;
+        else asset.data.url = media.url;
+        if (asset.coverUrl === previousURL || isResourceUrl(asset.coverUrl)) asset.coverUrl = asset.kind === "image" ? media.url : "";
+    }
+    return assets;
 }

@@ -5,6 +5,27 @@ description: 从产品功能快速定位主要代码入口
 
 # 代码功能地图
 
+## 画布与素材稳定性
+
+- `web/src/lib/canvas/canvas-storage-revision.ts`：快照合并及明确删除墓碑。
+- `web/src/pages/assets/asset-transfer.ts`、`asset-library-bulk.ts`：素材包资源重建、跨账号检查与全量分页操作。
+- `web/src/lib/canvas/canvas-reference-image-size.ts`：面板和生成共用的参考图比例选择；显式尺寸优先。
+- `web/src/components/canvas/canvas-mention-hover-preview.tsx`、`canvas-mention-editable.ts`：悬停预览、引用边界、选区及异步引用重绘；标题摘要在 `canvas-generation-title.ts`。
+- `backend/internal/app/task_output.go`、`web/src/lib/generation-task-billing.ts`：订单计费摘要与费用展示，不修改结算规则。
+- `web/src/components/canvas/canvas-node-text-edit-dialog.tsx`、`canvas-node-text-detection.ts`：手动识别入口、能力/计费说明及切图后的旧结果隔离；提交仍在 `use-canvas-media-tools.ts`。
+- `plugin-packages/package-directories.mjs`：文档嵌入与发行打包共用的唯一来源选择。
+- `backend/internal/app/logical_models.go`、`logical_models_admin_test.go`：后台列表按模型隔离配置解析失败，保留管理员权限和数据库错误语义。
+
+## 坤肉视频直连
+
+- `plugin-packages/kivao-kunrou-video/` 与同名 `.yingce-plugin`：沿用原插件 ID 的供应商直连版本；Veo/Omni、Grok 使用 `/v1/videos`，SD 使用 `/v1/tasks/sora`，统一查询任务，并按直链或同源鉴权接口下载结果。
+- `backend/internal/protocol/kunrou_direct_video_plugin_test.go`：九个型号的请求字段、旧中转模型名拒绝、Google 原有参数限制、Grok 音频开关、SD 素材 URL 及本地 Stub 创建/查询/下载回归。未修改协议宿主或数据库。
+
+## 坤肉 Chat 音频
+
+- `plugin-packages/kunrou-chat-audio/` 与同名 `.yingce-plugin`：独立音频协议，向 Chat Completions 提交非流式请求，从 `data[].url` 提取音频；复用宿主安全下载，不修改通用 Speech、文本 Chat 或异步协议。
+- `backend/internal/protocol/kunrou_audio_plugin_test.go`：实际插件包加载、五模型请求、可选音乐参数与参考图、无效选项拒绝、HTTP Stub 音频下载及失败响应回归。
+
 ## 易支付多支付方式
 
 - `backend/payment-sdk/methods.go`：开放方式与默认值校验；`payment-plugins/epay.go`：选择映射到单个上游 `type` 并签名。`internal/app/payment.go`：订单固定方式、幂等检查与刷新；`internal/database/migrations.go`：Schema 79。
@@ -55,6 +76,9 @@ description: 从产品功能快速定位主要代码入口
 - `backend/internal/workbench/default_examples.go`：按图片/视频分类读写默认作品示例，复用已有系统设置、资源归属校验、展示 URL 及审计；未选择场景时由工具目录一并返回。
 - `pages/admin/workbench-tools/workbench-tools-page.tsx` 复用画布引用编辑器维护模板；`pages/workbench/image-workbench-page.tsx` 同时负责图片/视频的素材表单、执行提示词拼装和再次生成；`pages/tasks/` 复用摘要展示。
 - `backend/internal/workbench/tasks.go` 保留原模板和补充要求快照，继续校验资源归属、输入数量及角色；`internal/app/task_output.go` 投影任务列表所需的工具名称、效果和素材数量。不新增数据表或迁移。
+- `pages/workbench/workbench-batches.ts`：批量拆单、报价次数、任务归组与未知结果状态；`workbench-batch-status.tsx`：回执查询、续提和取消未提交项；`workbench-batch-storage.ts`：账号及工作台类型隔离的意图暂存、字段白名单和刷新恢复。`image-workbench-page.tsx` 保留现有页面，系统渠道及逻辑模型接入批量流程。
+- `pages/workbench/workbench-image-results.tsx`：解析单任务全部图片产物，结果区与详情区共用多图网格；成功摘要缺少完整产物时只读补取所选任务详情，同一任务版本的普通轮询不重取，切号/切任务/卸载取消请求，失败可显式重读；单图继续使用原预览。`workbench.css` 的底部模型栏分行，报价和生成按钮不互相挤压。
+- `backend/internal/app/workbench_batch.go`：批次身份、请求指纹、当前用户回执查询及完成输入精简后的指纹保留；`workbench_bridge.go` 组合领域校验与任务创建，私有 `CreateTaskRequest.workbenchTaskID` 固定任务主键。沿用仓储事务中的任务主键与积分预占回滚，无 Schema 变更；`handler/workbench.go` 和 `openapi.yaml` 提供回执 GET 合同。
 
 ## 短剧自动制作
 

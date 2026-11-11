@@ -29,6 +29,7 @@ import { createGenerationTask, cancelGenerationTask, queryGenerationTask, retryG
 import {
     capabilitySupportedModes,
     createWorkbenchTask,
+    queryWorkbenchBatchTask,
     listWorkbenchTasks,
     listWorkbenchTools,
     workbenchExamples,
@@ -50,6 +51,10 @@ import { useUserStore } from "@/stores/use-user-store";
 import { workbenchCategoryLabel, workbenchCategories } from "./workbench-catalog";
 import { missingWorkbenchInput, workbenchPromptRequired, workbenchVideoOperation } from "./workbench-input";
 import { resolveWorkbenchAsset, selectWorkbenchReferences, type WorkbenchMediaAsset } from "./workbench-references";
+import { newWorkbenchBatch, recoverWorkbenchBatch, submitWorkbenchBatch, workbenchBatchPlan, workbenchBatchLimit, workbenchQuoteParts, workbenchTaskGroups, type WorkbenchBatch } from "./workbench-batches";
+import { WorkbenchBatchStatus } from "./workbench-batch-status";
+import { loadWorkbenchBatch, saveWorkbenchBatch } from "./workbench-batch-storage";
+import { WorkbenchImageResults, workbenchImageResults } from "./workbench-image-results";
 import "./workbench.css";
 import "./workbench-count-picker.css";
 
@@ -139,8 +144,8 @@ export function workbenchTaskSnapshot(task: GenerationTask): WorkbenchTaskSnapsh
 function taskPreview(task: GenerationTask) {
     if (task.previewUrl) return task.previewUrl;
     try {
-        const result = task.resultJson ? (JSON.parse(task.resultJson) as { images?: Array<{ url?: string; dataUrl?: string }>; video?: { url?: string; dataUrl?: string } }) : null;
-        return task.previewKind === "video" ? result?.video?.url || result?.video?.dataUrl || "" : result?.images?.[0]?.url || result?.images?.[0]?.dataUrl || "";
+        const result = task.resultJson ? (JSON.parse(task.resultJson) as { video?: { url?: string; dataUrl?: string } }) : null;
+        return task.previewKind === "video" || task.type === "canvas_video" ? result?.video?.url || result?.video?.dataUrl || "" : workbenchImageResults(task)[0] || "";
     } catch {
         return "";
     }
@@ -188,6 +193,15 @@ function toolVisual(tool: WorkbenchTool, kind: WorkbenchKind) {
 export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
     const { message } = App.useApp();
     const userId = useUserStore((state) => state.user?.id);
+    const activeTaskLimit = useUserStore((state) => state.runtimeLimits.activeTaskLimit);
+    const batchScope = useMemo(() => Symbol("workbench-scope"), [userId, kind]);
+    const batchScopeRef = useRef<symbol | null>(batchScope);
+    batchScopeRef.current = batchScope;
+    const batchWorking = useRef(false);
+    const [batchState, setBatchState] = useState<{ scope: symbol; batch: WorkbenchBatch } | null>(null);
+    const batch = batchState?.scope === batchScope ? batchState.batch : null;
+    const [batchStorageReady, setBatchStorageReady] = useState(false);
+    const [batchStorageError, setBatchStorageError] = useState("");
     const assets = useAssetStore((state) => state.assets);
     const [libraryOpen, setLibraryOpen] = useState(false);
     const [librarySlotKey, setLibrarySlotKey] = useState<string>();
@@ -254,6 +268,7 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
     const [quality, setQuality] = useState("auto");
     const [imageResolution, setImageResolution] = useState("auto");
     const [count, setCount] = useState("1");
+    const [batchOutputCount, setBatchOutputCount] = useState("1");
     const [seconds, setSeconds] = useState("6");
     const [videoQuality, setVideoQuality] = useState("720");
     const capability = kind;
@@ -279,7 +294,13 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
     const missingInput = missingWorkbenchInput(activeTool, references);
     const activeTasks = useMemo(() => tasks.filter((task) => task.status === "queued" || task.status === "running"), [tasks]);
     const historyTasks = useMemo(() => tasks.filter((task) => task.status !== "queued" && task.status !== "running"), [tasks]);
-    const selectedCount = Number(count) || 1;
+    const batchEnabled = !isDepthCapture && Boolean(selectedModel) && (Boolean(logicalModelIDForConfig({ ...config, model: selectedModel })) || resolveModelChannel(config, selectedModel).scope === "system");
+    const batchOutputLimit = workbenchBatchLimit(kind, imageProfile?.maxOutputs || 1, activeTaskLimit);
+    const batchPlan = useMemo(
+        () => (batchEnabled ? workbenchBatchPlan(kind, Math.min(Number(batchOutputCount), batchOutputLimit), imageProfile?.maxOutputs) : [kind === "image" ? Number(count) || 1 : 1]),
+        [batchEnabled, batchOutputCount, batchOutputLimit, count, imageProfile?.maxOutputs, kind],
+    );
+    const selectedCount = batchPlan[0];
     const orderedReferences = useMemo(() => orderedWorkbenchReferences(activeTool, references), [activeTool, references]);
     const referenceLabels = useMemo(() => workbenchReferenceLabels(orderedReferences), [orderedReferences]);
     const promptReferences = useMemo<CanvasResourceReference[]>(
@@ -310,8 +331,8 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                 ? { ...config, model: selectedModel, videoModel: selectedModel, size: "", vquality: "" }
                 : kind === "video" && selectedModel
                   ? creationVideoConfig(config, selectedModel, { ratio, seconds, videoQuality })
-                  : { ...config, model: selectedModel, imageModel: selectedModel, size: ratio, quality, imageResolution, count },
-        [config, count, imageResolution, kind, quality, ratio, seconds, selectedModel, videoQuality, isDepthCapture],
+                  : { ...config, model: selectedModel, imageModel: selectedModel, size: ratio, quality, imageResolution, count: String(selectedCount) },
+        [config, selectedCount, imageResolution, kind, quality, ratio, seconds, selectedModel, videoQuality, isDepthCapture],
     );
 
     useEffect(() => {
@@ -363,6 +384,7 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
             setQuality(normalized.quality);
             setImageResolution(normalized.imageResolution || imageProfile.resolution.default || "auto");
             setCount(normalized.count);
+            setBatchOutputCount(normalized.count);
         } else {
             const normalized = normalizeVideoValue(videoProfile, {
                 seconds: saved.video?.seconds || String(videoProfile.duration.default),
@@ -471,18 +493,26 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
             return () => controller.abort();
         }
         const priceChannel = resolveModelChannel(config, selectedModel);
-        const localCredits = requestCreditCost({
-            channelMode: priceChannel.scope === "system" ? "remote" : "local",
-            modelCosts: priceChannel.modelCosts,
-            model: modelOptionName(selectedModel),
-            count: kind === "image" ? selectedCount : 1,
-            seconds: kind === "video" ? Number(seconds) || 1 : 1,
-            capability,
-            config: composerConfig,
-            requirements: quoteRequirements,
+        const parts = workbenchQuoteParts(batchPlan).map(({ outputs, requests }) => {
+            const requirements = kind === "image" ? { ...quoteRequirements, options: { ...quoteRequirements.options, count: outputs } } : quoteRequirements;
+            const partConfig = { ...composerConfig, count: String(outputs) };
+            return {
+                requests,
+                request: modelQuoteRequest(partConfig, selectedModel, capability, requirements),
+                local: requestCreditCost({
+                    channelMode: priceChannel.scope === "system" ? "remote" : "local",
+                    modelCosts: priceChannel.modelCosts,
+                    model: modelOptionName(selectedModel),
+                    count: kind === "image" ? outputs : 1,
+                    seconds: kind === "video" ? Number(seconds) || 1 : 1,
+                    capability,
+                    config: partConfig,
+                    requirements,
+                }),
+            };
         });
-        const request = modelQuoteRequest(composerConfig, selectedModel, capability, quoteRequirements);
-        if (!request) {
+        const localCredits = parts.some((part) => part.local === null) ? null : parts.reduce((sum, part) => sum + part.local! * part.requests, 0);
+        if (parts.every((part) => !part.request)) {
             setEstimateCredits(localCredits);
             setEstimateEstimated(false);
             setEstimateTone(localCredits === null ? "usage" : "local");
@@ -494,10 +524,17 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
             setEstimateCredits(localCredits);
             setEstimateTone("local");
         }
-        quoteModel(request, controller.signal)
-            .then(({ quote }) => {
-                setEstimateCredits(quote.amountMicrocredits / 1_000_000);
-                setEstimateEstimated(quote.estimated === true);
+        Promise.all(
+            parts.map(async (part) => {
+                if (!part.request) throw new Error("Missing quote");
+                const { quote } = await quoteModel(part.request, controller.signal);
+                return { credits: (quote.amountMicrocredits / 1_000_000) * part.requests, estimated: quote.estimated === true };
+            }),
+        )
+            .then((quotes) => {
+                if (controller.signal.aborted) return;
+                setEstimateCredits(quotes.reduce((sum, quote) => sum + quote.credits, 0));
+                setEstimateEstimated(quotes.some((quote) => quote.estimated));
                 setEstimateTone("quote");
             })
             .catch(() => {
@@ -507,25 +544,51 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                 setEstimateTone(localCredits === null ? "unavailable" : "local");
             });
         return () => controller.abort();
-    }, [capability, composerConfig, config, creditsEnabled, kind, quoteRequirements, seconds, selectedCount, selectedModel, userId, isDepthCapture, depthQuoteIdentity, references]);
+    }, [capability, composerConfig, config, creditsEnabled, kind, quoteRequirements, seconds, batchPlan, selectedModel, userId, isDepthCapture, depthQuoteIdentity, references]);
 
     const loadTasks = useCallback(
         async (signal?: AbortSignal) => {
             if (!userId) return [];
             try {
                 const result = await listWorkbenchTasks(kind, 100, false, signal);
-                if (signal?.aborted) return [];
+                if (signal?.aborted || batchScopeRef.current !== batchScope || useUserStore.getState().user?.id !== userId) return [];
                 setTasks(result);
                 return result;
             } catch (error) {
-                if (!signal?.aborted) message.error(error instanceof Error ? error.message : "任务列表加载失败");
+                if (!signal?.aborted && batchScopeRef.current === batchScope) message.error(error instanceof Error ? error.message : "任务列表加载失败");
                 return [];
             } finally {
-                if (!signal?.aborted) setTasksLoading(false);
+                if (!signal?.aborted && batchScopeRef.current === batchScope) setTasksLoading(false);
             }
         },
-        [kind, message, userId],
+        [kind, message, userId, batchScope],
     );
+
+    useEffect(() => {
+        batchScopeRef.current = batchScope;
+        batchWorking.current = false;
+        setBatchState(null);
+        setBatchStorageReady(false);
+        setBatchStorageError("");
+        setBusy(false);
+        setTasks([]);
+        setActiveTask(null);
+        setDetailTask(null);
+        if (!userId) setBatchStorageReady(true);
+        else
+            void loadWorkbenchBatch(userId, kind)
+                .then((restored) => {
+                    if (batchScopeRef.current !== batchScope || useUserStore.getState().user?.id !== userId) return;
+                    if (restored) setBatchState({ scope: batchScope, batch: restored });
+                    setBatchStorageReady(true);
+                })
+                .catch(() => {
+                    if (batchScopeRef.current === batchScope) setBatchStorageError("暂存任务读取失败，请刷新重试；先核对任务历史，避免重复提交。");
+                });
+        return () => {
+            if (batchScopeRef.current === batchScope) batchScopeRef.current = null;
+        };
+    }, [batchScope, userId, kind]);
 
     useEffect(() => {
         if (!userId) {
@@ -774,8 +837,62 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
         if (!templateMode) setPrompt((current) => current.split(canvasNodeMentionToken(reference.resourceId || reference.id)).join(""));
     };
 
+    const processBatch = async (currentBatch: WorkbenchBatch, mode: "submit" | "query" | "retry" | "discard") => {
+        if (!userId || batchWorking.current || batchScopeRef.current !== batchScope || useUserStore.getState().user?.id !== userId) return;
+        batchWorking.current = true;
+        setBusy(true);
+        const current = () => batchScopeRef.current === batchScope && useUserStore.getState().user?.id === userId;
+        const update = async (value: WorkbenchBatch) => {
+            await saveWorkbenchBatch(userId, kind, value);
+            if (current()) setBatchState({ scope: batchScope, batch: value });
+        };
+        setBatchState({ scope: batchScope, batch: currentBatch });
+        try {
+            if (mode === "discard") {
+                if (currentBatch.items.some((item) => item.state === "unknown" || item.state === "submitting")) return;
+                await saveWorkbenchBatch(userId, kind, null);
+                if (current()) setBatchState(null);
+                return;
+            }
+            const next =
+                mode !== "query"
+                    ? await submitWorkbenchBatch(currentBatch, { create: createWorkbenchTask, current, update, retryUnknown: mode === "retry" })
+                    : await recoverWorkbenchBatch(currentBatch, { current, update, query: (input) => queryWorkbenchBatchTask(input.kind, input.batch!.id, input.batch!.index) });
+            if (!current()) return;
+            const accepted = next.items.filter((item) => item.state === "accepted");
+            if (accepted.length === next.items.length) {
+                await saveWorkbenchBatch(userId, kind, null);
+                if (!current()) return;
+                setBatchState(null);
+                message.success(`已提交 ${accepted.length} 个任务，共 ${next.items.reduce((sum, item) => sum + item.outputs, 0)} ${kind === "image" ? "张图片" : "条视频"}`);
+            }
+            await loadTasks();
+            if (!current()) return;
+            const last = accepted.at(-1);
+            if (last?.taskId) {
+                try {
+                    const task = await queryGenerationTask(last.taskId);
+                    if (!current()) return;
+                    setActiveTask(task);
+                    setResultHidden(false);
+                    // Leave partial submission controls visible on mobile.
+                    if (accepted.length === next.items.length) setMobileTab("result");
+                } catch {
+                    if (current()) message.warning("任务已受理，详情暂不可用，请在任务列表查看；无需重新提交");
+                }
+            }
+        } catch {
+            if (current()) message.error(mode === "query" ? "任务回执暂不可用，请稍后查询" : "本批提交中断，可能已受理的任务请先查询回执；暂存状态写入失败时不会继续提交。");
+        } finally {
+            if (current()) {
+                batchWorking.current = false;
+                setBusy(false);
+            }
+        }
+    };
+
     const submit = async () => {
-        if (busy) return;
+        if (busy || batchWorking.current || batch || (batchEnabled && !batchStorageReady)) return;
         if (!useUserStore.getState().user) {
             useAuthDialogStore.getState().openDialog();
             return;
@@ -823,7 +940,10 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
         }
         setBusy(true);
         try {
-            const imageRequest = kind === "image" && imageProfile ? normalizeImageValue(imageProfile, { size: ratio, quality, imageResolution, imageParameters: config.imageParameters, count, transparentBackground: config.transparentBackground }) : null;
+            const imageRequest =
+                kind === "image" && imageProfile
+                    ? normalizeImageValue(imageProfile, { size: ratio, quality, imageResolution, imageParameters: config.imageParameters, count: String(selectedCount), transparentBackground: config.transparentBackground })
+                    : null;
             const videoRequest = !isDepthCapture && kind === "video" && videoProfile ? normalizeVideoValue(videoProfile, { seconds, ratio, resolution: videoQuality }) : null;
             const parameters = isDepthCapture
                 ? {}
@@ -845,6 +965,26 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
             const readyReferences = orderedReferences.filter((reference) => reference.resourceId);
             const videoOperation = kind === "video" ? workbenchVideoOperation(readyReferences) : undefined;
             const referenceSnapshot = readyReferences.map((reference) => ({ resourceId: reference.resourceId!, kind: reference.kind, role: reference.role, ...(reference.slotKey ? { slotKey: reference.slotKey } : {}) }));
+            if (batchEnabled) {
+                await processBatch(
+                    newWorkbenchBatch(
+                        {
+                            kind,
+                            ...(tool ? { toolId: tool.id } : {}),
+                            ...(tool && preset ? { presetId: preset.id } : {}),
+                            prompt: submittedPrompt,
+                            ...(templateMode ? { userPrompt: userPrompt.trim() } : {}),
+                            model: modelOptionName(selectedModel),
+                            ...(logicalModelId ? { logicalModelId } : { channelId: channel.id }),
+                            parameters,
+                            references: referenceSnapshot,
+                        },
+                        batchPlan,
+                    ),
+                    "submit",
+                );
+                return;
+            }
             const createdTask =
                 logicalModelId || channel?.scope === "system"
                     ? await createWorkbenchTask({
@@ -908,8 +1048,19 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                               ...(tool && preset ? { workbenchPresetId: preset.id, workbenchPresetName: preset.name } : {}),
                               workbench: { kind, ...(tool ? { toolId: tool.id } : {}), ...(tool && preset ? { presetId: preset.id, presetPrompt: prompt, userPrompt: userPrompt.trim() } : {}), parameters, references: referenceSnapshot },
                           },
-                      }).then((taskInput) => createGenerationTask({ ...taskInput, ...(videoOperation ? { operation: videoOperation } : {}) }));
-            const task = await queryGenerationTask(createdTask.id);
+                      }).then((taskInput) => {
+                          if (batchScopeRef.current !== batchScope || useUserStore.getState().user?.id !== userId) throw new DOMException("User scope changed", "AbortError");
+                          return createGenerationTask({ ...taskInput, ...(videoOperation ? { operation: videoOperation } : {}) });
+                      });
+            let task: GenerationTask;
+            try {
+                task = await queryGenerationTask(createdTask.id);
+            } catch {
+                message.warning("任务已受理，详情暂不可用，请在任务列表查看；无需重新提交");
+                void loadTasks();
+                return;
+            }
+            if (batchScopeRef.current !== batchScope || useUserStore.getState().user?.id !== userId) return;
             setTasks((current) => [task, ...current.filter((item) => item.id !== task.id)]);
             if (revision === workbenchRevisionRef.current) {
                 setResultHidden(false);
@@ -918,9 +1069,9 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
             }
             message.success("生成任务已提交");
         } catch (error) {
-            message.error(error instanceof Error ? error.message : "任务提交失败");
+            if (batchScopeRef.current === batchScope && useUserStore.getState().user?.id === userId) message.error(error instanceof Error ? error.message : "任务提交失败");
         } finally {
-            setBusy(false);
+            if (batchScopeRef.current === batchScope && useUserStore.getState().user?.id === userId) setBusy(false);
         }
     };
 
@@ -964,6 +1115,7 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
             setQuality(restoredQuality);
             setImageResolution(restoredResolution);
             setCount(restoredCount);
+            setBatchOutputCount(restoredCount);
             rememberImageSettings({ ratio: restoredRatio, quality: restoredQuality, imageResolution: restoredResolution, count: restoredCount });
         } else {
             const restoredSeconds = parameters.seconds != null ? String(parameters.seconds) : seconds;
@@ -972,6 +1124,7 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
             setSeconds(restoredSeconds);
             setRatio(restoredRatio);
             setVideoQuality(restoredQuality);
+            setBatchOutputCount("1");
             rememberVideoSettings({ seconds: restoredSeconds, ratio: restoredRatio, videoQuality: restoredQuality });
             if (typeof parameters.generateAudio === "boolean") updateConfig("videoGenerateAudio", String(parameters.generateAudio));
             if (typeof parameters.watermark === "boolean") updateConfig("videoWatermark", String(parameters.watermark));
@@ -1092,16 +1245,20 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                     </label>
                 ) : null}
                 <CountPicker
-                    value={count}
-                    max={imageProfile.maxOutputs}
+                    value={batchEnabled ? String(batchPlan.reduce((sum, value) => sum + value, 0)) : count}
+                    max={batchEnabled ? batchOutputLimit : imageProfile.maxOutputs}
                     onChange={(value) => {
-                        setCount(value);
-                        rememberImageSettings({ count: value });
+                        if (batchEnabled) setBatchOutputCount(value);
+                        else {
+                            setCount(value);
+                            rememberImageSettings({ count: value });
+                        }
                     }}
                 />
             </div>
         ) : videoProfile ? (
             <div className="workbench-settings-content">
+                {batchEnabled ? <CountPicker value={String(batchPlan.length)} max={batchOutputLimit} unit="条" onChange={setBatchOutputCount} /> : null}
                 <ParameterChips
                     label="视频时长"
                     value={seconds}
@@ -1503,6 +1660,21 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                                     </section>
                                 ) : null}
                             </div>
+                            {batchStorageError ? (
+                                <p role="alert" className="workbench-list-empty">
+                                    {batchStorageError}
+                                </p>
+                            ) : null}
+                            {batch ? (
+                                <WorkbenchBatchStatus
+                                    batch={batch}
+                                    busy={busy}
+                                    onQuery={() => void processBatch(batch, "query")}
+                                    onContinue={() => void processBatch(batch, "submit")}
+                                    onRetry={() => void processBatch(batch, "retry")}
+                                    onDismiss={() => void processBatch(batch, "discard")}
+                                />
+                            ) : null}
                             <div className={`workbench-composer-dock${isDepthCapture ? " workbench-depth-dock" : ""}`} aria-label="生成设置">
                                 {isDepthCapture && models.length ? (
                                     <Select aria-label="深度动作捕捉模型" className="w-full" value={selectedModel} options={models.map((value) => ({ value, label: modelDisplayName(config, value) }))} onChange={setDepthModel} />
@@ -1562,6 +1734,8 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                                             Boolean(templateResolution?.error) ||
                                             referenceLimitExceeded ||
                                             Boolean(missingInput) ||
+                                            Boolean(batch) ||
+                                            (batchEnabled && !batchStorageReady) ||
                                             (isDepthCapture && depthReadyFor !== depthQuoteIdentity) ||
                                             !selectedModel ||
                                             references.some((reference) => reference.uploading || Boolean(reference.error) || !reference.resourceId))
@@ -1643,11 +1817,7 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                                 </div>
                             ) : resultTask.status === "succeeded" && resultUrl ? (
                                 <div className="workbench-result-media">
-                                    {resultTask.previewKind === "video" || kind === "video" ? (
-                                        <video src={resultUrl} controls playsInline />
-                                    ) : (
-                                        <MediaPreview src={resultUrl} kind="image" alt="生成结果" className="size-full object-contain" fallbackLabel="结果暂不可用" />
-                                    )}
+                                    {resultTask.previewKind === "video" || kind === "video" ? <video src={resultUrl} controls playsInline /> : <WorkbenchImageResults task={resultTask} src={resultUrl} />}
                                     <div className="workbench-result-caption">
                                         <span>{taskModelLabel(resultTask)}</span>
                                         <Button size="small" icon={<Expand className="size-3.5" />} onClick={() => setDetailTask(resultTask)}>
@@ -1679,7 +1849,13 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                             </div>
                             <div className="workbench-task-list">
                                 {activeTasks.length ? (
-                                    activeTasks.map((task) => <TaskRow key={task.id} task={task} kind={kind} modelLabel={taskModelLabel(task)} busy={taskBusyId === task.id} onOpen={() => void openDetail(task)} onCancel={() => void cancelTask(task)} />)
+                                    workbenchTaskGroups(activeTasks).map((group) => (
+                                        <div key={group.id}>
+                                            {group.tasks.map((task) => (
+                                                <TaskRow key={task.id} task={task} kind={kind} modelLabel={taskModelLabel(task)} busy={taskBusyId === task.id} onOpen={() => void openDetail(task)} onCancel={() => void cancelTask(task)} />
+                                            ))}
+                                        </div>
+                                    ))
                                 ) : (
                                     <p className="workbench-list-empty">暂无进行中的任务</p>
                                 )}
@@ -1697,10 +1873,13 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                                 {tasksLoading ? (
                                     <Spin size="small" />
                                 ) : (
-                                    historyTasks
-                                        .filter((task) => !query.trim() || workbenchTaskLabel(task).toLowerCase().includes(query.trim().toLowerCase()))
-                                        .slice(0, 30)
-                                        .map((task) => <TaskRow key={task.id} task={task} kind={kind} modelLabel={taskModelLabel(task)} busy={taskBusyId === task.id} onOpen={() => void openDetail(task)} onRetry={() => void retryTask(task)} />)
+                                    workbenchTaskGroups(historyTasks.filter((task) => !query.trim() || workbenchTaskLabel(task).toLowerCase().includes(query.trim().toLowerCase())).slice(0, 30)).map((group) => (
+                                        <div key={group.id}>
+                                            {group.tasks.map((task) => (
+                                                <TaskRow key={task.id} task={task} kind={kind} modelLabel={taskModelLabel(task)} busy={taskBusyId === task.id} onOpen={() => void openDetail(task)} onRetry={() => void retryTask(task)} />
+                                            ))}
+                                        </div>
+                                    ))
                                 )}
                                 {!tasksLoading && !historyTasks.length ? <p className="workbench-list-empty">完成的作品会保留在这里</p> : null}
                             </div>
@@ -1750,7 +1929,7 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                                 detailTask.previewKind === "video" || kind === "video" ? (
                                     <video src={taskPreview(detailTask)} controls playsInline />
                                 ) : (
-                                    <MediaPreview src={taskPreview(detailTask)} kind="image" alt="生成结果" className="size-full object-contain" />
+                                    <WorkbenchImageResults task={detailTask} src={taskPreview(detailTask)} />
                                 )
                             ) : (
                                 <div className="workbench-guide-empty">{displayTaskState(detailTask)}</div>
@@ -1814,7 +1993,7 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
     );
 }
 
-function CountPicker({ value, max, onChange }: { value: string; max: number; onChange: (value: string) => void }) {
+function CountPicker({ value, max, unit = "张", onChange }: { value: string; max: number; unit?: "张" | "条"; onChange: (value: string) => void }) {
     const limit = Math.max(1, max || 15);
     const current = Math.min(limit, Math.max(1, Math.floor(Number(value) || 1)));
     const isSelected = current >= 4;
@@ -1877,7 +2056,7 @@ function CountPicker({ value, max, onChange }: { value: string; max: number; onC
 
     return (
         <div className="workbench-count-picker">
-            <span>生成张数</span>
+            <span>{unit === "张" ? "生成张数" : "生成条数"}</span>
             <div>
                 {Array.from({ length: Math.min(3, limit) }, (_, index) => index + 1).map((item) => (
                     <button key={item} type="button" aria-pressed={current === item} className={current === item ? "is-active" : ""} onClick={() => onChange(String(item))}>
@@ -1889,7 +2068,7 @@ function CountPicker({ value, max, onChange }: { value: string; max: number; onC
                         <input
                             type="text"
                             inputMode="numeric"
-                            aria-label="自定义生成张数"
+                            aria-label={unit === "张" ? "自定义生成张数" : "自定义生成条数"}
                             value={draftValue}
                             onChange={handleInputChange}
                             onBlur={handleInputBlur}
@@ -1902,10 +2081,10 @@ function CountPicker({ value, max, onChange }: { value: string; max: number; onC
                             }}
                         />
                         <div className="workbench-count-stepper-controls">
-                            <button type="button" tabIndex={-1} onClick={handleStepUp} disabled={current >= limit && isSelected} className="workbench-count-stepper-btn" title="增加 1 张" aria-label="增加 1 张">
+                            <button type="button" tabIndex={-1} onClick={handleStepUp} disabled={current >= limit && isSelected} className="workbench-count-stepper-btn" title={`增加 1 ${unit}`} aria-label={`增加 1 ${unit}`}>
                                 <ChevronUp className="size-2.5" />
                             </button>
-                            <button type="button" tabIndex={-1} onClick={handleStepDown} disabled={current <= 1 && isSelected} className="workbench-count-stepper-btn" title="减少 1 张" aria-label="减少 1 张">
+                            <button type="button" tabIndex={-1} onClick={handleStepDown} disabled={current <= 1 && isSelected} className="workbench-count-stepper-btn" title={`减少 1 ${unit}`} aria-label={`减少 1 ${unit}`}>
                                 <ChevronDown className="size-2.5" />
                             </button>
                         </div>
@@ -2104,6 +2283,7 @@ function TaskRow({ task, kind, modelLabel, busy, onOpen, onCancel, onRetry }: { 
                     <small>{workbenchTaskLabel(task)}</small>
                     <em>
                         {displayTaskState(task)} · {elapsedLabel(task)}
+                        {task.clientContext?.batchId && task.clientContext.batchCount ? ` · 本批 ${(task.clientContext.batchIndex || 0) + 1}/${task.clientContext.batchCount}` : ""}
                     </em>
                 </span>
             </button>

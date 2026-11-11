@@ -25,6 +25,28 @@ type TaskInput struct {
 	ModelChoice    *ModelChoice    `json:"modelChoice,omitempty"`
 	Parameters     map[string]any  `json:"parameters,omitempty"`
 	References     []TaskReference `json:"references,omitempty"`
+	Batch          *TaskBatch      `json:"batch,omitempty"`
+}
+
+type TaskBatch struct {
+	ID    string `json:"id"`
+	Index int    `json:"index"`
+	Count int    `json:"count"`
+}
+
+func ValidateTaskBatch(batch *TaskBatch) error {
+	if batch == nil {
+		return nil
+	}
+	if len(batch.ID) < 8 || len(batch.ID) > 64 || batch.Count < 1 || batch.Count > 20 || batch.Index < 0 || batch.Index >= batch.Count {
+		return kernel.BadAuthRequest("批量任务标识或序号无效")
+	}
+	for _, c := range batch.ID {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '_') {
+			return kernel.BadAuthRequest("批量任务标识无效")
+		}
+	}
+	return nil
 }
 
 type TaskWorkbench struct {

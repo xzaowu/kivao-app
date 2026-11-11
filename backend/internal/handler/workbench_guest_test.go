@@ -98,7 +98,7 @@ func TestWorkbenchGuestCatalogRespectsFeatureAndAuthentication(t *testing.T) {
 			t.Fatal("guest default example projection missing")
 		}
 	}
-	for _, path := range []string{"/api/workbench/tasks?kind=image", "/api/admin/workbench/tools", "/api/admin/settings/features"} {
+	for _, path := range []string{"/api/workbench/tasks?kind=image", "/api/workbench/batches/fixture-batch/tasks/0?kind=image", "/api/admin/workbench/tools", "/api/admin/settings/features"} {
 		if r := request(http.MethodGet, path); r.Code != http.StatusUnauthorized {
 			t.Fatalf("guest GET %s status=%d, want 401", path, r.Code)
 		}

@@ -714,6 +714,19 @@ html:not(.dark) .creation-home .creation-chat-composer .creation-model-picker.ca
     max-width: 100%;
 }
 
+@media (max-width: 720px) {
+    .canvas-model-picker-option-heading > span:first-child {
+        flex: 1 0 100%;
+        align-items: flex-start;
+    }
+
+    .canvas-model-picker-option-heading .canvas-model-picker-option-name {
+        white-space: normal;
+        overflow-wrap: anywhere;
+        line-height: 1.4;
+    }
+}
+
 .canvas-model-picker-description {
     font-size: var(--fs-caption);
     min-height: 1.5em;

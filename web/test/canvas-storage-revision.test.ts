@@ -112,4 +112,43 @@ test("a generation target deleted while the task was running still reports a del
     const result = rebaseCanvasProjects({ document, baseProjects: [project(before)], localProjects: [project(completed)], baseRevision: 0 });
 
     expect(result.conflicts).toContainEqual({ kind: "node", id: "image", projectId: "canvas" });
+    expect(result.document.state.projects[0]!.nodes[0]!.metadata?.storageKey).toBe("resource:image");
+    expect(result.document.tombstones.nodes.canvas?.image).toBeUndefined();
+});
+
+test("a missing durable snapshot does not turn a completed generation into a deletion conflict", () => {
+    const before = node({ taskId: "task", status: "loading" });
+    const completed = node({ taskId: "task", status: "success", storageKey: "resource:result" });
+    for (const missingProject of [false, true]) {
+        const document = parseCanvasStorageDocument(null, missingProject ? [] : [{ ...project(before), nodes: [] }]);
+        const result = rebaseCanvasProjects({ document, baseProjects: [project(before)], localProjects: [project(completed)], baseRevision: 0 });
+        expect(result.conflicts).toEqual([]);
+        expect(result.document.state.projects[0]!.nodes[0]).toEqual(completed);
+    }
+});
+
+test("a tombstone already seen by the writer does not suppress a recreated node", () => {
+    const before = node({ taskId: "task", status: "loading" });
+    const completed = node({ taskId: "task", status: "success", storageKey: "resource:result" });
+    const document = parseCanvasStorageDocument(null, [{ ...project(before), nodes: [] }]);
+    document.storageRevision = 2;
+    document.tombstones.nodes.canvas = { image: 2 };
+    const result = rebaseCanvasProjects({ document, baseProjects: [project(before)], localProjects: [project(completed)], baseRevision: 2 });
+    expect(result.conflicts).toEqual([]);
+    expect(result.document.state.projects[0]!.nodes[0]).toEqual(completed);
+    expect(result.document.tombstones.nodes.canvas?.image).toBeUndefined();
+});
+
+test("an explicit local deletion still writes a tombstone and preserves concurrent edits", () => {
+    const before = node({ status: "loading" });
+    const deleted = { ...project(before), nodes: [] };
+    const document = parseCanvasStorageDocument(null, [project(before)]);
+    const result = rebaseCanvasProjects({ document, baseProjects: [project(before)], localProjects: [deleted], baseRevision: 0 });
+    expect(result.document.state.projects[0]!.nodes).toEqual([]);
+    expect(result.document.tombstones.nodes.canvas?.image).toBeGreaterThan(0);
+
+    const changed = { ...before, title: "Concurrent rename" };
+    const concurrent = rebaseCanvasProjects({ document: parseCanvasStorageDocument(null, [project(changed)]), baseProjects: [project(before)], localProjects: [deleted], baseRevision: 0 });
+    expect(concurrent.conflicts).toContainEqual({ kind: "node", id: "image", projectId: "canvas" });
+    expect(concurrent.document.state.projects[0]!.nodes).toEqual([changed]);
 });
