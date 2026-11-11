@@ -243,6 +243,8 @@ async function connectCdp(cdpPort) {
     await send("Page.enable");
     await send("Log.enable");
     await send("Network.enable");
+    // 场景 G 用真实 Vite URL 取得同一 three/r3f 实例，启动资源不能挤掉这两条记录。
+    await send("Page.addScriptToEvaluateOnNewDocument", { source: "performance.setResourceTimingBufferSize(10000);" });
 
     const evaluate = async (expression) => {
         const r = await send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true });

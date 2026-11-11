@@ -19,7 +19,7 @@ import { bindCanvasVideoHoverPreview } from "@/lib/canvas/canvas-video-hover-pre
 import { resolveVideoMediaUrl } from "@/services/file-storage";
 import { hydrateCanvasVideoPreview } from "@/services/canvas-video-preview";
 import { type CanvasTheme } from "@/lib/canvas-theme";
-import { fitImageMaterialNodeSize, fitImageNodeSize } from "@/lib/canvas/canvas-node-size";
+import { fitImageMaterialNodeSize, fitImageNodeSize, fitVideoNodeToSource } from "@/lib/canvas/canvas-node-size";
 import { getActiveUserScope } from "@/lib/user-scope";
 import { isCanvasImageActive, prepareCanvasImage, subscribeCanvasImageActivity } from "@/services/canvas-image-loader";
 import { peekCachedResourceObjectUrl } from "@/services/resource-blob-cache";
@@ -143,7 +143,8 @@ export function VideoNodeContent({ node, theme, mediaActive = false, onMediaPlay
                     nextMetadata.durationMs = durationMs;
                     changed = true;
                 }
-                return changed ? { ...current, metadata: nextMetadata } : current;
+                const fitted = fitVideoNodeToSource(current, width, height);
+                return changed ? { ...fitted, metadata: nextMetadata } : fitted;
             });
         };
         video.addEventListener("loadedmetadata", handleLoadedMetadata);
@@ -229,8 +230,9 @@ export function InactiveVideoPreview({ node, theme, onPlay }: Pick<CanvasNodeCon
     const persistedPreviewSource = persistedPreview?.src || "";
     const persistedPreviewStorageKey = persistedPreview?.storageKey || "";
     const hasPersistedPreview = Boolean(persistedPreviewSource || persistedPreviewStorageKey);
-    const { updateMetadata } = useCanvasNodeActions();
+    const { updateMetadata, updateMediaNode } = useCanvasNodeActions();
     const updateMetadataRef = useRef(updateMetadata);
+    const updateMediaNodeRef = useRef(updateMediaNode);
     const [hydrating, setHydrating] = useState(false);
     const [localPreviewUrl, setLocalPreviewUrl] = useState("");
     const localPreviewUrlRef = useRef("");
@@ -245,7 +247,8 @@ export function InactiveVideoPreview({ node, theme, onPlay }: Pick<CanvasNodeCon
 
     useEffect(() => {
         updateMetadataRef.current = updateMetadata;
-    }, [updateMetadata]);
+        updateMediaNodeRef.current = updateMediaNode;
+    }, [updateMediaNode, updateMetadata]);
 
     useEffect(
         () => () => {
@@ -281,7 +284,19 @@ export function InactiveVideoPreview({ node, theme, onPlay }: Pick<CanvasNodeCon
                 localPreviewUrlRef.current = hydrated.localUrl;
                 setLocalPreviewUrl(hydrated.localUrl);
                 void hydrated.persisted.then((videoPreview) => {
-                    if (!controller.signal.aborted && videoPreview) updateMetadataRef.current?.(node.id, { videoPreview });
+                    if (controller.signal.aborted || !videoPreview) return;
+                    const update = updateMediaNodeRef.current;
+                    if (!update) {
+                        updateMetadataRef.current?.(node.id, { videoPreview });
+                        return;
+                    }
+                    update(node.id, (current) => {
+                        const withPreview = { ...current, metadata: { ...current.metadata, videoPreview } };
+                        const source = current.metadata?.naturalWidth && current.metadata.naturalHeight
+                            ? { width: current.metadata.naturalWidth, height: current.metadata.naturalHeight }
+                            : videoPreview;
+                        return fitVideoNodeToSource(withPreview, source.width, source.height);
+                    });
                 });
             })
             .catch(() => undefined)
