@@ -400,6 +400,18 @@ function TextCapabilityEditor({ value, onChange, protocol, disabled, section }: 
     const updateReferences = (patch: Partial<TextCapabilityConfig["references"]>) => {
         update({ references: { ...profile.references, ...patch } });
     };
+    const videoUnderstanding = profile.references.maxVideos > 0;
+    const videoFields = (
+        <>
+            <ParameterField label="支持视频识别" description="开启后接收参考视频；请按模型实际能力配置。" supported={videoUnderstanding} disabled={Boolean(disabled)} onChange={(supported) => updateReferences({ maxVideos: supported ? Math.max(1, profile.references.maxVideos) : 0 })} />
+            {videoUnderstanding ? (
+                <>
+                    <NumberField label="最多识别视频数" value={profile.references.maxVideos} min={1} max={100} disabled={Boolean(disabled)} onChange={(next) => updateReferences({ maxVideos: Math.max(1, next || 1) })} />
+                    <NumberField label="单个视频上限 MB" value={bytesToMB(profile.references.maxVideoBytes)} min={0} disabled={Boolean(disabled)} onChange={(next) => updateReferences({ maxVideoBytes: mbToBytes(next) })} />
+                </>
+            ) : null}
+        </>
+    );
 
     if (section === "protocol") {
         return (
@@ -428,9 +440,8 @@ function TextCapabilityEditor({ value, onChange, protocol, disabled, section }: 
                         <NumberField label="最大参考图片数" value={profile.references.maxImages} min={0} max={100} disabled={Boolean(disabled)} onChange={(next) => updateReferences({ maxImages: next || 0 })} />
                         <NumberField label="单张图片上限 MB" value={bytesToMB(profile.references.maxImageBytes)} min={0} disabled={Boolean(disabled)} onChange={(next) => updateReferences({ maxImageBytes: mbToBytes(next) })} />
                     </ReferenceCard>
-                    <ReferenceCard title="视频引用" description="文本模型可接收的视频范围">
-                        <NumberField label="最大参考视频数" value={profile.references.maxVideos} min={0} max={100} disabled={Boolean(disabled)} onChange={(next) => updateReferences({ maxVideos: next || 0 })} />
-                        <NumberField label="单个视频上限 MB" value={bytesToMB(profile.references.maxVideoBytes)} min={0} disabled={Boolean(disabled)} onChange={(next) => updateReferences({ maxVideoBytes: mbToBytes(next) })} />
+                    <ReferenceCard title="视频识别" description="默认关闭；开启后模型列表显示「视×N」">
+                        {videoFields}
                     </ReferenceCard>
                     <ReferenceCard title="通用限制" description="所有文本请求共用的基础约束">
                         <NumberField label="提示词最大字符数" value={profile.references.promptMaxChars} min={1} max={1_000_000} disabled={Boolean(disabled)} onChange={(next) => updateReferences({ promptMaxChars: next || 1 })} />
@@ -458,11 +469,8 @@ function TextCapabilityEditor({ value, onChange, protocol, disabled, section }: 
                     <NumberField label="单张图片上限 MB" value={bytesToMB(profile.references.maxImageBytes)} min={0} disabled={Boolean(disabled)} onChange={(next) => updateReferences({ maxImageBytes: mbToBytes(next) })} />
                 </div>
             </CapabilityGroup>
-            <CapabilityGroup title="视频" description="文本模型可接收的视频参考范围">
-                <div className="grid gap-3 sm:grid-cols-2">
-                    <NumberField label="最大参考视频数" value={profile.references.maxVideos} min={0} max={100} disabled={Boolean(disabled)} onChange={(next) => updateReferences({ maxVideos: next || 0 })} />
-                    <NumberField label="单个视频上限 MB" value={bytesToMB(profile.references.maxVideoBytes)} min={0} disabled={Boolean(disabled)} onChange={(next) => updateReferences({ maxVideoBytes: mbToBytes(next) })} />
-                </div>
+            <CapabilityGroup title="视频识别" description="默认关闭；开启后模型列表显示「视×N」">
+                <div className="grid gap-3 sm:grid-cols-2">{videoFields}</div>
             </CapabilityGroup>
             <CapabilityGroup title="通用限制" description="所有文本请求共用的基础约束">
                 <NumberField label="提示词最大字符数" value={profile.references.promptMaxChars} min={1} max={1_000_000} disabled={Boolean(disabled)} onChange={(next) => updateReferences({ promptMaxChars: next || 1 })} />

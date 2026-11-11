@@ -127,9 +127,6 @@ func runChatCompletionsTextTask(ctx context.Context, input canvasGenerationInput
 }
 
 func runClaudeTextTask(ctx context.Context, input canvasGenerationInput) (map[string]interface{}, error) {
-	if len(input.ReferenceVideos) > 0 {
-		return nil, errors.New("Claude API 当前不支持视频参考输入")
-	}
 	messages := make([]map[string]interface{}, 0, len(input.TextHistory)+1)
 	for _, message := range validatedTextHistory(input.TextHistory) {
 		messages = append(messages, message)
@@ -199,6 +196,10 @@ func applyTextOutputLimit(body map[string]interface{}, limit int, field string) 
 }
 
 func claudeTextContent(input canvasGenerationInput) (interface{}, error) {
+	// Claude Messages 没有视频块，不能在未看见视频时静默作答。
+	if len(input.ReferenceVideos) > 0 {
+		return nil, errors.New("Claude 文本接口不支持参考视频，请换用支持视频识别的文本模型")
+	}
 	if len(input.ReferenceImages) == 0 {
 		return input.Prompt, nil
 	}

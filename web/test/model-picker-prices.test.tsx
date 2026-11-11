@@ -118,3 +118,27 @@ test("the selected model and request estimate still require an exact specificati
     expect(render(matching)).not.toContain("当前规格无报价");
     expect(cost(matching)).toBeCloseTo(1.2);
 });
+
+test("text model rows show declared image and video limits without changing price or promotional tags", () => {
+    const channel = createModelChannel({ id: "text", name: "Text", scope: "system", models: ["text-model"], modelCosts: [{
+        model: "text-model", displayName: "文字模型", capability: "text", billingMode: "per_request", unitPriceMicrocredits: 10_000,
+        capabilityConfig: defaultModelCapabilityConfig(), tags: [{ text: "常用", color: "blue" }],
+    }] });
+    const config = normalizeConfigSnapshot({ config: { ...defaultConfig, channels: [channel], model: "text::text-model", textModel: "text::text-model" } }).config;
+    const references = config.channels[0].modelCosts![0].capabilityConfig!.text!.references;
+    for (const theme of [canvasThemes.light, canvasThemes.dark]) {
+        const render = () => renderToStaticMarkup(<ModelLabel config={config} model={config.model} capability="text" theme={theme} creationVariant showConfiguredModelName={false} showPrice showDescription />);
+        Object.assign(references, { maxImages: 9, maxVideos: 2 });
+        const markup = render();
+        expect(markup).toContain('data-color="green">图×9 · 视×2');
+        expect(markup.indexOf("图×9 · 视×2")).toBeLessThan(markup.indexOf("常用"));
+        expect(markup).toContain("0.01 积分");
+        expect(markup).not.toContain("音×");
+        references.maxVideos = 0;
+        expect(render()).toContain('data-color="green">图×9<');
+        expect(render()).not.toContain("视×");
+        references.maxImages = 0;
+        expect(render()).not.toContain("图×");
+        expect(render()).toContain("常用");
+    }
+});

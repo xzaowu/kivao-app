@@ -9,7 +9,8 @@ export const modelTagColors = [
 
 export type ModelTag = { text: string; color: typeof modelTagColors[number]["value"] };
 
-export function videoReferenceCapabilityTag(references?: { maxImages?: number; maxVideos?: number; maxAudios?: number }): ModelTag | undefined {
+/** 文本识别和视频生成共用已声明的素材上限，不根据模型名推断能力。 */
+export function referenceCapabilityTag(references?: { maxImages?: number; maxVideos?: number; maxAudios?: number }): ModelTag | undefined {
     if (!references) return undefined;
     const counts = [
         ["图", references.maxImages],
