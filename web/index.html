@@ -17,6 +17,11 @@
                 margin: 0;
                 background: #ffffff;
             }
+            /* 首屏主题在应用样式加载前生效，颜色与 globals.css 的深色背景保持一致。 */
+            html.dark,
+            html.dark body {
+                background: #0f0f11;
+            }
             #root:empty {
                 min-height: 100vh;
             }
@@ -78,7 +83,7 @@
             } catch (e) {}
         </script>
     </head>
-    <body class="bg-background text-foreground antialiased" style="background: #ffffff">
+    <body class="bg-background text-foreground antialiased">
         <div id="root"></div>
         <script type="module" src="/src/main.tsx"></script>
     </body>
