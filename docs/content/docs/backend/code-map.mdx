@@ -17,6 +17,9 @@ description: 从产品功能快速定位主要代码入口
 
 ## 画布与素材稳定性
 
+- `web/src/pages/settings/model-default-grid.tsx`：默认模型卡片使用配置的具体线路名称与产品分组，保留选择值；系统缺名不回显内部 ID。
+- `web/src/pages/canvas/canvas-import-save.ts`：LibTV/TapNow 共用的去重、素材身份绑定、本地持久化与云端确认边界；真实页面在 `project.tsx` 连接 `use-canvas-project-lifecycle.ts`。`services/user-data-sync.ts` 按已确认基线与归属恢复待补传的导入素材。
+- `web/src/lib/canvas/canvas-project-domain.ts`：`storyboardRowVideoPrompt` 汇总镜头、台词和音效，`syncStoryboardVideoNode` 同步待生成合同并保留已产出历史；创建/直接生成/首帧生成在 `use-canvas-storyboard.ts`，行端口连接在 `use-canvas-connection-controller.ts`。
 - `web/src/lib/canvas/canvas-storage-revision.ts`：快照合并及明确删除墓碑。
 - `web/src/pages/assets/asset-transfer.ts`、`asset-library-bulk.ts`：素材包资源重建、跨账号检查与全量分页操作。
 - `web/src/lib/canvas/canvas-reference-image-size.ts`：面板和生成共用的参考图比例选择；显式尺寸优先。
