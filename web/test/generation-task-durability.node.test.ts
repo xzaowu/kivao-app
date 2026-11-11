@@ -6,6 +6,22 @@ import { applyGenerationConsumerEffect } from "../src/services/generation-consum
 import { createGenerationTaskMaterializer, type GenerationTaskEffectResult, type GenerationTaskEffectStore } from "../src/services/generation-task-materializer";
 import { buildBackendToolRequests } from "../src/services/api/image";
 
+for (const failure of [new DOMException("cancelled resource delivery", "AbortError"), new Error("resource access denied")]) {
+    test(`materializer preserves the primary ${failure.name} when releasing its lease fails`, async () => {
+        const materializer = createGenerationTaskMaterializer({
+            effects: {
+                claim: async () => ({ status: "claimed", fence: 1, binding: "test-owner" }),
+                renew: async () => ({ fence: 1 }),
+                complete: async () => {},
+                release: async () => { throw new Error("secondary lease cleanup failure"); },
+            },
+            materializeOutput: async () => { throw failure; },
+        });
+        const task: GenerationTask = { id: `primary-error-${failure.name}`, type: "image", status: "succeeded", prompt: "fixture", attempts: 1, createdAt: "", updatedAt: "", resultState: "READY", outputs: [{ outputIndex: 0, mediaType: "image" }] };
+        await assert.rejects(materializer.materialize(task), error => error === failure);
+    });
+}
+
 test("managed cloud agent task keeps tool definitions and tool results", () => {
     const requests = buildBackendToolRequests(
         [

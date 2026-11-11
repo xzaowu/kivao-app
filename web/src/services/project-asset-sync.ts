@@ -460,7 +460,7 @@ async function cachedRemoteGenerationVideo(video: NonNullable<BackendGenerationR
     throwIfAborted(signal);
     // 后端任务成功即代表视频已作为资源持久化；登记素材只需要可用的展示地址。
     // 整段下载到浏览器只是本地缓存加速层：大视频超时或跨域下载失败不能让已落库的作品在页面上“消失”，
-    // 所以缓存放到后台预热，不阻塞成功态。画布节点回写仍单独校验缓存（canvas-generation-task-sync）。
+    // 所以缓存放到后台预热，不阻塞素材登记或画布节点回写。
     void getCachedResourceBlob(video.storageKey).catch(() => undefined);
     const url = await resolveMediaUrl(video.storageKey, video.dataUrl);
     throwIfAborted(signal);
@@ -629,7 +629,7 @@ const materializeGenerationOutput: MaterializeGenerationTaskOutput = createIdemp
 function remoteGenerationTaskMaterializer() {
     return createGenerationTaskMaterializer({
         // 每个页面实例持有自己的租约；共享浏览器 storage + Web Lock 提供跨标签原子权威。
-        effects: createProviderNeutralGenerationTaskEffectStore(),
+        effects: createProviderNeutralGenerationTaskEffectStore({ requireCrossRealmLock: true }),
         materializeOutput: materializeGenerationOutput,
     });
 }

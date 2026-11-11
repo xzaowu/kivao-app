@@ -634,6 +634,8 @@ export function AgentConversation({
     const lastUserId = messages.findLast((item) => item.role === "user")?.id;
     // 连续的工具记录折成一行（只报最新一步），计划/提问载体由输入区上方的固定条渲染。
     const segments = useMemo(() => buildAgentFeedSegments(messages), [messages]);
+    const [visibleCount, setVisibleCount] = useState(80);
+    const startIndex = Math.max(0, segments.length - visibleCount);
     const lastMessage = messages.at(-1);
     const replyOptionsEnabled = Boolean(onReplyOption) && !busy && !approval;
     const replyTarget = useMemo(() => (replyOptionsEnabled ? agentReplyOptionsTarget(messages) : null), [messages, replyOptionsEnabled]);
@@ -682,8 +684,10 @@ export function AgentConversation({
                 <AgentWelcome appearance={appearance} nodeCount={nodeCount} installedSkillCount={installedSkillCount} onChooseSkill={onChooseSkill} onOpenSkillRecommendations={onOpenSkillRecommendations} onDraftPrompt={onDraftPrompt} />
             ) : null}
             <div ref={contentRef} className="agent-conversation-messages">
-                {segments.map((segment, index) =>
-                    segment.kind === "operations" ? (
+                {startIndex > 0 ? <button type="button" className="agent-load-earlier" onClick={() => setVisibleCount((count) => count + 80)}>加载更早的消息</button> : null}
+                {segments.slice(startIndex).map((segment, offset) => {
+                    const index = startIndex + offset;
+                    return segment.kind === "operations" ? (
                         // 只有"对话末尾那一段 + 还在跑"才流光：历史段落留在静态态，任务完成即停。
                         <AgentOperationFeed
                             key={segment.key}
@@ -713,8 +717,8 @@ export function AgentConversation({
                             onReplyOption={replyTarget?.id === segment.item.id && onReplyOption ? stableReply : undefined}
                             replyOptionsDisabled={replyOptionsDisabled}
                         />
-                    ),
-                )}
+                    );
+                })}
                 {approval ? (
                     <ApprovalCard
                         key={approval.approvalId}
