@@ -320,6 +320,26 @@ func TestEnrichAPICallLogUsesSharedTerminalStatusVocabulary(t *testing.T) {
 	}
 }
 
+func TestProviderBusinessFailureAcceptsVolcengineVisualSuccessEnvelope(t *testing.T) {
+	for _, test := range []struct {
+		body       string
+		wantFailed bool
+	}{
+		{body: `{"code":10000,"data":{"task_id":"jimeng-1"},"message":"Success","status":10000}`},
+		{body: `{"code":"10000","message":" success ","data":{"status":"done"}}`},
+		{body: `{"code":50411,"data":null,"message":"Pre Img Risk Not Pass","status":50411}`, wantFailed: true},
+		// 只有火山视觉的成功信封放行 10000；其他协议里的 10000 仍是业务错误。
+		{body: `{"code":10000,"message":"upgrade websocket failed"}`, wantFailed: true},
+		{body: `{"code":10000,"message":"Success","error":{"code":"rejected","message":"denied"}}`, wantFailed: true},
+		{body: `{"code":10000,"message":"Success","task_status":"failed"}`, wantFailed: true},
+	} {
+		code, message, failed := providerResponseBusinessFailure([]byte(test.body))
+		if failed != test.wantFailed {
+			t.Fatalf("%s: failed=%v code=%q message=%q, want failed=%v", test.body, failed, code, message, test.wantFailed)
+		}
+	}
+}
+
 func loadOfficialProtocolAdapterForTest(t *testing.T, packageName string) protocol.Adapter {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join("..", "..", "..", "plugin-packages", packageName))
