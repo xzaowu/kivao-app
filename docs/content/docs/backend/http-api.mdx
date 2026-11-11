@@ -328,7 +328,7 @@ CANVAS_BACKEND_DATA_DIR=/明确的数据目录 ./migrate-schema repair-canvas-re
 
 任务列表的 `billing` 将预授权与实际扣费分开返回：`amountMicrocredits` 与 `reservedMicrocredits` 均为冻结额；仅 `status=settled` 时返回 `chargedMicrocredits`（允许为 0），值取订单实收。`refundedMicrocredits` 为差额退回或整笔退回额。冻结、处理中和待核对订单不返回实收，不能以冻结额显示“已扣费”。此变化只读取既有订单字段，不修改计费或结算规则，不新增数据库迁移。
 
-文字模型收到图片引用时，系统渠道按所选模型的文字能力检查；不支持图片则在任务预授权前拒绝。自定义渠道仅在请求声明文字能力时据此判断，不凭名称推断能力。视频时长不符时，错误说明包含请求值及配置允许的范围或固定档位，错误字段与原因标识保持不变。
+文字模型收到图片或视频引用时，系统渠道按已保存的文字能力检查；不支持图片、未开启视频识别、参考视频数量或已声明字节数超限均在任务预授权前拒绝。视频识别以 `text.references.maxVideos > 0` 为准，数量超限为 `field=referenceNodeIds` / `issue=item_count`，未支持或大小超限为 `issue=unsupported_value`；复用现有错误信封。原生 Claude Messages 不支持视频，即使配置了视频数量也拒绝，执行器不会静默丢弃视频。自定义渠道仅在请求声明文字能力时据此判断，不凭名称推断能力；原生协议限制仍生效。视频时长不符时，错误说明包含请求值及配置允许的范围或固定档位，错误字段与原因标识保持不变。
 
 ## 素材读取合同
 
@@ -847,6 +847,8 @@ Agent 已不再注入、召回或写入下列经验条目，记忆设置页只�
 install 的 Base URL、协议、能力和成本全部从服务端快照读取，不信任请求体。售价 = 成本 × (1 + 加价率)，向上取整到微积分；加价率 0–1000%，最多两位小数。推广期已过返回 404。API Key 只加密存入渠道，不写日志。
 
 ## 短剧自动制作
+
+集详情的 `segments[].request.references` 始终是数组；视频模型解析失败时也返回 `[]` 并设置 `request.warning`，制作台可以显示段卡片与失败原因。读取详情不会自动重新生成或扣费。当前 KIVAO 请求结构不包含上游后续新增的 `audioReferences` 字段。
 
 所有 `/api/dramas` 路径都需要登录 Cookie 并受 `shortDrama` 功能开关保护；对象归属在 service 中按当前用户校验，返回标准业务信封。
 

@@ -113,7 +113,8 @@ func (s *Service) prepareDramaSegment(settings DramaSettings, draft dramaSegment
 	}
 	profile, err := s.dramaVideoProfile(segmentVideoChoice(segment, settings.Models.Video))
 	if err != nil {
-		return DramaSegmentRequest{}, nil, err
+		// 制作台仍须渲染该段并展示 Warning，列表字段不能退成 null。
+		return DramaSegmentRequest{References: []DramaSegmentReference{}}, nil, err
 	}
 	screen := profile.screen(settings.AspectRatio, settings.VideoResolution)
 	request := DramaSegmentRequest{Seconds: production.SnapVideoSeconds(draft.view.DurationMs, profile.Durations), MaxVideoSeconds: profile.maxSeconds(), AspectRatio: settings.AspectRatio, Size: screen.Size, Resolution: screen.Resolution, PromptMaxChars: profile.PromptMaxChars, GenerateAudio: profile.GenerateAudio, References: []DramaSegmentReference{}}
