@@ -69,7 +69,14 @@ func (a manifestAdapter) BuildCreate(_ context.Context, c RequestContext) (Reque
 	if err := validateManifestRequest(a.manifest.Validations, request); err != nil {
 		return RequestSpec{}, err
 	}
-	return buildManifestOperation(a.manifest.Create, a.manifest.Auth, request, "")
+	values := manifestRequestValues(request)
+	textRequest := request.Capability == CapabilityText || (request.Capability == "" && len(a.manifest.Metadata.Categories) == 1 && a.manifest.Metadata.Categories[0] == CapabilityText)
+	if a.manifest.Metadata.TextWire == "claude-api" && textRequest {
+		if err := normalizeClaudeManifestMessages(request, values); err != nil {
+			return RequestSpec{}, err
+		}
+	}
+	return buildManifestOperationWithValues(a.manifest.Create, a.manifest.Auth, request, "", values, nil)
 }
 
 func (a manifestAdapter) BuildAgent(_ context.Context, c AgentRequestContext) (RequestSpec, error) {

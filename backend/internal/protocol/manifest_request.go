@@ -19,7 +19,10 @@ func buildManifestOperation(operation ManifestOperation, auth ManifestAuth, requ
 // buildManifestOperationWithEnv 允许宿主为单次请求追加只读变量（如上传步骤的当前 media）；
 // request 与 taskId 始终由宿主提供，追加变量不能覆盖它们。
 func buildManifestOperationWithEnv(operation ManifestOperation, auth ManifestAuth, request GenerationRequest, taskID string, extra map[string]any) (RequestSpec, error) {
-	requestValues := manifestRequestValues(request)
+	return buildManifestOperationWithValues(operation, auth, request, taskID, manifestRequestValues(request), extra)
+}
+
+func buildManifestOperationWithValues(operation ManifestOperation, auth ManifestAuth, request GenerationRequest, taskID string, requestValues, extra map[string]any) (RequestSpec, error) {
 	env := map[string]any{"request": requestValues, "taskId": taskID}
 	for key, value := range extra {
 		if _, reserved := env[key]; !reserved {
@@ -36,7 +39,7 @@ func buildManifestOperationWithEnv(operation ManifestOperation, auth ManifestAut
 	} else if len(operation.Fields) > 0 {
 		legacyBody := make(map[string]any, len(operation.Fields))
 		for key, expression := range operation.Fields {
-			value := manifestExpressionValue(expression, request, taskID)
+			value := manifestExpressionValue(expression, request, taskID, requestValues)
 			if value == nil {
 				continue
 			}
@@ -194,7 +197,7 @@ func normalizeManifestValue(value any) any {
 	}
 }
 
-func manifestExpressionValue(expression string, request GenerationRequest, taskID string) any {
+func manifestExpressionValue(expression string, request GenerationRequest, taskID string, requestValues map[string]any) any {
 	expression = strings.TrimSpace(expression)
 	source := expression
 	transforms := []string{}
@@ -208,7 +211,7 @@ func manifestExpressionValue(expression string, request GenerationRequest, taskI
 	case source == "taskId":
 		value = taskID
 	case strings.HasPrefix(source, "request."):
-		value = pathValue(manifestRequestValues(request), strings.TrimPrefix(source, "request."))
+		value = pathValue(requestValues, strings.TrimPrefix(source, "request."))
 	default:
 		value = source
 	}
