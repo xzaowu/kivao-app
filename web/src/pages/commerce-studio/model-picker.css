@@ -1,0 +1,158 @@
+.commerce-studio-model-picker {
+    margin: 0 0 15px;
+    padding: 11px;
+    border: 1px solid var(--user-border);
+    border-radius: 12px;
+    background: var(--user-surface-muted);
+}
+.commerce-studio-model-heading {
+    display: grid;
+    gap: 8px;
+    font-size: 12px;
+}
+.commerce-studio-model-heading > div {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+.commerce-studio-model-heading .ant-btn {
+    margin-left: auto;
+}
+.commerce-studio-model-hint {
+    margin: 8px 0;
+    color: var(--user-ink-muted);
+    font-size: 11px;
+    line-height: 1.55;
+}
+.commerce-studio-model-refs {
+    display: grid;
+    gap: 8px;
+}
+.commerce-studio-model-ref {
+    min-width: 0;
+    padding: 6px;
+    border: 1px solid var(--user-border);
+    border-radius: 9px;
+    background: var(--user-surface);
+}
+.commerce-studio-model-ref img {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    object-fit: cover;
+    border-radius: 5px;
+}
+.commerce-studio-model-ref > div {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+}
+.commerce-studio-model-ref strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.commerce-studio-model-ref .ant-select {
+    width: 100%;
+}
+.commerce-studio-model-upload {
+    display: block;
+    margin-top: 8px;
+    padding: 9px;
+    border: 1px dashed var(--user-border);
+    border-radius: 8px;
+    text-align: center;
+    color: var(--user-accent);
+    font-size: 11px;
+    cursor: pointer;
+}
+.commerce-studio-model-upload input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+}
+.commerce-studio-model-filters {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    margin: 12px 0;
+}
+.commerce-studio-model-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    max-height: 58dvh;
+    overflow: auto;
+}
+.commerce-studio-model-card {
+    min-width: 0;
+    padding: 8px;
+    border: 1px solid var(--user-border);
+    border-radius: 10px;
+    background: var(--user-surface);
+}
+.commerce-studio-model-card-image {
+    position: relative;
+    overflow: hidden;
+    border-radius: 7px;
+}
+.commerce-studio-model-image-open {
+    display: block;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: zoom-in;
+}
+.commerce-studio-model-card-image img {
+    display: block;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    object-fit: cover;
+}
+.commerce-studio-model-card-actions {
+    position: absolute;
+    inset: auto 0 0;
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    padding: 8px;
+    background: linear-gradient(transparent, rgb(0 0 0 / 66%));
+    opacity: 0;
+    transition: opacity 0.16s ease;
+}
+.commerce-studio-model-card:hover .commerce-studio-model-card-actions,
+.commerce-studio-model-card:focus-within .commerce-studio-model-card-actions {
+    opacity: 1;
+}
+.commerce-studio-model-card > strong,
+.commerce-studio-model-card > small {
+    display: block;
+    margin-top: 5px;
+}
+.commerce-studio-model-card > small {
+    color: var(--user-ink-muted);
+    line-height: 1.4;
+}
+.commerce-studio-model-preview {
+    display: block;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    object-fit: contain;
+}
+@media (hover: none) {
+    .commerce-studio-model-card-actions {
+        opacity: 1;
+    }
+}
+@media (max-width: 720px) {
+    .commerce-studio-model-filters {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .commerce-studio-model-grid {
+        grid-template-columns: 1fr;
+    }
+}

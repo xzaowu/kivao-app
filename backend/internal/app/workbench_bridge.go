@@ -142,6 +142,14 @@ func (s *Service) CreateWorkbenchTask(userID string, req WorkbenchTaskInput, tra
 	} else {
 		return nil, BadAuthRequest("工作台类型无效")
 	}
+	if req.CommerceStudioProjectID != "" {
+		if err := s.RequireFeature(FeatureCommerceStudio); err != nil {
+			return nil, err
+		}
+		if _, err := s.repo.CommerceStudioProject(userID, req.CommerceStudioProjectID); err != nil {
+			return nil, NotFound("电商项目不存在或无权访问")
+		}
+	}
 	taskID, fingerprint, err := workbenchBatchIdentity(userID, req)
 	if err != nil {
 		return nil, err
@@ -183,7 +191,15 @@ func (s *Service) createWorkbenchTask(userID string, req WorkbenchTaskInput, tra
 		snapshot["batch"] = req.Batch
 		resolved.Input["workbenchRequestHash"] = fingerprint
 	}
-	return s.CreateTask(userID, CreateTaskRequest{Type: resolved.TaskType, Operation: resolved.Operation, Prompt: resolved.Prompt, Model: resolved.Model, LogicalModelID: resolved.LogicalModelID, Input: resolved.Input, TraceID: traceID, RequestID: requestID, workbenchKind: req.Kind, workbenchTaskID: taskID})
+	if req.CommerceStudioProjectID != "" {
+		metadata, _ := resolved.Input["metadata"].(map[string]any)
+		if metadata == nil {
+			metadata = map[string]any{}
+			resolved.Input["metadata"] = metadata
+		}
+		metadata["source"], metadata["ecommerceProjectId"] = "ecommerce-agent", req.CommerceStudioProjectID
+	}
+	return s.CreateTask(userID, CreateTaskRequest{ProjectID: req.CommerceStudioProjectID, Type: resolved.TaskType, Operation: resolved.Operation, Prompt: resolved.Prompt, Model: resolved.Model, LogicalModelID: resolved.LogicalModelID, Input: resolved.Input, TraceID: traceID, RequestID: requestID, workbenchKind: req.Kind, workbenchTaskID: taskID})
 }
 
 func (s *Service) WorkbenchTasks(userID, kind string, activeOnly bool, limit int) ([]TaskSummary, error) {

@@ -94,7 +94,7 @@ func ecommerceUpgrade79(t *testing.T, db *gorm.DB) {
 		t.Fatal("existing configuration, balance or media changed")
 	}
 	status, err := ReadSchemaStatus(db)
-	if err != nil || !status.Ready || status.Current != 80 {
+	if err != nil || !status.Ready || status.Current != CurrentSchemaVersion {
 		t.Fatal("invalid schema", err)
 	}
 }

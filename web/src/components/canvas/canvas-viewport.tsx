@@ -19,6 +19,7 @@ type CanvasViewportProps = {
     onViewportPreviewChange?: (viewport: ViewportTransform) => void;
     onCanvasMouseDown?: (event: React.PointerEvent<HTMLDivElement>) => void;
     boxSelectEnabled?: boolean;
+    panOverNodes?: boolean;
     onCanvasDoubleClick?: (event: React.MouseEvent<HTMLDivElement>) => void;
     onCanvasDeselect?: () => void;
     onContextMenu?: (event: React.MouseEvent) => void;
@@ -58,6 +59,7 @@ export function CanvasViewport({
     onViewportPreviewChange,
     onCanvasMouseDown,
     boxSelectEnabled = false,
+    panOverNodes = false,
     onCanvasDoubleClick,
     onCanvasDeselect,
     onContextMenu,
@@ -280,7 +282,7 @@ export function CanvasViewport({
 
         const pointerIntent = resolveCanvasPointerIntent({
             altKey: event.altKey,
-            background: isBackgroundClick,
+            background: isBackgroundClick || panOverNodes,
             boxSelectEnabled,
             button: event.button,
             ctrlKey: event.ctrlKey,

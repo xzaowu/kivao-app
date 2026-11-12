@@ -36,6 +36,19 @@ func runTextTask(ctx context.Context, input canvasGenerationInput) (map[string]i
 // while sharing the SSE parser used by text generation and Agent requests.
 func executeProtocolCreateRequest(ctx context.Context, input canvasGenerationInput, spec protocol.RequestSpec) ([]byte, *protocol.Result, error) {
 	wire := declaredTextWire(ctx, input.Config.InterfaceType)
+	if input.Mode == "text" && input.TextOptions.ThinkingLevel != "" {
+		if err := ValidateThinkingLevelRequest(input.TextOptions.ThinkingLevel); err != nil {
+			return nil, nil, err
+		}
+		if wire == "chat-completion" || wire == "responses" || wire == "claude-api" {
+			body := protocolBodyObject(spec.Body)
+			if body == nil {
+				return nil, nil, errors.New("声明式文本请求体必须是 JSON 对象")
+			}
+			applyCommerceStudioTextThinking(body, input, wire)
+			spec.Body = body
+		}
+	}
 	if input.Mode != "text" || !input.StreamText || (wire != "chat-completion" && wire != "responses" && wire != "claude-api") {
 		data, err := executeProtocolRequest(ctx, input.Config, spec)
 		return data, nil, err
@@ -161,6 +174,10 @@ func runClaudeTextTask(ctx context.Context, input canvasGenerationInput) (map[st
 }
 
 func applyTextThinking(body map[string]interface{}, input canvasGenerationInput, protocol string) {
+	if input.TextOptions.ThinkingLevel != "" {
+		applyCommerceStudioTextThinking(body, input, protocol)
+		return
+	}
 	if !input.TextOptions.Thinking {
 		return
 	}

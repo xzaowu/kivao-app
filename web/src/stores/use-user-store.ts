@@ -44,6 +44,8 @@ export type FeatureAvailability = {
     imageWorkbenchEnabled: boolean;
     videoWorkbenchEnabled: boolean;
     ecommerceEnabled: boolean;
+    commerceStudioEnabled: boolean;
+    commerceStudioVideoEnabled: boolean;
     canvasConversionEnabled: boolean;
     canvasDrawingEnabled: boolean;
     canvasFolderEnabled: boolean;
@@ -66,6 +68,8 @@ export const defaultFeatureAvailability: FeatureAvailability = {
     imageWorkbenchEnabled: false,
     videoWorkbenchEnabled: false,
     ecommerceEnabled: false,
+    commerceStudioEnabled: false,
+    commerceStudioVideoEnabled: false,
     canvasConversionEnabled: false,
     canvasDrawingEnabled: false,
     canvasFolderEnabled: false,

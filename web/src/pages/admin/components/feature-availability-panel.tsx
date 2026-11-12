@@ -23,6 +23,8 @@ type FeatureKey =
     | "imageWorkbenchEnabled"
     | "videoWorkbenchEnabled"
     | "ecommerceEnabled"
+    | "commerceStudioEnabled"
+    | "commerceStudioVideoEnabled"
     | "canvasConversionEnabled"
     | "canvasDrawingEnabled"
     | "canvasFolderEnabled"
@@ -44,6 +46,8 @@ const editableFeatureKeys: FeatureKey[] = [
     "imageWorkbenchEnabled",
     "videoWorkbenchEnabled",
     "ecommerceEnabled",
+    "commerceStudioEnabled",
+    "commerceStudioVideoEnabled",
     "frontendModelsEnabled",
     "pluginCenterEnabled",
     "systemPluginsVisibleToUsers",
@@ -55,10 +59,17 @@ const editableFeatureKeys: FeatureKey[] = [
 
 const workspaceFeatureRows: FeatureRow[] = [
     {
-        key: "ecommerceEnabled",
-        title: "商品套图",
-        description: "开放商品识别、整套策划和出图；两个文本阶段也按模型计费。关闭后仍可查看已有作品。",
+        key: "commerceStudioEnabled",
+        title: "电商 Agent",
+        description: "开放商品分析、创意方向、图片策划与生成。使用独立的项目历史和阶段模型配置。",
         icon: <ImageIcon className="size-4" aria-hidden="true" />,
+    },
+    {
+        key: "commerceStudioVideoEnabled",
+        title: "电商 Agent 商品视频入口",
+        description: "允许把商品图片带到视频工作台继续创作；同时需要开放视频生成。",
+        icon: <Clapperboard className="size-4" aria-hidden="true" />,
+        dependsOn: "commerceStudioEnabled",
     },
     {
         key: "shortDramaEnabled",
@@ -421,6 +432,8 @@ function toEditablePayload(features: FeatureAvailability) {
         imageWorkbenchEnabled: features.imageWorkbenchEnabled,
         videoWorkbenchEnabled: features.videoWorkbenchEnabled,
         ecommerceEnabled: features.ecommerceEnabled,
+        commerceStudioEnabled: features.commerceStudioEnabled,
+        commerceStudioVideoEnabled: features.commerceStudioVideoEnabled,
         frontendModelsEnabled: features.frontendModelsEnabled,
         pluginCenterEnabled: features.pluginCenterEnabled,
         systemPluginsVisibleToUsers: features.systemPluginsVisibleToUsers,
@@ -451,6 +464,8 @@ function parseFeatureAvailability(value: unknown): FeatureAvailability {
         imageWorkbenchEnabled: record.imageWorkbenchEnabled as boolean,
         videoWorkbenchEnabled: record.videoWorkbenchEnabled as boolean,
         ecommerceEnabled: record.ecommerceEnabled as boolean,
+        commerceStudioEnabled: record.commerceStudioEnabled as boolean,
+        commerceStudioVideoEnabled: record.commerceStudioVideoEnabled as boolean,
         frontendModelsEnabled: record.frontendModelsEnabled as boolean,
         pluginCenterEnabled: record.pluginCenterEnabled as boolean,
         systemPluginsVisibleToUsers: record.systemPluginsVisibleToUsers as boolean,

@@ -5,6 +5,14 @@ description: 影策后端核心持久化表与状态边界
 
 # 后端数据库
 
+## 电商 Agent（Schema 81）
+
+KIVAO v81 `kivao_commerce_studio` 仅新增 `commerce_studio_projects`、`commerce_studio_rounds`、`commerce_studio_knowledge_sources`、`commerce_studio_knowledge_entries`、`commerce_studio_creative_recommendations`、`commerce_studio_agent_analyses`、`commerce_studio_agent_runs`、`commerce_studio_agent_pages`、`commerce_studio_agent_canvas_versions` 九张表。它们分别存商品草稿与轮次、知识来源与条目、方向选择、分析及运行/画布记录；文本 JSON 字段保持 SQLite/PostgreSQL 共用合同。
+
+旧版 `ecommerce_projects` / `ecommerce_rounds` 和迁移 78/79/80 不修改。新开关保存于 `feature_availability` 的 `commerceStudioEnabled`、`commerceStudioVideoEnabled`，默认关闭；阶段模型、分类、技能配置使用独立的 `commerce_studio_*` 系统设置键。完整说明见 [电商 Agent](/docs/backend/kivao-ecommerce-agent)。
+
+隔离 SQLite 与 PG17 已验证 80→81 重复迁移和既有数据、账本保留。本地验证不授权生产迁移；Schema 80 的旧二进制不能直接当作 Schema 81 回退版本。
+
 ## 易支付多支付方式
 
 版本 79 `payment_order_method` 为 `payment_orders` 增加 `payment_method`（最长 40 字符，非空，默认空串）。新订单保存具体支付方式，与 `provider_id`、配置版本及幂等键共同固定提交意图；刷新收银台仍使用原配置。历史行空值保留，旧订单继续按其历史配置的默认方式处理，不回填成最新配置、不修改金额或入账状态。迁移可重复检查列存在性，不删表、不重建业务库；升级需备份后按既有迁移流程单独执行，不能只更新前端或插件清单。

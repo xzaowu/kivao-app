@@ -47,6 +47,9 @@ func (w *taskLifecycleCoordinator) retryTask(userID string, id string) (*model.T
 	} else if exists {
 		return nil, BadAuthRequest("商品套图重试需要重新确认报价，请返回商品项目")
 	}
+	if err := s.requireCommerceStudioExecution(*task); err != nil {
+		return nil, err
+	}
 	if task.CreationSubmissionID != nil {
 		return nil, creationConflict("智能创作重做需要新的报价批准，请回到创作会话继续")
 	}

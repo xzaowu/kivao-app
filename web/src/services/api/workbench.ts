@@ -93,6 +93,7 @@ export type WorkbenchToolDirectory = {
 
 export type CreateWorkbenchTaskInput = {
     kind: WorkbenchKind;
+    ecommerceProjectId?: string;
     toolId?: string;
     presetId?: string;
     workbench?: { kind: WorkbenchKind; toolId: string; presetId?: string };
@@ -253,10 +254,4 @@ export async function queryWorkbenchBatchTask(kind: WorkbenchKind, batchId: stri
     return result.task;
 }
 
-export type WorkbenchTaskReceipt = {
-    task: {
-        id: string;
-        status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
-        createdAt?: string;
-    };
-};
+export type WorkbenchTaskReceipt = { task: GenerationTask };

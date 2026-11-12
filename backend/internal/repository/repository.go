@@ -115,6 +115,9 @@ func (r *Repository) UserStorageUsage(userID string) (UserStorageUsage, error) {
 	if err == nil {
 		err = r.addEcommerceStorageUsage(userID, &usage)
 	}
+	if err == nil {
+		err = r.addCommerceStudioStorageUsage(userID, &usage)
+	}
 	return usage, err
 }
 
@@ -137,6 +140,9 @@ func (r *Repository) UserStructuredStorageUsage(userID string) (UserStorageUsage
 	err := r.db.Raw(query, userID, userID, userID, userID).Scan(&usage).Error
 	if err == nil {
 		err = r.addEcommerceStorageUsage(userID, &usage)
+	}
+	if err == nil {
+		err = r.addCommerceStudioStorageUsage(userID, &usage)
 	}
 	return usage, err
 }

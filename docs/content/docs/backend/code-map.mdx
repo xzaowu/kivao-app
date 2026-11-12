@@ -5,6 +5,13 @@ description: 从产品功能快速定位主要代码入口
 
 # 代码功能地图
 
+## KIVAO 电商 Agent
+
+- `web/src/pages/commerce-studio/`：完整商品创作页面、视觉方向、素材、分镜、轮次和作品导出；`services/api/commerce-studio.ts` 与 `services/commerce-studio-session.ts` 管理 API 和账号范围缓存。
+- `backend/internal/app/commerce_studio*.go`：KIVAO 组合层、模型阶段配置、知识与项目校验；`internal/ecommerceagent`、`ecommercecatalog`、`ecommerceknowledge`、`ecommerceskills` 保存冻结上游的领域实现及资料。
+- `handler/commerce_studio.go`、`service/aliases_commerce_studio.go`、`repository/commerce_studio*.go` 与 `model/models_commerce_studio*.go`：独立 API、持久化和资源引用边界；Schema 81 与旧套图 80 并存。
+- [模块说明](/docs/backend/kivao-ecommerce-agent) 区分当前任务队列、未开放的独立 Agent 执行 API 和生产边界。
+
 ## 媒体响应与短剧参考模式
 
 - `plugin-packages/generate-catalog.mjs`：即梦成功码、Novita 任务信封和 NewAPI 嵌套失败原因；对应五个包的源码、内嵌文档和归档同步。`backend/internal/protocol/official_catalog_test.go` 验证归档实际解析，`app/provider_error.go` 保持业务失败与成功信封的区别。

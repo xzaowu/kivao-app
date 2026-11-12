@@ -46,6 +46,40 @@ func (s *Service) CreateTask(userID string, req CreateTaskRequest) (*model.Task,
 	if err := s.requireEcommerceTaskAdmission(userID, req, normalizedInput); err != nil {
 		return nil, err
 	}
+	if err := s.requireCommerceStudioTaskFeatures(userID, req.ProjectID, taskType, req.Operation, req.workbenchKind, normalizedInput); err != nil {
+		return nil, err
+	}
+	prompt, err = s.prepareCommerceStudioWorkbenchTask(userID, normalizedInput, prompt)
+	if err != nil {
+		return nil, err
+	}
+	if metadata, ok := normalizedInput["metadata"].(map[string]any); ok && stringValue(metadata["source"]) == "ecommerce-agent" {
+		stage := stringValue(metadata["stage"])
+		if stage == "planning" || stage == "creative-directions" || stage == "product-understanding" {
+			setting, settingErr := s.CommerceStudioAgentSetting()
+			if settingErr != nil {
+				return nil, settingErr
+			}
+			if stage == "planning" {
+				if !commerceStudioTaskUsesModel(setting.planningRef(), req.LogicalModelID, normalizedInput) {
+					return nil, InvalidModelSelection("电商 Agent 策划模型已由管理员更新，请刷新页面后重试")
+				}
+			} else if !commerceStudioTaskUsesModel(setting.visionRef(), req.LogicalModelID, normalizedInput) {
+				return nil, InvalidModelSelection("电商 Agent 识图模型已由管理员更新，请刷新页面后重试")
+			}
+			// 工作台走通用任务队列，阶段思考意图同模型一样由后台配置决定，不能信任客户端覆盖。
+			thinking := setting.VisionThinkingLevel
+			if stage == "planning" {
+				thinking = setting.ThinkingLevel
+			}
+			options, _ := normalizedInput["textOptions"].(map[string]any)
+			if options == nil {
+				options = map[string]any{}
+			}
+			options["thinkingLevel"] = defaultString(strings.TrimSpace(thinking), ThinkingIntentAuto)
+			normalizedInput["textOptions"] = options
+		}
+	}
 	// 视频处理（kind=processing）以源视频为主体，不要求 prompt；提示词由服务端生成，
 	// 源时长、帧率档和处理参数在这里按资源记录与后台配置重算。
 	processing, err := s.prepareVideoProcessingTask(userID, normalizedInput)

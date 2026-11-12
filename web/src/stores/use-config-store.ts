@@ -109,6 +109,7 @@ export type ModelChannel = {
         cachedTokenPriceMicrocredits?: number;
         capabilityConfig?: ModelCapabilityConfig;
         logicalModelId?: string;
+        channelModelId?: string;
         logicalCapabilitySpec?: CapabilitySpec;
         logicalCapabilityProfiles?: CapabilitySpec[];
         logicalPriceTiers?: PublicLogicalModelPriceTier[];

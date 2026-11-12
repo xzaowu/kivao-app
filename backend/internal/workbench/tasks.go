@@ -13,19 +13,20 @@ import (
 )
 
 type TaskInput struct {
-	Kind           string          `json:"kind"`
-	ToolID         string          `json:"toolId"`
-	PresetID       string          `json:"presetId,omitempty"`
-	Workbench      *TaskWorkbench  `json:"workbench,omitempty"`
-	Prompt         string          `json:"prompt"`
-	UserPrompt     *string         `json:"userPrompt,omitempty"`
-	Model          string          `json:"model,omitempty"`
-	LogicalModelID string          `json:"logicalModelId,omitempty"`
-	ChannelID      string          `json:"channelId,omitempty"`
-	ModelChoice    *ModelChoice    `json:"modelChoice,omitempty"`
-	Parameters     map[string]any  `json:"parameters,omitempty"`
-	References     []TaskReference `json:"references,omitempty"`
-	Batch          *TaskBatch      `json:"batch,omitempty"`
+	Kind                    string          `json:"kind"`
+	CommerceStudioProjectID string          `json:"ecommerceProjectId,omitempty"`
+	ToolID                  string          `json:"toolId"`
+	PresetID                string          `json:"presetId,omitempty"`
+	Workbench               *TaskWorkbench  `json:"workbench,omitempty"`
+	Prompt                  string          `json:"prompt"`
+	UserPrompt              *string         `json:"userPrompt,omitempty"`
+	Model                   string          `json:"model,omitempty"`
+	LogicalModelID          string          `json:"logicalModelId,omitempty"`
+	ChannelID               string          `json:"channelId,omitempty"`
+	ModelChoice             *ModelChoice    `json:"modelChoice,omitempty"`
+	Parameters              map[string]any  `json:"parameters,omitempty"`
+	References              []TaskReference `json:"references,omitempty"`
+	Batch                   *TaskBatch      `json:"batch,omitempty"`
 }
 
 type TaskBatch struct {

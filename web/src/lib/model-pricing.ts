@@ -115,6 +115,32 @@ export function modelQuoteRequest(config: AiConfig, value: string, capability?: 
     return cost.logicalModelId ? { logicalModelID: cost.logicalModelId, intent } : { channelId: channel.id, modelKey: modelOptionName(value), intent };
 }
 
+/** Server quote for every system model used by the commerce workflow. */
+export function systemModelQuoteRequest(config: AiConfig, value: string, capability?: ModelCapability, requirements?: ModelRequirements): ModelQuoteRequest | undefined {
+    if (!capability || !value) return undefined;
+    const channel = resolveModelChannel(config, value);
+    if (channel.scope !== "system") return undefined;
+    const cost = channel.modelCosts?.find((item) => item.model === modelOptionName(value));
+    if (!cost) return undefined;
+    const input = requirements?.input;
+    const intent: ModelRequestIntent = {
+        capability,
+        operation: capability === "image" ? imagePriceOperation(requirements) : capability === "video" && input ? resolveVideoOperation(input, requirements?.videoOperation) : requirements?.videoOperation,
+        inputs: {
+            image: (input?.imageCount || 0) + (input?.characterCount || 0),
+            video: input?.videoCount || 0,
+            audio: input?.audioCount || 0,
+        },
+        options: {
+            ...modelRequestOptions(config, capability),
+            ...(requirements?.options || {}),
+            ...(requirements?.videoSeconds ? { videoSeconds: Number(requirements.videoSeconds) } : {}),
+            ...(requirements?.imageSize ? { size: requirements.imageSize } : {}),
+        },
+    };
+    return cost.logicalModelId ? { logicalModelID: cost.logicalModelId, intent } : { channelId: channel.id, modelKey: modelOptionName(value), intent };
+}
+
 function creditAmount(billingMode: "fixed_request" | "per_second", unitPriceMicrocredits: number, count?: string | number, seconds?: string | number) {
     const quantity = billingMode === "per_second" ? Math.max(1, Math.floor(Math.abs(Number(seconds)) || 1)) : Math.max(1, Math.floor(Math.abs(Number(count)) || 1));
     return (unitPriceMicrocredits / 1_000_000) * quantity;

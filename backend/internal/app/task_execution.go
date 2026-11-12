@@ -23,6 +23,9 @@ func (s *Service) processTask(ctx context.Context, task model.Task) (map[string]
 	if err := s.requireEcommerceExecution(task); err != nil {
 		return nil, nil, err
 	}
+	if err := s.requireCommerceStudioExecution(task); err != nil {
+		return nil, nil, err
+	}
 	ctx = withTaskExecutionID(ctx, task.ID)
 	ctx = withProviderAnalytics(ctx, s, task)
 	ctx = context.WithValue(ctx, mediaExecutionTaskKey{}, task)

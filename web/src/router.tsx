@@ -11,8 +11,9 @@ import RouteErrorPage from "@/pages/route-error";
 import { isGuestWorkspacePath } from "@/lib/guest-workspace";
 
 const AdminPage = lazy(() => import("@/pages/admin"));
-const EcommercePage = lazy(() => import("@/pages/ecommerce/ecommerce-page"));
-const EcommerceSettingsPage = lazyAdminPage(() => import("@/pages/admin/ecommerce-settings-page"));
+const CommerceStudioPage = lazy(() => import("@/pages/commerce-studio"));
+const CommerceStudioConfigPage = lazyAdminPage(() => import("@/pages/admin/commerce-studio-agent-config-page"));
+const CommerceStudioLibraryPage = lazyAdminPage(() => import("@/pages/admin/commerce-studio-management-page"));
 const AnalyticsPage = lazyAdminPage(() => import("@/pages/admin/admin-route-pages").then((module) => ({ default: module.AnalyticsPage })));
 const AnnouncementsPage = lazyAdminPage(() => import("@/pages/admin/admin-route-pages").then((module) => ({ default: module.AnnouncementsPage })));
 const BannerAnnouncementsPage = lazyAdminPage(() => import("@/pages/admin/admin-route-pages").then((module) => ({ default: module.BannerAnnouncementsPage })));
@@ -128,7 +129,8 @@ export const router = createBrowserRouter([
                 children: [
                     { path: "/", element: deferred(<CreatePage />) },
                     { path: "/create", element: deferred(<CreatePage />) },
-                    { path: "/ecommerce", element: <RequireAuth>{deferred(<EcommercePage />)}</RequireAuth> },
+                    { path: "/ecommerce", element: <Navigate to="/ecommerce-agent" replace /> },
+                    { path: "/ecommerce-agent", element: <RequireAuth>{deferred(<CommerceStudioPage />)}</RequireAuth> },
                     {
                         path: "/toolbox/image",
                         element: <RequireFeature feature="imageWorkbenchEnabled">{deferred(<ImageWorkbenchPage />)}</RequireFeature>,
@@ -222,7 +224,11 @@ export const router = createBrowserRouter([
                             { path: "announcements", element: <AnnouncementsPage /> },
                             { path: "banner-announcements", element: <BannerAnnouncementsPage /> },
                             { path: "agent-lessons", element: <AgentLessonsPage /> },
-                            { path: "ecommerce", element: <EcommerceSettingsPage /> },
+                            { path: "ecommerce", element: <Navigate to="/admin/ecommerce-agent" replace /> },
+                            { path: "ecommerce-agent", element: <CommerceStudioConfigPage /> },
+                            { path: "ecommerce-agent/library", element: <CommerceStudioLibraryPage /> },
+                            { path: "ecommerce-agent/library/skills", element: <CommerceStudioLibraryPage /> },
+                            { path: "ecommerce-agent/library/categories", element: <CommerceStudioLibraryPage /> },
                             { path: "resources", element: <StorageResourcesPage /> },
                             { path: "credit-operations", element: <CreditOperationsPage /> },
                             { path: "redemption-codes", element: <RedemptionCodesPage /> },

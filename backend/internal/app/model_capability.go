@@ -19,6 +19,7 @@ type ModelCapabilityConfig struct {
 }
 
 type TextCapabilityConfig struct {
+	Thinking *TextThinkingConfig `json:"thinking,omitempty"`
 	// Streaming controls whether this model accepts upstream SSE text responses.
 	// A nil value is treated as true for backwards compatibility with older configs.
 	Streaming *bool `json:"streaming,omitempty"`
@@ -231,6 +232,13 @@ func NormalizeModelCapabilityConfigForModel(capability string, protocol string, 
 		}
 		if text.MaxOutputTokens == 0 {
 			text.MaxOutputTokens = 16384
+		}
+		if text.Thinking != nil {
+			normalized, err := normalizeTextThinkingConfig(text.Thinking, "", text.MaxOutputTokens)
+			if err != nil {
+				return nil, err
+			}
+			text.Thinking = normalized
 		}
 		value := &ModelCapabilityConfig{Version: 1, Text: &text}
 		if err := validateTextCapabilityConfig(value.Text); err != nil {

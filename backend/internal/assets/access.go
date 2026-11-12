@@ -14,13 +14,14 @@ type ResourceVariant string
 type DeliveryMode string
 
 const (
-	PurposeDisplay  AccessPurpose   = "display"
-	PurposeCopy     AccessPurpose   = "copy"
-	PurposeDownload AccessPurpose   = "download"
-	PurposeProcess  AccessPurpose   = "browser-process"
-	PurposeProvider AccessPurpose   = "provider-input"
-	VariantOriginal ResourceVariant = "original"
-	VariantPlayback ResourceVariant = "playback"
+	PurposeDisplay              AccessPurpose   = "display"
+	PurposeCopy                 AccessPurpose   = "copy"
+	PurposeDownload             AccessPurpose   = "download"
+	PurposeProcess              AccessPurpose   = "browser-process"
+	PurposeCommerceStudioExport AccessPurpose   = "ecommerce-export"
+	PurposeProvider             AccessPurpose   = "provider-input"
+	VariantOriginal             ResourceVariant = "original"
+	VariantPlayback             ResourceVariant = "playback"
 	// VariantThumbnail 是画布展示档位；缩略图未生成前回落原件，保证请求不会因变体失败而退回平台重定向。
 	VariantThumbnail ResourceVariant = "thumbnail"
 	DeliveryCDN      DeliveryMode    = "cdn"
@@ -70,7 +71,7 @@ func NormalizeAccessOptions(options AccessOptions, allowProvider bool) (AccessOp
 		options.Variant = VariantOriginal
 	}
 	switch options.Purpose {
-	case PurposeDisplay, PurposeCopy, PurposeDownload, PurposeProcess:
+	case PurposeDisplay, PurposeCopy, PurposeDownload, PurposeProcess, PurposeCommerceStudioExport:
 	case PurposeProvider:
 		if !allowProvider {
 			return options, kernel.Forbidden("不允许请求模型输入凭据")
@@ -81,7 +82,7 @@ func NormalizeAccessOptions(options AccessOptions, allowProvider bool) (AccessOp
 	if options.Variant != VariantOriginal && options.Variant != VariantPlayback && options.Variant != VariantThumbnail {
 		return options, kernel.BadAuthRequest("资源变体无效")
 	}
-	if options.Purpose == PurposeCopy || options.Purpose == PurposeDownload || options.Purpose == PurposeProvider {
+	if options.Purpose == PurposeCopy || options.Purpose == PurposeDownload || options.Purpose == PurposeProvider || options.Purpose == PurposeCommerceStudioExport {
 		options.Variant = VariantOriginal
 	}
 	if options.Purpose != PurposeDownload {
@@ -128,6 +129,16 @@ func ResolveAccess(resource *model.Resource, setting storage.Settings, options A
 	}
 	access := &ResourceAccess{ResourceID: resource.ID, RequestedVariant: options.Variant, ActualVariant: VariantOriginal,
 		IssuedAt: now, ExpiresAt: &expires, RefreshAt: now.Add(expires.Sub(now) * 4 / 5), Revision: resource.ETag + ":" + resource.PlaybackStatus + ":" + storage.DeliveryRevision(setting)}
+	if options.Purpose == PurposeCommerceStudioExport {
+		// This authenticated, owner-checked path is only for bounded image export.
+		// Display, video and general browser processing keep their existing delivery policy.
+		if resource.Kind != "image" || resource.Size <= 0 || resource.Size > 32<<20 || (resource.MimeType != "image/png" && resource.MimeType != "image/jpeg" && resource.MimeType != "image/webp") {
+			return nil, kernel.BadAuthRequest("电商导出仅支持不超过 32 MiB 的 PNG、JPEG 或 WebP 图片")
+		}
+		access.Delivery = DeliveryProxy
+		access.URL, err = platformURL(VariantOriginal, expires)
+		return access, err
+	}
 	if options.Variant == VariantPlayback {
 		if resource.Provider == "local" && resource.PlaybackStatus == model.PlaybackStatusReady && resource.PlaybackObjectKey != "" {
 			access.ActualVariant = VariantPlayback

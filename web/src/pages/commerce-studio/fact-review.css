@@ -1,0 +1,25 @@
+.commerce-studio-fact-review {
+    margin: 12px 0;
+    padding: 12px;
+    border: 1px solid var(--user-border, var(--border));
+    border-radius: 10px;
+    background: var(--user-surface-muted, var(--muted));
+    font-size: 12px;
+    line-height: 1.6;
+}
+.commerce-studio-fact-review ul {
+    padding-left: 18px;
+}
+.commerce-studio-fact-review label {
+    display: grid;
+    gap: 6px;
+}
+.commerce-studio-fact-review p {
+    color: var(--user-ink-muted, var(--muted-foreground));
+}
+.commerce-studio-confirmation-note {
+    margin: 10px 0;
+    color: var(--user-ink-muted, var(--muted-foreground));
+    font-size: 12px;
+    line-height: 1.65;
+}

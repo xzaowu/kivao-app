@@ -37,6 +37,14 @@ func (s *Service) mediaTaskProject(task *model.Task) (string, error) {
 			}
 			return "", nil
 		}
+		if exists, e := s.repo.CommerceStudioProjectExists(id); e != nil {
+			return "", e
+		} else if exists {
+			if _, e := s.repo.CommerceStudioProject(task.UserID, id); e != nil {
+				return "", NotFound("电商项目不存在或无权访问")
+			}
+			return "", nil
+		}
 		return "", NotFound("任务所属画布或项目已不存在")
 	}
 	if err != nil {

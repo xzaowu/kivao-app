@@ -113,7 +113,8 @@ const adminNavigation: AdminNavigationGroup[] = [
         label: "创作与扩展",
         items: [
             { path: "/admin/workbench-tools", label: "工作台工具", shortLabel: "工具", icon: <Shapes className="size-4" /> },
-            { path: "/admin/ecommerce", label: "商品套图", shortLabel: "套图", icon: <Shapes className="size-4" /> },
+            { path: "/admin/ecommerce-agent", label: "电商 Agent", shortLabel: "电商", icon: <Shapes className="size-4" /> },
+            { path: "/admin/ecommerce-agent/library", label: "电商知识与技能", shortLabel: "知识", icon: <BookMarked className="size-4" /> },
             { path: "/admin/inspirations", label: "灵感管理", shortLabel: "灵感", icon: <Sparkles className="size-4" /> },
             { path: "/admin/prompt-templates", label: "提示词模板", shortLabel: "模板", icon: <MessageSquareText className="size-4" /> },
             { path: "/admin/settings/drawing-engine", label: "绘图工具", shortLabel: "绘图", icon: <Paintbrush className="size-4" /> },

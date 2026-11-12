@@ -56,7 +56,7 @@ function buildNav(features: FeatureAvailability): { groups: WorkspaceNavGroup[];
             items: [
                 ...(features.imageWorkbenchEnabled ? [{ id: "toolbox-image", title: "图片生成", icon: ImageIcon, to: "/toolbox/image" }] : []),
                 ...(features.videoWorkbenchEnabled ? [{ id: "toolbox-video", title: "视频生成", icon: Video, to: "/toolbox/video" }] : []),
-                ...(features.ecommerceEnabled ? [{ id: "ecommerce", title: "商品套图", icon: ShoppingBag, to: "/ecommerce" }] : []),
+                ...(features.commerceStudioEnabled ? [{ id: "commerce-studio", title: "电商 Agent", icon: ShoppingBag, to: "/ecommerce-agent" }] : []),
                 { ...toolItem("skills", "/skills"), title: "技能" },
             ],
         },

@@ -202,6 +202,7 @@ func (s *Service) StartWorker() {
 	s.startResourceDeletionWorker(ctx)
 	s.startResourceOffloadWorker()
 	s.startSkillSyncWorker(ctx)
+	s.startCommerceStudioSkillSyncWorker(ctx)
 	s.startPaymentWorker(ctx)
 	s.startBillingAutoRefundWorker()
 	s.startDramaScheduler()

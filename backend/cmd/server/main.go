@@ -107,6 +107,12 @@ func run(ctx context.Context) error {
 	if err := ensureBuiltinWorkbenchCatalog(svc); err != nil {
 		return err
 	}
+	if _, err := svc.EnsureBundledCommerceStudioKnowledge(); err != nil {
+		return err
+	}
+	if _, err := svc.EnsureBuiltinCommerceStudioKnowledge(); err != nil {
+		return err
+	}
 	if summary, err := svc.MigrateLegacyStorage(); err != nil {
 		slog.Warn("storage migration skipped after error", "error", err)
 	} else if summary.Backup != "" {

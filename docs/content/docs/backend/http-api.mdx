@@ -5,6 +5,13 @@ description: 信封、错误码与 OpenAPI
 
 # HTTP API 合同
 
+
+## KIVAO 电商 Agent
+
+新模块使用 `/api/ecommerce-agent`，与旧 `/api/ecommerce` 的数据和项目 ID 独立。项目列表/详情/轮次为登录用户本人读取，项目保存带 revision，历史图片编辑带轮次 version；冲突拒绝覆盖。`projects/:id/tasks` 只提交当前用户项目的文本策划任务，阶段模型由后台固定。图片仍走 `/api/workbench/tasks`，新增可选 `ecommerceProjectId`，在创建前校验新模块开关与归属；`batch` 沿用原生幂等回执合同。
+
+`knowledge/orchestration`、知识维护、技能安装和分类写入要求管理员。用户技能安装仍遵守审核和所有权规则。原件导出只开放给已认证所有者，`resources/:id/file?purpose=ecommerce-export` 对 MIME、状态、大小与归属强校验。统一信封和失败状态保持不变。详见[电商 Agent](/docs/backend/kivao-ecommerce-agent)。
+
 ## 商品套图
 
 所有 `/ecommerce/*` 均需登录，读取有用户范围并返回 `private, no-store`。`GET /ecommerce/status` 返回开放和阶段模型配置是否完整；项目列表每页 20 条，仅含摘要；项目详情及 `/rounds?page=` 返回当前轮或独立的历史轮与脱敏任务。打开页面、刷新、历史和回执查询均不触发生成。

@@ -76,6 +76,9 @@ func (s *Service) resolveResourceAccess(resource *model.Resource, options Resour
 		setting.Runtime = s.storageSettingWithRuntimePolicy(ossSettingValue{}).Runtime
 	}
 	return assets.ResolveAccess(resource, setting, options, time.Now().UTC(), func(variant assets.ResourceVariant, expires time.Time) (string, error) {
+		if options.Purpose == assets.PurposeCommerceStudioExport {
+			return "/api/resources/" + url.PathEscape(resource.ID) + "/file?purpose=ecommerce-export", nil
+		}
 		return s.signedResourceAccessURL(resource, variant, expires, options.Purpose == assets.PurposeProvider)
 	})
 }
