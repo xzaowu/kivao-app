@@ -1230,7 +1230,7 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
     const settingsPanel =
         kind === "image" && imageProfile ? (
             <div className="workbench-settings-content">
-                <ImageSizePicker profile={imageProfile} size={ratio} quality={quality} imageResolution={imageResolution} onChange={updateImageSettings} />
+                <ImageSizePicker profile={imageProfile} size={ratio} quality={quality} imageResolution={imageResolution} declaredSizeOptions onChange={updateImageSettings} />
                 {imageProfile.quality.supported && !imageResolutionUsesQuality(imageProfile) ? (
                     <label className="workbench-setting-row">
                         <span>图片质量</span>

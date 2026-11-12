@@ -2,7 +2,7 @@ import { useState } from "react";
 import "./image-size-picker.css";
 import { Input, Button } from "antd";
 import type { ImageCapabilityConfig } from "@/lib/model-capabilities";
-import { imageResolutionTiers, imagePresetForRatio, imagePresetValue, imageQualityForSelection, imageQualityForTier, imageResolutionUsesQuality, imageSizePresets, imageTierAvailable } from "@/lib/image-size-presets";
+import { imageResolutionTiers, imagePresetForRatio, imagePresetValue, imageQualityForSelection, imageQualityForTier, imageResolutionUsesQuality, imageSizePresets, imageTierAvailable, imageDeclaredSizePresets } from "@/lib/image-size-presets";
 import { buildImageResolutionOptions, type ImageResolutionOption, type ImageResolutionTier } from "@/lib/image-resolution-tiers";
 
 import { resolveImageRequestSize, validateImageSize } from "@/services/api/image-validation";
@@ -13,6 +13,7 @@ export function ImageSizePicker({
     quality,
     imageResolution,
     canSelectResolution,
+    declaredSizeOptions = false,
     onChange,
 }: {
     profile: ImageCapabilityConfig;
@@ -20,11 +21,14 @@ export function ImageSizePicker({
     quality?: string;
     imageResolution?: string;
     canSelectResolution?: (resolution: string) => boolean;
+    declaredSizeOptions?: boolean;
     onChange: (size: string, quality?: string, resolution?: string) => void;
 }) {
     const ungrouped = Boolean(profile.parameters && !profile.resolution.supported);
-    const IMAGE_RESOLUTIONS = ungrouped ? [...new Set(imageSizePresets(profile).map((p) => p.tier))] : imageResolutionTiers(profile);
-    const presets = imageSizePresets(profile).filter((preset) => imageTierAvailable(profile, preset.tier));
+    const declaredPresets = declaredSizeOptions ? imageDeclaredSizePresets(profile) : [];
+    const tierValues = ungrouped ? [...new Set(imageSizePresets(profile).map((p) => p.tier))] : imageResolutionTiers(profile);
+    const IMAGE_RESOLUTIONS = profile.parameters ? tierValues.map((value) => value.trim().toLowerCase()) : tierValues;
+    const presets = (declaredPresets.length ? declaredPresets : imageSizePresets(profile)).filter((preset) => imageTierAvailable(profile, preset.tier));
     const visibleTiers = IMAGE_RESOLUTIONS.filter((value) => presets.some((preset) => preset.tier === value));
     const [chosenTier, setChosenTier] = useState<ImageResolutionTier>("1k");
     const [customPreset, setCustomPreset] = useState<ImageResolutionOption>();
@@ -78,8 +82,8 @@ export function ImageSizePicker({
     const choices = presets.filter((preset) => preset.tier === tier);
     const select = (preset: ImageResolutionOption) => {
         if (!available(preset.tier)) return;
-        if (profile.resolution.supported && canSelectResolution && !canSelectResolution(preset.tier)) return;
-        const resolution = profile.resolution.values.find((value) => value.toLowerCase() === preset.tier);
+        const resolution = profile.resolution.values.find((value) => value.trim().toLowerCase() === preset.tier);
+        if (profile.resolution.supported && canSelectResolution && !canSelectResolution(resolution || preset.tier)) return;
         setChosenTier(preset.tier);
         setCustomPreset(preset);
         setError("");
@@ -209,7 +213,7 @@ export function ImageSizePicker({
                         type="button"
                         key={`${preset.ratio}:${preset.size}`}
                         title={`${preset.ratio} · ${preset.width} × ${preset.height}`}
-                        aria-pressed={size !== "auto" && active?.size === preset.size && active?.tier === tier}
+                        aria-pressed={size !== "auto" && active?.size === preset.size && active?.tier === tier && (!declaredPresets.length || active.ratio === preset.ratio)}
                         onClick={() => select(preset)}
                     >
                         <span className="image-size-ratio-icon" style={{ width: 24 * Math.min(1, preset.width / preset.height), height: 24 * Math.min(1, preset.height / preset.width) }} />

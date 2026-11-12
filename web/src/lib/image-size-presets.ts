@@ -89,7 +89,8 @@ export function imageResolutionUsesQuality(profile: ImageCapabilityConfig) {
 }
 
 export function imageTierAvailable(profile: ImageCapabilityConfig, tier: ImageResolutionTier) {
-    if (profile.parameters) return profile.resolution.supported ? profile.resolution.values.includes(tier) : (profile.size.parameter === "size" && profile.size.allowCustom) || Boolean(profile.size.presets?.some((preset) => preset.tier === tier));
+    const normalizedTier = tier.trim().toLowerCase();
+    if (profile.parameters) return profile.resolution.supported ? profile.resolution.values.some((value) => value.trim().toLowerCase() === normalizedTier) : (profile.size.parameter === "size" && profile.size.allowCustom) || Boolean(profile.size.presets?.some((preset) => preset.tier.trim().toLowerCase() === normalizedTier));
     // 质量参数能映射档位时按上游质量裁剪；管理员尺寸预设存在时再取交集，避免默认 low/medium/high 把未启用的 1K 显示出来。
     if (profile.size.parameter !== "aspect_ratio") return profile.size.parameter !== "none";
     const configuredTiers = new Set(profile.size.presets?.map((preset) => preset.tier));
@@ -135,6 +136,32 @@ export function imageSizePresets(profile: ImageCapabilityConfig): ImageResolutio
 export function imagePresetValue(profile: ImageCapabilityConfig, preset: ImageResolutionOption) {
     if (!profile.size.presets && !profile.size.allowCustom && preset.tier === "1k" && profile.size.values.includes(preset.ratio) && !profile.size.values.includes(preset.size)) return preset.ratio;
     return profile.size.parameter === "aspect_ratio" ? preset.ratio : preset.size;
+}
+
+// 工作台按声明合成展示选项；不写回模型配置，也不替代已有的像素预设。
+export function imageDeclaredSizePresets(profile: ImageCapabilityConfig): ImageResolutionOption[] {
+    if (!profile.parameters || profile.size.presets?.length || !profile.resolution.supported || profile.size.parameter !== "aspect_ratio") return [];
+    const sizeField = profile.parameters.find((field) => field.name === "size" && field.enabled !== false);
+    const ratios = [...new Set((sizeField?.values || []).filter((value): value is string => typeof value === "string" && value !== "auto"))];
+    const pixels: Record<string, number> = { "1k": 1_048_576, "1.5k": 2_359_296, "2k": 4_194_304, "4k": 8_294_400 };
+    return [...new Set(profile.resolution.values.map((value) => value.trim().toLowerCase()))].flatMap((tier) => {
+        if (!pixels[tier]) return [];
+        return ratios.flatMap((ratio) => {
+            const match = ratio.match(/^(\d{1,5})\s*[:：]\s*(\d{1,5})$/);
+            if (!match || !Number(match[1]) || !Number(match[2])) return [];
+            try {
+                // 9:21 等枚举必须回传原值，不能约分成未声明的 3:7。
+                return [{ ...imagePresetForRatio(tier, ratio), ratio }];
+            } catch {
+                // 模型明确声明的超宽比例可显示；像素仅为有界换算参考，不作为提交值。
+                const [w, h] = [Number(match[1]), Number(match[2])];
+                const scale = Math.min(Math.sqrt(pixels[tier] / (w * h)), 3840 / Math.max(w, h));
+                const width = Math.max(16, Math.floor(w * scale / 16) * 16);
+                const height = Math.max(16, Math.floor(h * scale / 16) * 16);
+                return [{ tier, ratio, width, height, size: `${width}x${height}` }];
+            }
+        });
+    });
 }
 
 export function imageSizeConfigWithPresets(profile: ImageCapabilityConfig, presets: ImageResolutionOption[]): ImageCapabilityConfig["size"] {
