@@ -429,7 +429,15 @@ function EcommerceWorkspace({ userId }: { userId: string }) {
                             icon={<Plus className="size-4" />}
                             disabled={busy}
                             onClick={() => {
-                                if (busy) return;
+                                if (busy || lock.current) return;
+                                // An unsaved draft has no project query to change, so navigation alone cannot reset it.
+                                if (!projectId) {
+                                    epoch.current++;
+                                    setDraft(emptyDraft());
+                                    setError("");
+                                    createId.current = createClientUUID();
+                                    if (fileRef.current) fileRef.current.value = "";
+                                }
                                 setParams({});
                             }}
                         >
