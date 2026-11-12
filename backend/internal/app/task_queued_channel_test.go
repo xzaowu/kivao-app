@@ -61,7 +61,7 @@ func TestQueuedCustomChannelRecheck(t *testing.T) {
 			}
 			if tc.retry {
 				var err error
-				task, err = s.repo.RetryTaskWithBilling(task.UserID, task, nil, 10)
+				task, err = s.repo.RetryTaskWithBilling(task.UserID, task, nil, 10, nil)
 				if err != nil {
 					t.Fatal(err)
 				}

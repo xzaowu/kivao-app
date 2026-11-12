@@ -8,7 +8,7 @@ import (
 
 func TestBillingAutoRefundDefaultsDisabled(t *testing.T) {
 	svc := newResourceTestService(t)
-	setting, err := svc.billingAutoRefundSetting()
+	setting, err := svc.billingAutoRefundSetting(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -26,7 +26,7 @@ func TestBillingAutoRefundRequiresAdmin(t *testing.T) {
 	if _, err := svc.UpdateBillingAutoRefundSetting(&model.User{ID: "user-1", Role: model.UserRoleUser}, BillingAutoRefundSetting{Enabled: true}); err == nil {
 		t.Fatal("非管理员不能修改自动退回")
 	}
-	setting, err := svc.billingAutoRefundSetting()
+	setting, err := svc.billingAutoRefundSetting(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
