@@ -168,7 +168,7 @@ func loadRuntimePolicy(c *gin.Context, svc *service.Service) (service.RuntimePol
 	return policy, true
 }
 
-func authorizeSystemProxy(channel *model.ModelChannel, protocol model.ChannelInterfaceType, method string, requestPath string, contentType string, body []byte) error {
+func authorizeSystemProxy(channel *model.ModelChannel, protocol model.ChannelInterfaceType, method string, requestPath string, contentType string, body []byte, declaredPaths ...string) error {
 	requestPath, err := normalizedProxyPath(requestPath)
 	if err != nil {
 		return err
@@ -224,7 +224,7 @@ func authorizeSystemProxy(channel *model.ModelChannel, protocol model.ChannelInt
 	if method != http.MethodPost || !openAIPostEndpoints[requestPath] {
 		return errors.New("系统渠道不允许访问该上游接口")
 	}
-	if protocol != "" && !interfaceAllowsProxyPath(protocol, requestPath) {
+	if !interfaceAllowsProxyPath(protocol, requestPath, declaredPaths...) {
 		return errors.New("当前接口类型不允许访问该上游接口")
 	}
 	modelName := proxyRequestModel(contentType, body)
@@ -234,7 +234,7 @@ func authorizeSystemProxy(channel *model.ModelChannel, protocol model.ChannelInt
 	return nil
 }
 
-func interfaceAllowsProxyPath(interfaceType model.ChannelInterfaceType, requestPath string) bool {
+func interfaceAllowsProxyPath(interfaceType model.ChannelInterfaceType, requestPath string, declaredPaths ...string) bool {
 	switch interfaceType {
 	case model.ChannelInterfaceChatCompletion:
 		return requestPath == "/chat/completions"
@@ -251,7 +251,12 @@ func interfaceAllowsProxyPath(interfaceType model.ChannelInterfaceType, requestP
 	case model.ChannelInterfaceAsyncAudio, model.ChannelInterfaceNewAPIVideo, model.ChannelInterfaceNewAPIChannel1, model.ChannelInterfaceNewAPIChannel2, model.ChannelInterfaceXAIVideo, model.ChannelInterfaceVolcengineArkVideo, model.ChannelInterfaceVolcengineArkAgentPlanVideo, model.ChannelInterfaceVolcengineJiMengImage, model.ChannelInterfaceVolcengineJiMengVideo, model.ChannelInterfaceGeminiVeo, model.ChannelInterfaceGeminiImage, model.ChannelInterfaceNovitaVideo, model.ChannelInterfaceMiniMaxVideo:
 		return false
 	default:
-		return true
+		for _, allowed := range declaredPaths {
+			if requestPath == allowed {
+				return true
+			}
+		}
+		return false
 	}
 }
 

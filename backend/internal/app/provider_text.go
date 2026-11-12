@@ -15,7 +15,10 @@ import (
 )
 
 func runTextTask(ctx context.Context, input canvasGenerationInput) (map[string]interface{}, error) {
-	if _, ok := declarativeProtocolAdapterForContext(ctx, input.Config.InterfaceType); ok {
+	if adapter, ok := declarativeProtocolAdapterForContext(ctx, input.Config.InterfaceType); ok {
+		if !activeTextProtocol(adapter.Metadata()) {
+			return nil, errors.New("当前文本协议未启用或不支持文本")
+		}
 		return runDeclarativeProtocolTask(ctx, input)
 	}
 	switch input.Config.InterfaceType {
@@ -32,10 +35,7 @@ func runTextTask(ctx context.Context, input canvasGenerationInput) (map[string]i
 // Known text protocols keep the plugin's request mapping and host transport,
 // while sharing the SSE parser used by text generation and Agent requests.
 func executeProtocolCreateRequest(ctx context.Context, input canvasGenerationInput, spec protocol.RequestSpec) ([]byte, *protocol.Result, error) {
-	wire := input.Config.InterfaceType
-	if wire == string(model.ChannelInterfaceOpenAIResponse) {
-		wire = "responses"
-	}
+	wire := declaredTextWire(ctx, input.Config.InterfaceType)
 	if input.Mode != "text" || !input.StreamText || (wire != "chat-completion" && wire != "responses" && wire != "claude-api") {
 		data, err := executeProtocolRequest(ctx, input.Config, spec)
 		return data, nil, err

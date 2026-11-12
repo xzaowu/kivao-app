@@ -22,7 +22,11 @@ func runAgentToolTask(ctx context.Context, input canvasGenerationInput) (map[str
 	// 防止供应商请求体反向污染任务记录，也避免切换模型时复用错误协议。
 	if input.AgentRequests != nil && input.AgentRequests.Canonical != nil {
 		_, declarative := agentProtocolAdapterForContext(ctx, input.Config.InterfaceType)
-		requests, err := expandCanonicalAgentRequest(input.AgentRequests.Canonical, input.Config, declarative)
+		historyConfig := input.Config
+		if adapter, ok := protocolAdapterForContext(ctx, input.Config.InterfaceType); ok && adapter.Metadata().AgentWire == "responses" {
+			historyConfig.InterfaceType = string(model.ChannelInterfaceOpenAIResponse)
+		}
+		requests, err := expandCanonicalAgentRequest(input.AgentRequests.Canonical, historyConfig, declarative)
 		if err != nil {
 			return nil, err
 		}
@@ -124,10 +128,11 @@ func applyAgentOutputLimit(body map[string]interface{}, limit int, protocol stri
 }
 
 func runDeclarativeAgentTask(ctx context.Context, input canvasGenerationInput, adapter protocol.AgentAdapter) (map[string]interface{}, error) {
-	wire := input.Config.InterfaceType
-	if wire == string(model.ChannelInterfaceOpenAIResponse) {
-		wire = "responses"
+	provider, ok := protocolAdapterForContext(ctx, input.Config.InterfaceType)
+	if !ok || !activeTextProtocol(provider.Metadata()) {
+		return nil, errors.New("当前 Agent 协议未启用或不支持文本")
 	}
+	wire := provider.Metadata().AgentWire
 	knownWire := wire == "chat-completion" || wire == "responses" || wire == "claude-api"
 	if input.TextOptions.Thinking && !knownWire {
 		return nil, errors.New("当前声明式 Agent 渠道尚不支持思考模式，请关闭思考模式或切换内置协议渠道")

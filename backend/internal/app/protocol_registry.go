@@ -23,6 +23,8 @@ type PluginProviderCatalogItem struct {
 	Create            string                      `json:"create,omitempty"`
 	Poll              string                      `json:"poll,omitempty"`
 	ContentType       string                      `json:"contentType,omitempty"`
+	TextWire          string                      `json:"textWire,omitempty"`
+	RequiresSecretKey bool                        `json:"requiresSecretKey,omitempty"`
 	BaseURL           string                      `json:"baseUrl,omitempty"`
 	Enabled           bool                        `json:"enabled"`
 	UnavailableReason string                      `json:"unavailableReason,omitempty"`
@@ -51,6 +53,8 @@ func (s *Service) PluginProviderCatalog(scope, capability string, includeUnavail
 			if adapter, ok := canonicalProviderAdapter(s.protocolRegistry(), provider.ID); ok {
 				metadata := adapter.Metadata()
 				item.Create, item.Poll, item.ContentType = metadata.Create, metadata.Poll, metadata.ContentType
+				item.TextWire = metadata.TextWire
+				item.RequiresSecretKey = protocolAuthUsesSecretKey(metadata.Auth) || isVolcengineJiMengProtocol(provider.ID)
 			}
 			if includeUnavailable || item.Enabled {
 				items = append(items, item)

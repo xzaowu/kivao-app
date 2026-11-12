@@ -171,6 +171,7 @@ export type PublicChannelModel = {
     icon: string;
     capability: string;
     protocol?: string;
+    textWire?: import("@/lib/model-protocols").TextWire;
     capabilityConfig?: Record<string, any>;
     priceTiers: PublicChannelModelPriceTier[];
     pricingMode: string;

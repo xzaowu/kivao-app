@@ -227,6 +227,7 @@ export function systemChannelModelChannels(channels: PublicChannelCatalog[]): Mo
                     icon: model.icon || "",
                     capability: model.capability as ModelCapability,
                     protocol: model.protocol as any,
+                    textWire: model.textWire,
                     pricePolicy: "channel" as const,
                     billingMode: billingMode as any,
                     unitPriceMicrocredits: unitPrice,

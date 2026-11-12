@@ -161,6 +161,35 @@ func TestAuthorizeSystemProxyRestrictsModelProtocol(t *testing.T) {
 	}
 }
 
+func TestAuthorizeSystemProxyPluginPathsFailClosed(t *testing.T) {
+	channel := &model.ModelChannel{ModelsJSON: ` ["test-model"] `}
+	for _, tc := range []struct {
+		name, method, path, model string
+		declarations              []string
+		allowed                   bool
+	}{
+		{"declared", "POST", "/messages", "test-model", []string{"/messages"}, true},
+		{"undeclared", "POST", "/messages", "test-model", nil, false},
+		{"wrong_wire", "POST", "/responses", "test-model", []string{"/messages"}, false},
+		{"wrong_model", "POST", "/messages", "other", []string{"/messages"}, false},
+		{"wrong_method", "GET", "/messages", "test-model", []string{"/messages"}, false},
+		{"arbitrary_endpoint", "POST", "/admin/delete", "test-model", []string{"/admin/delete"}, false},
+		{"traversal", "POST", "/v1/../messages", "test-model", []string{"/messages"}, false},
+		{"missing_protocol", "POST", "/messages", "test-model", nil, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			id := model.ChannelInterfaceType("test-alias")
+			if tc.name == "missing_protocol" {
+				id = ""
+			}
+			err := authorizeSystemProxy(channel, id, tc.method, tc.path, "application/json", []byte(`{"model":"`+tc.model+`"}`), tc.declarations...)
+			if (err == nil) != tc.allowed {
+				t.Fatalf("allowed=%v err=%v", tc.allowed, err)
+			}
+		})
+	}
+}
+
 func TestAuthorizeSystemProxyMiniMaxVideoCreateAndPoll(t *testing.T) {
 	channel := &model.ModelChannel{APIFormat: "openai", ModelsJSON: `["MiniMax-H3"]`}
 	createBody := []byte(`{"model":"MiniMax-H3","content":[{"type":"text","text":"test"}]}`)

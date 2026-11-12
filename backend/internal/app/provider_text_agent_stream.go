@@ -309,11 +309,8 @@ func (p *streamingAgentParser) setToolCall(index int, id string, itemID string, 
 }
 
 func (p *streamingAgentParser) result() (map[string]interface{}, error) {
-	if p.err != nil {
-		return nil, p.err
-	}
-	if !p.terminal {
-		return nil, providerTextCompletionError{reason: "missing_terminal"}
+	if err := p.completionError(); err != nil {
+		return nil, err
 	}
 	if p.completed != nil {
 		result, err := parseAgentToolPayload(p.completed, p.protocol)

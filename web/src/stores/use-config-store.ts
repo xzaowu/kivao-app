@@ -100,6 +100,7 @@ export type ModelChannel = {
         icon?: string;
         capability: ModelCapability;
         protocol?: ModelProtocol;
+        textWire?: import("@/lib/model-protocols").TextWire;
         pricePolicy?: "channel" | "unified";
         billingMode: "fixed_request" | "per_second" | "token";
         unitPriceMicrocredits: number;
@@ -541,7 +542,8 @@ export function channelConnectionSignature(channel: ModelChannel) {
 export function resolveModelRequestConfig(config: AiConfig, value: string) {
     const channel = resolveModelChannel(config, value);
     const model = modelOptionName(value || config.model);
-    const modelProtocol = channel.modelCosts?.find((item) => item.model === model)?.protocol;
+    const modelCost = channel.modelCosts?.find((item) => item.model === model);
+    const modelProtocol = modelCost?.protocol;
     const interfaceType = modelProtocol || channel.interfaceType;
     return {
         ...config,
@@ -552,6 +554,7 @@ export function resolveModelRequestConfig(config: AiConfig, value: string) {
         headers: channel.headers,
         apiFormat: interfaceType ? (interfaceType === "gemini-veo" || interfaceType === "gemini-image" ? ("gemini" as const) : interfaceType === "claude-api" ? ("claude" as const) : ("openai" as const)) : channel.apiFormat,
         interfaceType,
+        textWire: channel.scope === "system" ? modelCost?.textWire : undefined,
         channelId: channel.scope === "system" ? channel.id : "",
     };
 }

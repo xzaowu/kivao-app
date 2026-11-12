@@ -1,5 +1,28 @@
 package app
 
+// ValidateSystemProxyTextStream checks completion of the known text wires after
+// raw forwarding. It does not interpret the content as an Agent tool result or
+// require a text body: a completed refusal/native tool response can be billable.
+func ValidateSystemProxyTextStream(wire string, body []byte) error {
+	if wire != "chat-completion" && wire != "responses" && wire != "claude-api" {
+		return nil
+	}
+	parser := newStreamingAgentParser(wire, nil)
+	parser.consume("text/event-stream", body)
+	parser.flush()
+	return parser.completionError()
+}
+
+func (p *streamingAgentParser) completionError() error {
+	if p.err != nil {
+		return p.err
+	}
+	if !p.terminal {
+		return providerTextCompletionError{reason: "missing_terminal"}
+	}
+	return nil
+}
+
 // A received response is not proof of a completed generation or of zero cost.
 // Keep this typed so billing and compatibility retries do not depend on translated
 // error strings or on untrusted provider messages.

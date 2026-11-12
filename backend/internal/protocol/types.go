@@ -180,6 +180,10 @@ type Metadata struct {
 	Parameters              []Parameter      `json:"parameters,omitempty"`
 	ImageParameters         []ImageParameter `json:"imageParameters,omitempty"`
 	Create                  string           `json:"-"`
+	Agent                   string           `json:"-"`
+	TextWire                string           `json:"-"`
+	AgentWire               string           `json:"-"`
+	Auth                    ManifestAuth     `json:"-"`
 	Poll                    string           `json:"-"`
 	Cancel                  string           `json:"-"`
 	ContentType             string           `json:"-"`

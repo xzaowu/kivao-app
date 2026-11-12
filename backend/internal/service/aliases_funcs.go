@@ -65,5 +65,6 @@ var (
 	ValidateOutboundHost                       = app.ValidateOutboundHost
 	ValidateOutboundURL                        = app.ValidateOutboundURL
 	ValidatePriceTierPrice                     = app.ValidatePriceTierPrice
+	ValidateSystemProxyTextStream              = app.ValidateSystemProxyTextStream
 	WrapAppError                               = app.WrapAppError
 )

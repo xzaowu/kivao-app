@@ -15,6 +15,7 @@ import { normalizeGrokImageResolution, normalizeQuality, normalizeVolcengineArkI
 import { parseGeminiImagePayload, parseImagePayload, readAxiosError } from "@/services/api/image-response";
 import { toChatCompletionMessages, toChatCompletionToolChoice, toClaudeBody, toGeminiBody, toGeminiToolOptions, toResponseInput, toResponseTool, withSystemMessage } from "@/services/api/image-protocols";
 import { requestGeminiStreamingResponse, requestStreamingChatCompletion, requestStreamingClaude, requestStreamingResponse } from "@/services/api/image-streaming";
+import { resolveTextRequestConfig } from "@/services/api/text-wire";
 export { buildBackendToolRequests } from "@/services/api/image-protocols";
 export type { AiTextContentPart, AiTextMessage, ResponseFunctionTool, ResponseInputMessage, ResponseToolCall, ToolChoice, ToolResponseResult } from "@/services/api/image-contracts";
 
@@ -232,19 +233,19 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
 }
 
 export async function requestImageQuestion(config: AiConfig, messages: AiTextMessage[], onDelta: (text: string) => void, options?: RequestOptions) {
-    const requestConfig = resolveModelRequestConfig(config, config.model || config.textModel);
+    const requestConfig = await resolveTextRequestConfig(config, options?.signal);
     try {
         if (requestConfig.apiFormat === "gemini") {
             const answer = (await requestGeminiStreamingResponse(requestConfig, toGeminiBody(requestConfig, messages), onDelta, options)).content || "没有返回内容";
             if (answer === "没有返回内容") onDelta(answer);
             return answer;
         }
-        if (requestConfig.interfaceType === "claude-api") {
+        if (requestConfig.textWire === "claude-api") {
             const answer = (await requestStreamingClaude(requestConfig, toClaudeBody(requestConfig, messages), onDelta, options)).content || "没有返回内容";
             if (answer === "没有返回内容") onDelta(answer);
             return answer;
         }
-        if (requestConfig.interfaceType === "chat-completion" || !requestConfig.interfaceType) {
+        if (requestConfig.textWire === "chat-completion") {
             const answer =
                 (
                     await requestStreamingChatCompletion(
@@ -280,13 +281,13 @@ export async function requestImageQuestion(config: AiConfig, messages: AiTextMes
 }
 
 export async function requestToolResponse(config: AiConfig, messages: ResponseInputMessage[], tools: ResponseFunctionTool[], toolChoice: ToolChoice = "auto", onDelta?: (text: string) => void, options?: RequestOptions): Promise<ToolResponseResult> {
-    const requestConfig = resolveModelRequestConfig(config, config.model || config.textModel);
+    const requestConfig = await resolveTextRequestConfig(config, options?.signal);
     try {
         if (requestConfig.apiFormat === "gemini") {
             return await requestGeminiStreamingResponse(requestConfig, toGeminiBody(requestConfig, messages, toGeminiToolOptions(tools, toolChoice)), onDelta, options);
         }
-        if (requestConfig.interfaceType === "claude-api") return await requestStreamingClaude(requestConfig, toClaudeBody(requestConfig, messages, tools), onDelta, options);
-        if (requestConfig.interfaceType === "chat-completion" || !requestConfig.interfaceType) {
+        if (requestConfig.textWire === "claude-api") return await requestStreamingClaude(requestConfig, toClaudeBody(requestConfig, messages, tools), onDelta, options);
+        if (requestConfig.textWire === "chat-completion") {
             const chatPayload: Record<string, unknown> = {
                 model: requestConfig.model,
                 messages: toChatCompletionMessages(withSystemMessage(requestConfig, messages)),
@@ -297,6 +298,8 @@ export async function requestToolResponse(config: AiConfig, messages: ResponseIn
             try {
                 return await requestStreamingChatCompletion(requestConfig, chatPayload, onDelta, options);
             } catch (error) {
+                // Keep legacy builtin retries from spreading to newly recognized plugins.
+                if (requestConfig.interfaceType && requestConfig.interfaceType !== "chat-completion") throw error;
                 if (!isToolChoiceCompatibilityError(error)) throw error;
 
                 // 部分 OpenAI 兼容上游仅支持 auto，思考模式则可能要求完全省略该字段。

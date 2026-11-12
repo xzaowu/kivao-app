@@ -1,5 +1,5 @@
 import { http } from "@/services/api/request";
-import type { ModelProtocolDefinition, ProtocolCapability } from "@/lib/model-protocols";
+import { isTextWire, type ModelProtocolDefinition, type ProtocolCapability } from "@/lib/model-protocols";
 
 type PluginProviderCatalogItem = {
     imageParameters?: import("@/lib/image-parameters").ImageParameter[];
@@ -12,6 +12,8 @@ type PluginProviderCatalogItem = {
     create?: string;
     poll?: string;
     contentType?: string;
+    textWire?: string;
+    requiresSecretKey?: boolean;
     enabled: boolean;
     unavailableReason?: string;
     baseUrl?: string;
@@ -33,8 +35,8 @@ type PluginProviderCatalogItem = {
     }>;
 };
 
-export async function fetchPluginProviderCatalog(scope: string, capability?: ProtocolCapability) {
-    const result = await http.get<{ providers: PluginProviderCatalogItem[] }>("/plugins/catalog", { params: { scope, capability } });
+export async function fetchPluginProviderCatalog(scope: string, capability?: ProtocolCapability, signal?: AbortSignal) {
+    const result = await http.get<{ providers: PluginProviderCatalogItem[] }>("/plugins/catalog", { params: { scope, capability }, signal });
     return result.providers.filter((item) => item.enabled && !item.unavailableReason).map(toProviderDefinition);
 }
 
@@ -47,6 +49,8 @@ function toProviderDefinition(item: PluginProviderCatalogItem): ModelProtocolDef
         create: item.create || "",
         poll: item.poll,
         contentType: item.contentType || "application/json",
+        textWire: isTextWire(item.textWire) ? item.textWire : undefined,
+        requiresSecretKey: item.requiresSecretKey === true,
         media: `${item.vendor} · ${item.version}`,
         enabled: item.enabled && !item.unavailableReason,
         baseUrl: item.baseUrl,

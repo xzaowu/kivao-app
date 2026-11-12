@@ -22,6 +22,9 @@ import (
 )
 
 func applyProtocolAuth(req *http.Request, config providerConfig, auth protocol.ManifestAuth) error {
+	if protocolAuthUsesSecretKey(auth) && strings.TrimSpace(config.SecretKey) == "" {
+		return errors.New("当前协议缺少 Secret Key")
+	}
 	typeName := strings.ToLower(strings.TrimSpace(auth.Type))
 	if typeName == "" {
 		applyProviderAuth(req, config)
@@ -97,6 +100,23 @@ func applyProtocolAuth(req *http.Request, config providerConfig, auth protocol.M
 	default:
 		return fmt.Errorf("插件声明了尚未启用的鉴权驱动 %s", auth.Type)
 	}
+}
+
+func protocolAuthUsesSecretKey(auth protocol.ManifestAuth) bool {
+	usesSecret := func(field string) bool {
+		switch strings.ToLower(strings.TrimSpace(field)) {
+		case "secretkey", "secret_key", "secret":
+			return true
+		}
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(auth.Type)) {
+	case "basic", "volcengine-v4", "aws-sigv4", "tc3":
+		return usesSecret(auth.Field) || usesSecret(auth.SecretField)
+	case "bearer", "header", "api-key", "apikey", "query", "anthropic", "google-api-key", "gemini":
+		return usesSecret(auth.Field)
+	}
+	return false
 }
 
 func signProtocolAWSV4(req *http.Request, accessKey, secretKey string, auth protocol.ManifestAuth) error {

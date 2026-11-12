@@ -387,11 +387,14 @@ func proxySystemRequestPath(c *gin.Context, svc *service.Service, user *model.Us
 			capability = channelModel.Capability
 		}
 	}
-	if err := authorizeSystemProxy(channel, protocol, c.Request.Method, path, c.GetHeader("Content-Type"), body); err != nil {
+	if err := authorizeSystemProxy(channel, protocol, c.Request.Method, path, c.GetHeader("Content-Type"), body, svc.SystemProxyDeclaredPostPaths(protocol)...); err != nil {
 		fail(c, http.StatusForbidden, err)
 		return
 	}
-	if channelModel != nil && channelModel.BillingMode == "token" && protocol == model.ChannelInterfaceChatCompletion {
+	// Freeze the wire before sending: disabling or replacing the plugin while
+	// its response is in flight must not bypass completion checks or billing.
+	textWire := svc.SystemProxyTextWire(protocol, path)
+	if channelModel != nil && channelModel.BillingMode == "token" && textWire == "chat-completion" {
 		body, err = service.EnsureChatCompletionStreamUsageRequest(body)
 		if err != nil {
 			fail(c, http.StatusBadRequest, err)
@@ -456,13 +459,10 @@ func proxySystemRequestPath(c *gin.Context, svc *service.Service, user *model.Us
 	}
 	service.ApplyOutboundHeaders(upstreamReq, channelHeaders)
 	service.ApplyDefaultOutboundHeaders(upstreamReq)
-	if protocol == model.ChannelInterfaceGeminiVeo || protocol == model.ChannelInterfaceGeminiImage {
-		upstreamReq.Header.Set("x-goog-api-key", channel.APIKey)
-	} else if protocol == model.ChannelInterfaceClaudeAPI {
-		upstreamReq.Header.Set("x-api-key", channel.APIKey)
-		upstreamReq.Header.Set("anthropic-version", "2023-06-01")
-	} else {
-		upstreamReq.Header.Set("Authorization", "Bearer "+channel.APIKey)
+	if err := svc.ApplySystemProxyAuth(upstreamReq, channel, protocol); err != nil {
+		refundSystemProxyBilling(svc, billingOrderID, "系统渠道鉴权配置无效，请求尚未发出")
+		fail(c, http.StatusBadRequest, err)
+		return
 	}
 
 	status := model.ApiCallStatusSucceeded
@@ -471,7 +471,9 @@ func proxySystemRequestPath(c *gin.Context, svc *service.Service, user *model.Us
 	resp, err := svc.OutboundHTTPClientForChannel(35*time.Minute, validatedTarget, channel.ProxyURL).Do(upstreamReq)
 	if err != nil {
 		status = model.ApiCallStatusFailed
-		errorText = err.Error()
+		// A plugin may authenticate via query parameters; net/url errors can
+		// include the credential-bearing request URL. Keep it out of call logs.
+		errorText = "系统渠道连接失败"
 		markSystemProxyBillingUncertain(svc, billingOrderID, "系统渠道连接中断，费用状态待核对")
 		logSystemProxyCall(svc, apiCallLog(user, channel, billingOrderID, capability, protocol, c.Request.Method, path, target, body, c.GetHeader("Content-Type"), status, statusCode, time.Since(startedAt), errorText, concurrencyLimit), nil)
 		fail(c, http.StatusBadGateway, errors.New("系统渠道连接失败"))
@@ -488,13 +490,19 @@ func proxySystemRequestPath(c *gin.Context, svc *service.Service, user *model.Us
 	var readErr error
 	if streamed {
 		responseBody, readErr = streamSystemProxyResponse(c, resp, responseLimit)
+		if readErr == nil {
+			readErr = c.Request.Context().Err()
+		}
+		if readErr == nil && status == model.ApiCallStatusSucceeded && capability == "text" {
+			readErr = service.ValidateSystemProxyTextStream(textWire, responseBody)
+		}
 	} else {
 		responseBody, readErr = io.ReadAll(io.LimitReader(resp.Body, responseLimit+1))
 	}
 	if readErr != nil {
 		status = model.ApiCallStatusFailed
 		errorText = readErr.Error()
-		billingNote := "系统渠道响应读取失败，费用状态待核对"
+		billingNote := "系统渠道响应读取失败或未完整结束，费用状态待核对"
 		if errors.Is(readErr, errSystemProxyResponseTooLarge) {
 			billingNote = "上游已响应但流式响应体超过限制，费用状态待核对"
 		}
@@ -586,8 +594,14 @@ func apiCallLog(user *model.User, channel *model.ModelChannel, billingOrderID st
 }
 
 func logSystemProxyCall(svc *service.Service, log model.ApiCallLog, responseBody []byte) error {
+	failure := log.Error
 	log.ResponseBody = service.SanitizeAPICallPayload(responseBody, "")
 	svc.EnrichAPICallLog(&log, responseBody)
+	// Completion/transport failures are authoritative; provider payloads may
+	// contribute usage but must not replace this failure with untrusted messages.
+	if failure != "" {
+		log.Error = failure
+	}
 	return svc.LogAPICall(log)
 }
 
