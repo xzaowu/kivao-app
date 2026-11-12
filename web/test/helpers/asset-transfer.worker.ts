@@ -70,5 +70,7 @@ await assert.rejects(readAssetPackage(await archive("kivao", [...files, { ...fil
 await assert.rejects(readAssetPackage(await archive("kivao", files.map((file) => ({ ...file, bytes: 999 })))), /大小不匹配/);
 assert.equal(writes, beforeInvalid);
 onWrite = () => setActiveUserScope("other-account");
-await assert.rejects(readAssetPackage(await archive("kivao")), /账号已切换/);
+const beforeSwitch = writes;
+await assert.rejects(readAssetPackage(await archive("kivao")), (error: unknown) => error instanceof DOMException && error.name === "AbortError");
+assert.equal(writes, beforeSwitch + 1);
 console.log("asset transfer regression passed");

@@ -2,7 +2,7 @@ import localforage from "localforage";
 
 import { nanoid } from "nanoid";
 import { readImageMeta } from "@/lib/image-utils";
-import { getActiveUserScope } from "@/lib/user-scope";
+import { captureUserScopeOperation, getActiveUserScope, isUserScopeAbort } from "@/lib/user-scope";
 import { getResourceAccess, importResourceFromUrl, isResourceUrl, resolveResourceAccessURL, resourceFileUrl, resourceIdFromStorageKey, resourceStorageKey, ResourceUploadError, uploadResourceFile } from "@/services/api/resources";
 import { getCachedResourceBlob, primeResourceBlobCache } from "@/services/resource-blob-cache";
 
@@ -27,12 +27,14 @@ const store = localforage.createInstance({ name: "yingce", storeName: "image_fil
 const objectUrls = new Map<string, string>();
 
 export async function uploadImage(input: string | Blob, onProgress?: (uploadedBytes: number, totalBytes: number) => void, knownSize?: { width: number; height: number }): Promise<UploadedImage> {
+    const operation = captureUserScopeOperation();
     // 同一个逻辑上传在直传失败后会退回 IndexedDB，并由云端数据同步再次提交。
     // 提前生成本地 key，确保两条路径向后端发送相同的幂等标识。
-    const storageKey = `image:${getActiveUserScope()}:${nanoid()}`;
+    const storageKey = `image:${operation.scope}:${nanoid()}`;
     if (typeof input === "string" && shouldImportRemoteImage(input)) {
         try {
             const resource = await importResourceFromUrl(input, "image", { idempotencyKey: storageKey });
+            operation.assertCurrent();
             return {
                 url: resource.publicUrl || resourceFileUrl(resource.id),
                 storageKey: resourceStorageKey(resource.id),
@@ -41,37 +43,62 @@ export async function uploadImage(input: string | Blob, onProgress?: (uploadedBy
                 bytes: resource.size || 0,
                 mimeType: resource.mimeType || "image/png",
             };
-        } catch {
-            // Keep the browser-side path as a fallback for CORS-enabled HTTPS images.
+        } catch (error) {
+            operation.assertCurrent();
+            if (isUserScopeAbort(error) || (error instanceof ResourceUploadError && error.permanent)) throw error;
+            // Only transient import failures may fall back to a browser download.
         }
     }
-    const blob = typeof input === "string" ? await (await fetch(input)).blob() : input;
-    const previewUrl = URL.createObjectURL(blob);
-    // 调用方已解码过真实尺寸时直接复用，避免同一张大图在上传前再完整解码一次。
-    const meta = knownSize?.width && knownSize.height ? { ...knownSize, mimeType: blob.type || "image/png" } : await readImageMeta(previewUrl);
-    let remoteUploadError = "";
-    try {
-        const resource = await uploadResourceFile(blob, "image", { width: meta.width, height: meta.height, fileName: input instanceof File ? input.name : undefined, idempotencyKey: storageKey }, onProgress);
-        await primeResourceBlobCache(resourceStorageKey(resource.id), blob).catch(() => "");
-        URL.revokeObjectURL(previewUrl);
-        return {
-            url: resource.publicUrl || resourceFileUrl(resource.id),
-            storageKey: resourceStorageKey(resource.id),
-            width: resource.width || meta.width,
-            height: resource.height || meta.height,
-            bytes: resource.size || blob.size,
-            mimeType: resource.mimeType || blob.type || meta.mimeType,
-        };
-    } catch (error) {
-        // 鉴权失效、越权、体积超限这类失败重传也是同样结果，不能退化成"稍后自动同步"。
-        if (error instanceof ResourceUploadError && error.permanent) throw error;
-        remoteUploadError = error instanceof Error ? error.message : "图片直传失败";
+    let blob: Blob;
+    if (typeof input === "string") {
+        const response = await fetch(input, { signal: operation.signal, credentials: isResourceUrl(input) ? "include" : "same-origin" });
+        operation.assertCurrent();
+        if (!response.ok) throw new Error(`图片读取失败（${response.status}）`);
+        blob = await response.blob();
+        operation.assertCurrent();
+    } else {
+        blob = input;
     }
-    // 瞬时失败退回本机：文件仍可用，且云端数据同步会用同一幂等键重传。
-    await store.setItem(storageKey, blob);
-    const url = previewUrl;
-    objectUrls.set(storageKey, url);
-    return { url, storageKey, width: meta.width, height: meta.height, bytes: blob.size, mimeType: blob.type || meta.mimeType, pendingRemoteUpload: true, remoteUploadError };
+    const previewUrl = URL.createObjectURL(blob);
+    let retainPreviewUrl = false;
+    try {
+        // 调用方已解码过真实尺寸时直接复用，避免同一张大图在上传前再完整解码一次。
+        const meta = knownSize?.width && knownSize.height ? { ...knownSize, mimeType: blob.type || "image/png" } : await readImageMeta(previewUrl);
+        operation.assertCurrent();
+        let remoteUploadError = "";
+        try {
+            const resource = await uploadResourceFile(blob, "image", { width: meta.width, height: meta.height, fileName: input instanceof File ? input.name : undefined, idempotencyKey: storageKey }, onProgress);
+            operation.assertCurrent();
+            try {
+                await primeResourceBlobCache(resourceStorageKey(resource.id), blob);
+            } catch (error) {
+                operation.assertCurrent();
+                if (isUserScopeAbort(error)) throw error;
+                console.warn("预热图片缓存失败，服务端资源已保存", { resourceId: resource.id, error });
+            }
+            operation.assertCurrent();
+            return {
+                url: resource.publicUrl || resourceFileUrl(resource.id),
+                storageKey: resourceStorageKey(resource.id),
+                width: resource.width || meta.width,
+                height: resource.height || meta.height,
+                bytes: resource.size || blob.size,
+                mimeType: resource.mimeType || blob.type || meta.mimeType,
+            };
+        } catch (error) {
+            operation.assertCurrent();
+            if (isUserScopeAbort(error) || (error instanceof ResourceUploadError && error.permanent)) throw error;
+            remoteUploadError = error instanceof Error ? error.message : "图片直传失败";
+        }
+        // 瞬时失败仅留在原会话；取消和身份变化不产生待补传结果。
+        await store.setItem(storageKey, blob);
+        operation.assertCurrent();
+        objectUrls.set(storageKey, previewUrl);
+        retainPreviewUrl = true;
+        return { url: previewUrl, storageKey, width: meta.width, height: meta.height, bytes: blob.size, mimeType: blob.type || meta.mimeType, pendingRemoteUpload: true, remoteUploadError };
+    } finally {
+        if (!retainPreviewUrl) URL.revokeObjectURL(previewUrl);
+    }
 }
 
 function shouldImportRemoteImage(input: string) {
@@ -79,15 +106,19 @@ function shouldImportRemoteImage(input: string) {
 }
 
 export async function resolveImageUrl(storageKey?: string, fallback = "", options?: { cacheMiss?: boolean }) {
+    const operation = captureUserScopeOperation();
     if (!storageKey) return fallback;
     const resourceId = resourceIdFromStorageKey(storageKey);
     if (resourceId) {
         // 远程资源展示直接使用 OSS/CDN 授权地址，不把媒体内容读进浏览器 Blob。
-        return resolveResourceAccessURL((await getResourceAccess(storageKey, "display")).url);
+        const access = await getResourceAccess(storageKey, "display");
+        operation.assertCurrent();
+        return resolveResourceAccessURL(access.url);
     }
     const cached = objectUrls.get(storageKey);
     if (cached) return cached;
     const blob = await store.getItem<Blob>(storageKey);
+    operation.assertCurrent();
     if (!blob) return fallback;
     const url = URL.createObjectURL(blob);
     objectUrls.set(storageKey, url);
@@ -96,12 +127,17 @@ export async function resolveImageUrl(storageKey?: string, fallback = "", option
 
 export async function getImageBlob(storageKey: string) {
     if (resourceIdFromStorageKey(storageKey)) return getCachedResourceBlob(storageKey);
-    return store.getItem<Blob>(storageKey);
+    const operation = captureUserScopeOperation();
+    const blob = await store.getItem<Blob>(storageKey);
+    operation.assertCurrent();
+    return blob;
 }
 
 export async function setImageBlob(storageKey: string, blob: Blob) {
     if (resourceIdFromStorageKey(storageKey)) return primeResourceBlobCache(storageKey, blob);
+    const operation = captureUserScopeOperation();
     await store.setItem(storageKey, blob);
+    operation.assertCurrent();
     const url = URL.createObjectURL(blob);
     objectUrls.set(storageKey, url);
     return url;

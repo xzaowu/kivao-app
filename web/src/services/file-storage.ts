@@ -1,7 +1,7 @@
 import localforage from "localforage";
 import { nanoid } from "nanoid";
 
-import { getActiveUserScope } from "@/lib/user-scope";
+import { captureUserScopeOperation, getActiveUserScope, isUserScopeAbort } from "@/lib/user-scope";
 import { captureVideoPoster, detectVideoAudioTrackFromBlob } from "@/lib/video-poster";
 import { getResourceAccess, resolveResourceAccessURL, resourceFileUrl, resourceIdFromStorageKey, resourceStorageKey, ResourceUploadError, uploadResourceFile, type ResourceAccessVariant } from "@/services/api/resources";
 import { uploadImage, type UploadedImage } from "@/services/image-storage";
@@ -30,8 +30,9 @@ const store = localforage.createInstance({ name: "yingce", storeName: "media_fil
 const objectUrls = new Map<string, string>();
 
 export async function uploadMediaFile(input: Blob, prefix = "file", onProgress?: (uploadedBytes: number, totalBytes: number) => void): Promise<UploadedFile> {
+    const operation = captureUserScopeOperation();
     // 直传和失败后的本地同步必须复用同一上传身份，避免响应丢失后创建第二个对象。
-    const storageKey = `${prefix}:${getActiveUserScope()}:${nanoid()}`;
+    const storageKey = `${prefix}:${operation.scope}:${nanoid()}`;
     const blob = input;
     const previewUrl = URL.createObjectURL(blob);
     let retainPreviewUrl = false;
@@ -42,9 +43,12 @@ export async function uploadMediaFile(input: Blob, prefix = "file", onProgress?:
             try {
                 captured = await captureVideoPoster(previewUrl);
             } catch (error) {
+                operation.assertCurrent();
+                if (isUserScopeAbort(error)) throw error;
                 // 封面和轨道信息属于展示增强：失败不阻断原文件上传，但必须留下可诊断信号。
                 console.warn("读取视频封面与媒体信息失败，继续上传原文件", { mimeType: blob.type, bytes: blob.size, error });
             }
+            operation.assertCurrent();
         }
 
         // 浏览器轨道探测对部分 MP4/MOV 会误报；只有未确认存在音轨时才做二次解析，
@@ -54,8 +58,11 @@ export async function uploadMediaFile(input: Blob, prefix = "file", onProgress?:
             try {
                 parsedHasAudio = await detectVideoAudioTrackFromBlob(blob);
             } catch (error) {
+                operation.assertCurrent();
+                if (isUserScopeAbort(error)) throw error;
                 console.warn("解析视频音轨失败，继续上传但不写入音轨结论", { mimeType: blob.type, bytes: blob.size, error });
             }
+            operation.assertCurrent();
         }
         const resolvedHasAudio = parsedHasAudio ?? (captured?.hasAudio === false ? undefined : captured?.hasAudio);
 
@@ -66,9 +73,12 @@ export async function uploadMediaFile(input: Blob, prefix = "file", onProgress?:
             try {
                 meta = await readAudioMeta(previewUrl);
             } catch (error) {
+                operation.assertCurrent();
+                if (isUserScopeAbort(error)) throw error;
                 console.warn("读取音频时长失败，继续上传原文件", { mimeType: blob.type, bytes: blob.size, error });
                 meta = {};
             }
+            operation.assertCurrent();
         } else {
             meta = { hasAudio: resolvedHasAudio };
         }
@@ -78,21 +88,28 @@ export async function uploadMediaFile(input: Blob, prefix = "file", onProgress?:
             try {
                 poster = await uploadImage(captured.poster);
             } catch (error) {
+                operation.assertCurrent();
+                if (isUserScopeAbort(error) || (error instanceof ResourceUploadError && error.permanent)) throw error;
                 // 预览图失败不应把已经可用的视频降级成本地文件；视频本体仍按强校验上传。
                 console.warn("上传视频预览图失败，继续保存视频本体", { mimeType: blob.type, bytes: blob.size, error });
             }
+            operation.assertCurrent();
         }
 
         let remoteUploadError = "";
         try {
             const kind = blob.type.startsWith("video/") ? "video" : blob.type.startsWith("audio/") ? "audio" : "file";
             const resource = await uploadResourceFile(blob, kind, { ...meta, fileName: input instanceof File ? input.name : undefined, idempotencyKey: storageKey }, onProgress);
+            operation.assertCurrent();
             try {
                 await primeResourceBlobCache(resourceStorageKey(resource.id), blob);
             } catch (error) {
+                operation.assertCurrent();
+                if (isUserScopeAbort(error)) throw error;
                 // 缓存只影响后续读取性能，服务端资源已经成功落盘，不得把缓存失败误报为上传失败。
                 console.warn("预热媒体缓存失败，服务端资源已保存", { resourceId: resource.id, error });
             }
+            operation.assertCurrent();
             return {
                 url: resource.publicUrl || resourceFileUrl(resource.id),
                 storageKey: resourceStorageKey(resource.id),
@@ -106,12 +123,14 @@ export async function uploadMediaFile(input: Blob, prefix = "file", onProgress?:
             };
         } catch (error) {
             // 与图片上传同一套判定：永久性失败必须当场暴露，不能混进“稍后自动同步”。
-            if (error instanceof ResourceUploadError && error.permanent) throw error;
+            operation.assertCurrent();
+            if (isUserScopeAbort(error) || (error instanceof ResourceUploadError && error.permanent)) throw error;
             remoteUploadError = error instanceof Error ? error.message : "媒体直传失败";
         }
 
         // 瞬时失败退回本机：文件仍可用，且云端数据同步会用同一幂等键重传。
         await store.setItem(storageKey, blob);
+        operation.assertCurrent();
         retainPreviewUrl = true;
         objectUrls.set(storageKey, previewUrl);
         return { url: previewUrl, storageKey, bytes: blob.size, mimeType: blob.type || "application/octet-stream", ...meta, preview: poster, pendingRemoteUpload: true, remoteUploadError };
@@ -122,15 +141,19 @@ export async function uploadMediaFile(input: Blob, prefix = "file", onProgress?:
 }
 
 export async function resolveMediaUrl(storageKey?: string, fallback = "", variant: ResourceAccessVariant = "original") {
+    const operation = captureUserScopeOperation();
     if (!storageKey) return fallback;
     const resourceId = resourceIdFromStorageKey(storageKey);
     if (resourceId) {
         // 展示直接命中 OSS/CDN；平台资源文件接口只保留给私有源站代理或本地存储兜底。
-        return resolveResourceAccessURL((await getResourceAccess(storageKey, "display", variant)).url);
+        const access = await getResourceAccess(storageKey, "display", variant);
+        operation.assertCurrent();
+        return resolveResourceAccessURL(access.url);
     }
     const cached = objectUrls.get(storageKey);
     if (cached) return cached;
     const blob = await store.getItem<Blob>(storageKey);
+    operation.assertCurrent();
     if (!blob) return fallback;
     const url = URL.createObjectURL(blob);
     objectUrls.set(storageKey, url);
@@ -144,12 +167,17 @@ export function resolveVideoMediaUrl(storageKey?: string, fallback = "") {
 
 export async function getMediaBlob(storageKey: string) {
     if (resourceIdFromStorageKey(storageKey)) return getCachedResourceBlob(storageKey);
-    return store.getItem<Blob>(storageKey);
+    const operation = captureUserScopeOperation();
+    const blob = await store.getItem<Blob>(storageKey);
+    operation.assertCurrent();
+    return blob;
 }
 
 export async function setMediaBlob(storageKey: string, blob: Blob) {
     if (resourceIdFromStorageKey(storageKey)) return primeResourceBlobCache(storageKey, blob);
+    const operation = captureUserScopeOperation();
     await store.setItem(storageKey, blob);
+    operation.assertCurrent();
     const url = URL.createObjectURL(blob);
     objectUrls.set(storageKey, url);
     return url;

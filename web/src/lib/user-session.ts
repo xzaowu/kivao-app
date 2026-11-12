@@ -3,7 +3,7 @@ import { projectImageParameters, imageParametersForSpec } from "./image-paramete
 import { getModelCatalog, type CapabilitySpec, type ModelCatalogResponse, type OptionConstraint, type PublicChannelCatalog, type PublicLogicalModel } from "@/services/api/logical-models";
 import { localForageStorage } from "@/lib/localforage-storage";
 import { appQueryClient } from "@/lib/query-client";
-import { scopedLocalStorage, setActiveUserScope, withUserScopedPersistenceSuppressed } from "@/lib/user-scope";
+import { beginUserScopeTransition, scopedLocalStorage, setActiveUserScope, withUserScopedPersistenceSuppressed } from "@/lib/user-scope";
 import { CANVAS_STORE_KEY, flushCanvasStorePersistence, useCanvasStore, withCanvasStorePersistenceSuppressed } from "@/stores/canvas/use-canvas-store";
 import { CANVAS_HISTORY_STORE_KEY, useCanvasHistoryStore } from "@/stores/canvas/use-canvas-history-store";
 import { ASSET_STORE_KEY, flushAssetStorePersistence, useAssetStore, withAssetStorePersistenceSuppressed } from "@/stores/use-asset-store";
@@ -21,15 +21,20 @@ import { withGenerationConsumersPaused } from "@/services/generation-consumer-li
 import { recordDiagnosticEvent } from "@/services/diagnostics/client-diagnostics";
 
 export async function switchUserStorageScope(userId?: string | null) {
-    await withGenerationConsumersPaused(async () => {
-        await withRemoteUserDataSyncExclusive(async () => {
-            await Promise.all([flushCanvasStorePersistence(), flushAssetStorePersistence()]);
-            resetRemoteUserDataSync();
-            clearResourceAccessCache();
-            clearResourceBlobCache();
-            setActiveUserScope(userId);
+    const finishTransition = beginUserScopeTransition();
+    try {
+        await withGenerationConsumersPaused(async () => {
+            await withRemoteUserDataSyncExclusive(async () => {
+                await Promise.all([flushCanvasStorePersistence(), flushAssetStorePersistence()]);
+                resetRemoteUserDataSync();
+                clearResourceAccessCache();
+                clearResourceBlobCache();
+                setActiveUserScope(userId);
+            });
         });
-    });
+    } finally {
+        finishTransition();
+    }
 }
 
 let sessionGeneration = 0;

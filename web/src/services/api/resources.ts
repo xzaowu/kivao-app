@@ -1,4 +1,4 @@
-import { getActiveUserScope } from "@/lib/user-scope";
+import { captureUserScopeOperation, getActiveUserScope, type UserScopeOperation } from "@/lib/user-scope";
 import { localForageStorageForScope } from "@/lib/localforage-storage";
 import { http, apiBaseURL, ApiError } from "@/services/api/request";
 import type { OSSConnectionTestInput, OSSConnectionTestResult, OSSProvider, S3Preset } from "@/lib/oss-settings";
@@ -85,6 +85,7 @@ export type ResourceUploadMeta = {
     durationMs?: number;
     fileName?: string;
     idempotencyKey?: string;
+    signal?: AbortSignal;
 };
 
 /**
@@ -267,13 +268,15 @@ const CHUNK_UPLOAD_THRESHOLD = 50 << 20;
 const CHUNK_UPLOAD_RETRIES = 2;
 
 export async function uploadResourceFile(file: Blob, kind: "image" | "video" | "audio" | "file", meta?: ResourceUploadMeta, onProgress?: (uploadedBytes: number, totalBytes: number) => void): Promise<RemoteResource> {
+    const operation = captureUserScopeOperation(meta?.signal);
     const name = meta?.fileName || (file instanceof File ? file.name : `${kind}.${extensionFromMime(file.type, kind)}`);
     // 分片与 multipart 两条路径的失败都要归一成 ResourceUploadError，
     // 否则调用方只能靠文案猜测该重试还是该报错。
     try {
         if (file.size > CHUNK_UPLOAD_THRESHOLD) {
-            const resource = await uploadFileInChunks(file, name, kind, meta, onProgress);
-            resourceCache.set(resourceCacheKey(resource.id), resource);
+            const resource = await uploadFileInChunks(file, name, kind, meta, operation, onProgress);
+            operation.assertCurrent();
+            resourceCache.set(resourceCacheKey(resource.id, operation.scope), resource);
             return resource;
         }
         const formData = new FormData();
@@ -284,39 +287,46 @@ export async function uploadResourceFile(file: Blob, kind: "image" | "video" | "
         if (meta?.durationMs) formData.append("durationMs", String(Math.round(meta.durationMs)));
         const data = await http.post<{ resource: RemoteResource }>("/resources", formData, {
             ...uploadRequestConfig(meta?.idempotencyKey, file.size),
+            signal: operation.signal,
             onUploadProgress: onProgress
                 ? ({ loaded, total }) => {
-                      if (total && total > 0) onProgress(Math.min(file.size, (file.size * loaded) / total), file.size);
+                      if (operation.isCurrent() && total && total > 0) onProgress(Math.min(file.size, (file.size * loaded) / total), file.size);
                   }
                 : undefined,
         });
-        resourceCache.set(resourceCacheKey(data.resource.id), data.resource);
+        operation.assertCurrent();
+        resourceCache.set(resourceCacheKey(data.resource.id, operation.scope), data.resource);
         return data.resource;
     } catch (error) {
+        operation.assertCurrent();
         throw normalizeUploadError(error);
     }
 }
 
 // 分片上传：POST 开始会话 → 逐片 PUT 原始二进制（每片 8MB）→ POST 合并落库。
 // 单请求体积小、可断点续传/失败重试；单文件不再受 50MB 限制（仅日/总量配额约束）。
-async function uploadFileInChunks(file: Blob, name: string, kind: "image" | "video" | "audio" | "file", meta: ResourceUploadMeta | undefined, onProgress?: (uploadedBytes: number, totalBytes: number) => void) {
-    // 片级失败通常意味着会话过期/网络抖动：整体重开一次会话重传（整传重试）。
+async function uploadFileInChunks(file: Blob, name: string, kind: "image" | "video" | "audio" | "file", meta: ResourceUploadMeta | undefined, operation: UserScopeOperation, onProgress?: (uploadedBytes: number, totalBytes: number) => void) {
+    // 只在同一会话内对临时故障重开上传；取消或权限拒绝不得重传。
     for (let attempt = 0; attempt < CHUNK_UPLOAD_RETRIES; attempt++) {
         try {
-            return await runChunkedUpload(file, name, kind, meta, onProgress);
+            operation.assertCurrent();
+            return await runChunkedUpload(file, name, kind, meta, operation, onProgress);
         } catch (error) {
-            if (attempt === CHUNK_UPLOAD_RETRIES - 1) throw error;
+            operation.assertCurrent();
+            const failure = normalizeUploadError(error);
+            if (failure.permanent || attempt === CHUNK_UPLOAD_RETRIES - 1) throw failure;
         }
     }
     throw new Error("上传失败");
 }
 
-async function runChunkedUpload(file: Blob, name: string, kind: "image" | "video" | "audio" | "file", meta: ResourceUploadMeta | undefined, onProgress?: (uploadedBytes: number, totalBytes: number) => void) {
+async function runChunkedUpload(file: Blob, name: string, kind: "image" | "video" | "audio" | "file", meta: ResourceUploadMeta | undefined, operation: UserScopeOperation, onProgress?: (uploadedBytes: number, totalBytes: number) => void) {
     const session = await http.post<{ uploadId: string; chunkSize: number; chunkCount: number }>(
         "/resources/uploads",
         { fileName: name, kind, size: file.size, width: meta?.width, height: meta?.height, durationMs: meta?.durationMs },
-        uploadRequestConfig(meta?.idempotencyKey),
+        { ...uploadRequestConfig(meta?.idempotencyKey), signal: operation.signal },
     );
+    operation.assertCurrent();
     for (let index = 0; index < session.chunkCount; index++) {
         const start = index * session.chunkSize;
         const end = Math.min(file.size, start + session.chunkSize);
@@ -324,13 +334,21 @@ async function runChunkedUpload(file: Blob, name: string, kind: "image" | "video
         // raw 二进制直传，与后端按裸 body 逐片落盘对齐。
         await http.put<{ index: number }>(`/resources/uploads/${encodeURIComponent(session.uploadId)}/chunks/${index}`, blob, {
             timeout: uploadTimeoutMs(blob.size),
+            signal: operation.signal,
             headers: { "Content-Type": "application/octet-stream" },
-            onUploadProgress: onProgress ? ({ loaded }) => onProgress(start + Math.min(loaded, blob.size), file.size) : undefined,
+            onUploadProgress: onProgress
+                ? ({ loaded }) => {
+                      if (operation.isCurrent()) onProgress(start + Math.min(loaded, blob.size), file.size);
+                  }
+                : undefined,
         });
+        operation.assertCurrent();
         onProgress?.(Math.min(end, file.size), file.size);
+        operation.assertCurrent();
     }
     // 合并时后端要把整份文件写入存储（对象存储为同步上传），超时按整份大小计算。
-    const complete = await http.post<{ resource: RemoteResource }>(`/resources/uploads/${encodeURIComponent(session.uploadId)}/complete`, undefined, { timeout: uploadTimeoutMs(file.size) });
+    const complete = await http.post<{ resource: RemoteResource }>(`/resources/uploads/${encodeURIComponent(session.uploadId)}/complete`, undefined, { timeout: uploadTimeoutMs(file.size), signal: operation.signal });
+    operation.assertCurrent();
     return complete.resource;
 }
 
@@ -356,9 +374,16 @@ function normalizeUploadError(error: unknown): ResourceUploadError {
 }
 
 export async function importResourceFromUrl(url: string, kind: "image" | "video" | "audio" | "file", meta?: Omit<ResourceUploadMeta, "fileName">) {
-    const data = await http.post<{ resource: RemoteResource }>("/resources/import", { url, kind, width: meta?.width, height: meta?.height, durationMs: meta?.durationMs }, uploadRequestConfig(meta?.idempotencyKey));
-    resourceCache.set(resourceCacheKey(data.resource.id), data.resource);
-    return data.resource;
+    const operation = captureUserScopeOperation(meta?.signal);
+    try {
+        const data = await http.post<{ resource: RemoteResource }>("/resources/import", { url, kind, width: meta?.width, height: meta?.height, durationMs: meta?.durationMs }, { ...uploadRequestConfig(meta?.idempotencyKey), signal: operation.signal });
+        operation.assertCurrent();
+        resourceCache.set(resourceCacheKey(data.resource.id, operation.scope), data.resource);
+        return data.resource;
+    } catch (error) {
+        operation.assertCurrent();
+        throw normalizeUploadError(error);
+    }
 }
 
 const UPLOAD_TIMEOUT_FLOOR_MS = 60_000;
@@ -572,8 +597,8 @@ export function resolveResourceAccessURL(url: string) {
     return new URL(url, `${base.replace(/\/+$/, "")}/`).toString();
 }
 
-function resourceCacheKey(id: string) {
-    return `${getActiveUserScope()}:${id}`;
+function resourceCacheKey(id: string, scope = getActiveUserScope()) {
+    return `${scope}:${id}`;
 }
 
 export function resourceFileUrl(id: string) {
@@ -596,18 +621,23 @@ export function playbackVariantUrl(id: string) {
 }
 
 export async function getResourceBlob(storageKey: string) {
+    const operation = captureUserScopeOperation();
     const id = resourceIdFromStorageKey(storageKey);
     if (!id) return null;
     const access = await getResourceAccess(storageKey, "browser-process");
+    operation.assertCurrent();
     // CDN/origin URLs carry their own authorization and must not receive the
     // application session cookie. Local/proxy delivery is intentionally
     // session-bound, so a Blob read must include it even when the URL is
     // relative to the platform origin.
     const credentials = access.delivery === "platform-local" || access.delivery === "platform-proxy" ? "include" : "omit";
     // 同一签名地址可能已被 <img> 缓存为无 CORS 头的响应，读取原图时跳过 HTTP 缓存。
-    const response = await fetch(resolveResourceAccessURL(access.url), { credentials, mode: "cors", cache: "no-store", signal: AbortSignal.timeout(60_000) });
+    const response = await fetch(resolveResourceAccessURL(access.url), { credentials, mode: "cors", cache: "no-store", signal: AbortSignal.any([operation.signal, AbortSignal.timeout(60_000)]) });
+    operation.assertCurrent();
     if (!response.ok) throw new Error(`资源读取失败（${response.status}）`);
-    return response.blob();
+    const blob = await response.blob();
+    operation.assertCurrent();
+    return blob;
 }
 
 function extensionFromMime(mimeType: string, kind: string) {
