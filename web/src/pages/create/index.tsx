@@ -25,6 +25,7 @@ import { loadAssetsForUse, saveRemoteUserDataNow } from "@/services/user-data-sy
 import { useAppearanceStore } from "@/stores/use-appearance-store";
 import { cn } from "@/lib/utils";
 import { useUserStore } from "@/stores/use-user-store";
+import { generationBatchCount, currentGenerationBatchLimit, useGenerationBatchLimit } from "@/lib/generation-batch-limit";
 import type { PromptOptimizerProvider } from "@/lib/plugins/plugin-types";
 import { promptOptimizerPlugin, PROMPT_OPTIMIZER_PLUGIN_ID } from "@/lib/plugins/builtin/prompt-optimizer";
 import { createPluginHostContext } from "@/services/plugin-host";
@@ -94,6 +95,7 @@ export default function CreatePage() {
     const [hydrated, setHydrated] = useState(false);
     const userId = useUserStore((state) => state.user?.id || null);
     const userSessionHydrated = useUserStore((state) => state.hydrated);
+    const imageBatchLimit = useGenerationBatchLimit();
     const [conversationScope, setConversationScope] = useState<string | null>(null);
     const [mode, setMode] = useState<CreationMode>(() => initialComposerPreferences.mode || defaultCreationMode);
     const location = useLocation();
@@ -116,7 +118,7 @@ export default function CreatePage() {
     const [imageResolution, setImageResolution] = useState("auto");
     const [imageParameters, setImageParameters] = useState("{}");
     const [videoQuality, setVideoQuality] = useState(config.vquality || "720");
-    const [count, setCount] = useState(String(Math.max(1, Math.min(4, Number(config.count) || 1))));
+    const [count, setCount] = useState(String(generationBatchCount(config.count, imageBatchLimit)));
     const [textStreaming, setTextStreaming] = useState(() => readComposerPref(TEXT_STREAMING_PREF_KEY, true));
     const [textThinking, setTextThinking] = useState(() => readComposerPref(TEXT_THINKING_PREF_KEY, false));
     const [busy, setBusy] = useState(false);
@@ -165,7 +167,7 @@ export default function CreatePage() {
         videoSeconds: mode === "video" ? seconds : undefined,
         imageSize: mode === "image" ? ratio : undefined,
 		options: mode === "image"
-            ? imageParameterRequest(modelCapabilityConfigFor(config, preferredModel).image!, { ...config, size: ratio, imageResolution, quality, count, imageParameters }) ?? { size: ratio, imageResolution, quality, count: Number(count), transparentBackground: config.transparentBackground === "true" }
+            ? imageParameterRequest(modelCapabilityConfigFor(config, preferredModel).image!, { ...config, size: ratio, imageResolution, quality, count: "1", imageParameters }) ?? { size: ratio, imageResolution, quality, count: 1, transparentBackground: config.transparentBackground === "true" }
 			: mode === "video"
 				? { size: ratio, videoSeconds: Number(seconds), vquality: videoQuality }
 				: {},
@@ -248,8 +250,8 @@ export default function CreatePage() {
         setQuality(normalized.quality);
         setImageResolution(normalized.imageResolution || imageProfile.resolution.default);
         setImageParameters(JSON.stringify(normalizeImageParameters(imageProfile.parameters, saved?.model === selectedModel ? saved.imageParameters : undefined)));
-        setCount(normalized.count);
-    }, [composerPreferencesHydrated, composerPreferencesInitialized, mode, selectedModel, imageProfile]);
+        setCount(String(generationBatchCount(saved?.count || count, imageBatchLimit)));
+    }, [composerPreferencesHydrated, composerPreferencesInitialized, mode, selectedModel, imageProfile, imageBatchLimit]);
 
     useEffect(() => {
         if (!composerPreferencesHydrated || !composerPreferencesInitialized || mode !== "video") return;
@@ -536,8 +538,9 @@ export default function CreatePage() {
         if (mode === "video") rememberVideoSettings({ videoQuality: value });
     };
     const setComposerCount = (value: string) => {
-        setCount(value);
-        if (mode === "image") rememberImageSettings({ count: value });
+        const next = String(generationBatchCount(value, imageBatchLimit));
+        setCount(next);
+        if (mode === "image") rememberImageSettings({ count: next });
     };
 
     const externalLibraryItems = useMemo<AssetLibraryPickerItem[]>(
@@ -858,7 +861,7 @@ export default function CreatePage() {
                 if (!result.text?.trim()) throw new Error("后端任务没有返回文本");
                 updateOriginAssistant((item) => ({ ...item, content: result.text || "", reasoning: result.reasoning }));
             } else if (mode === "image") {
-                const taskCount = Math.max(1, Math.min(imageProfile.maxOutputs, Math.floor(Number(count) || 1)));
+                const taskCount = generationBatchCount(count, currentGenerationBatchLimit());
                 const settled = await runtime.runGenerationOperationOnce(retryContext?.clientOperationId, () => runtime.runBackendGenerationTaskBatch({
                     mode: "image",
                     prompt: expandedPrompt,

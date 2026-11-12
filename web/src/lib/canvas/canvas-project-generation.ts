@@ -6,6 +6,7 @@ import { resolveMediaUrl, resolveVideoMediaUrl } from "@/services/file-storage";
 import { resourceIdFromStorageKey } from "@/services/api/resources";
 import { NODE_DEFAULT_SIZE } from "@/constant/canvas";
 import { normalizeVideoDuration, normalizeVideoResolution } from "@/lib/video-generation-options";
+import { generationBatchCount } from "@/lib/generation-batch-limit";
 import { isSeedanceVideoConfig } from "@/lib/seedance-video";
 import { modelCapabilityConfigFor, workflowFieldCurrentValue, workflowFieldHasStoredValue, workflowFieldKey, workflowFieldRandomKey, workflowFieldSubmissionValue, workflowOutputSizeValue, workflowVideoFieldsFromJson } from "@/lib/model-capabilities";
 import { modelRequestOptions, resolveCompatibleModel, resolveModelGenerationDefaults, resolveVideoOperation, type ModelGenerationDefaults, type ModelRequirements } from "@/lib/model-selection";
@@ -468,7 +469,7 @@ export function buildGenerationConfig(config: AiConfig, node: CanvasNodeData | u
     const imageSize = mode === "image" ? requestedConfig.size : undefined;
     // 无 requirements 的调用（重试、媒体工具等）也按当前能力与尺寸路由到组内最低价兼容模型，
     // 避免旧 metadata.model 不支持当前尺寸导致生成时被 normalize 回退。
-    const liveOptions = modelRequestOptions(requestedConfig, mode);
+    const liveOptions = modelRequestOptions(mode === "image" ? { ...requestedConfig, model: preferredModel, count: "1" } : requestedConfig, mode);
     const baseRequirements = requirements?.capability ? { ...requirements, options: { ...liveOptions, ...(requirements.options || {}) } } : { capability: mode, options: liveOptions };
     const model = workflowProvider === "model" ? resolveCompatibleModel(config, preferredModel, imageSize ? { ...baseRequirements, imageSize } : baseRequirements) || preferredModel : preferredModel;
     const generationDefaults: Partial<ModelGenerationDefaults> =
@@ -539,7 +540,7 @@ export function buildGenerationConfig(config: AiConfig, node: CanvasNodeData | u
         videoGenerateAudio: generationDefaults.videoGenerateAudio ?? requestedConfig.videoGenerateAudio,
         videoWatermark: generationDefaults.videoWatermark ?? requestedConfig.videoWatermark,
         videoArkPrivateAssetUpload: requestedConfig.videoArkPrivateAssetUpload,
-        count: generationDefaults.count || requestedConfig.count,
+        count: mode === "image" ? String(generationBatchCount(requestedConfig.count)) : generationDefaults.count || requestedConfig.count,
     };
 }
 

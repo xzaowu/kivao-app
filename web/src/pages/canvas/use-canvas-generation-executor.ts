@@ -1,6 +1,7 @@
 import { isCanvasNodeGenerating } from "@/lib/canvas/canvas-node-task-state";
 import { useCallback, useRef, type Dispatch, type SetStateAction } from "react";
 import { App } from "antd";
+import { currentGenerationBatchLimit, generationBatchCount } from "@/lib/generation-batch-limit";
 
 import { buildNodeGenerationContext, hydrateNodeGenerationContext } from "@/components/canvas/canvas-node-generation";
 import type { CanvasNodeGenerationMode } from "@/components/canvas/canvas-node-prompt-panel";
@@ -270,7 +271,8 @@ export function useCanvasGenerationExecutor({
                         mode,
                         prompt: effectivePrompt,
                         model: generationConfig.model,
-                        options: modelRequestOptions(generationConfig, mode),
+                        // 去重指纹保留用户选择的拆单数量；发给模型的每个请求仍是单张。
+                        options: { ...modelRequestOptions(generationConfig, mode), ...(mode === "image" ? { count: generationBatchCount(generationConfig.count, currentGenerationBatchLimit()) } : {}) },
                         workflow:
                             generationConfig.taskWorkflowProvider && generationConfig.taskWorkflowProvider !== "model"
                                 ? {
@@ -469,6 +471,6 @@ function generationModelRequirements(
         },
         videoOperation: sourceNode?.metadata?.videoEditOperation,
         videoSeconds: config.videoSeconds,
-        options: config.taskWorkflowProvider === "model" ? modelRequestOptions(config, mode) : undefined,
+        options: config.taskWorkflowProvider === "model" ? modelRequestOptions(mode === "image" ? { ...config, count: "1" } : config, mode) : undefined,
     };
 }

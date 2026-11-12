@@ -8,6 +8,7 @@ import { canonicalGenerationMetadata } from "@/lib/canvas/generation-contract";
 import { resolveCanvasGenerationModel } from "@/lib/canvas/canvas-project-generation";
 import { withReferenceImageSize, type ImageDimensions } from "@/lib/canvas/canvas-reference-image-size";
 import { normalizeVideoDuration, normalizeVideoResolution } from "@/lib/video-generation-options";
+import { generationBatchCount } from "@/lib/generation-batch-limit";
 import type { CanvasAudioSettingKey } from "./canvas-audio-settings-popover";
 import type { CanvasNodeGenerationMode } from "./canvas-node-prompt-panel";
 
@@ -92,7 +93,7 @@ export function buildNodeConfig(globalConfig: AiConfig, node: CanvasNodeData, mo
         audioEmotionMelancholic: node.metadata?.audioEmotionMelancholic || globalConfig.audioEmotionMelancholic || defaultConfig.audioEmotionMelancholic,
         audioEmotionSurprised: node.metadata?.audioEmotionSurprised || globalConfig.audioEmotionSurprised || defaultConfig.audioEmotionSurprised,
         audioEmotionCalm: node.metadata?.audioEmotionCalm || globalConfig.audioEmotionCalm || defaultConfig.audioEmotionCalm,
-        count: defaults.count ?? String(node.metadata?.count || (mode === "image" ? globalConfig.canvasImageCount || globalConfig.count : globalConfig.count) || defaultConfig.count),
+        count: mode === "image" ? String(generationBatchCount(node.metadata?.count ?? (globalConfig.canvasImageCount || globalConfig.count || defaultConfig.count))) : defaults.count ?? String(node.metadata?.count || globalConfig.count || defaultConfig.count),
     };
 }
 

@@ -5,7 +5,8 @@ import { canGenerateImageInPlace, findAvailableGenerationGroupPosition, imageGen
 import { cancelIncompleteImageBatch, hasImageBatchResult, reconcileImageBatchRoot, retireImageBatchChildren } from "@/lib/canvas/canvas-image-batch-retry";
 import { buildImageGenerationNodeTitle, manualNodeTitle } from "@/lib/canvas/canvas-generation-title";
 import { fitImageNodeSize, imageNodeSizeFromRatio } from "@/lib/canvas/canvas-node-size";
-import { canvasImageReferenceLimitError, buildImageGenerationMetadata, getGenerationCount, isGenerationCanceled, resetGenerationTaskMetadata, runCanvasGenerationTaskToConsumer } from "@/lib/canvas/canvas-project-generation";
+import { canvasImageReferenceLimitError, buildImageGenerationMetadata, isGenerationCanceled, resetGenerationTaskMetadata, runCanvasGenerationTaskToConsumer } from "@/lib/canvas/canvas-project-generation";
+import { generationBatchCount, currentGenerationBatchLimit } from "@/lib/generation-batch-limit";
 import { imageGenerationReferenceConnections } from "@/lib/canvas/canvas-resource-references";
 import { followsReferenceImageSize } from "@/lib/canvas/canvas-reference-image-size";
 import { canvasGenerationPromptMetadata } from "@/lib/canvas/canvas-generation-submission";
@@ -58,7 +59,7 @@ export async function executeImageGeneration(
         showError(referenceLimitError);
         return;
     }
-    const count = getGenerationCount(generationConfig.count);
+    const count = generationBatchCount(generationConfig.count, currentGenerationBatchLimit());
     const isConfigNode = sourceNode?.type === CanvasNodeType.Config;
     const isImageNode = sourceNode?.type === CanvasNodeType.Image;
     const isExistingImageNode = isImageNode && hasImageBatchResult(sourceNode);

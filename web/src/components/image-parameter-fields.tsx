@@ -9,6 +9,7 @@ import type { ImageCapabilityConfig } from "@/lib/model-capabilities";
 import type { AiConfig } from "@/stores/use-config-store";
 import { cn } from "@/lib/utils";
 import { ChevronDown, ChevronUp } from "lucide-react";
+import { generationBatchCount, generationBatchLimit } from "@/lib/generation-batch-limit";
 
 export function ImageParameterInput({
     field,
@@ -122,6 +123,7 @@ export function ImageParameterFields({
     showSize = true,
     showQuality = true,
     showTransparent = true,
+    countLimit,
 }: {
     profile: ImageCapabilityConfig;
     config: AiConfig;
@@ -130,20 +132,25 @@ export function ImageParameterFields({
     showSize?: boolean;
     showQuality?: boolean;
     showTransparent?: boolean;
+    /** 仅拆单入口传入，普通单任务仍使用模型声明。 */
+    countLimit?: number;
 }) {
     const values = imageParameterRequest(profile, config) || {};
     const sizeField = profile.parameters?.find((p) => p.name === "size");
     const usesSizePresets = profile.resolution.supported || profile.size.parameter === "size" || sizeField?.encoding === "pixels" || profile.parameters?.some((p) => p.name === "imageResolution");
     const groupedSize = showSize && profile.size.parameter !== "none" && usesSizePresets && imageSizePresets(profile).length > 0;
+    const batchLimit = countLimit === undefined ? undefined : generationBatchLimit(countLimit);
     const fields = (profile.parameters || []).filter(
         (p) =>
             p.enabled !== false &&
             (!groupedSize || (p.name !== "size" && p.name !== "imageResolution")) &&
-            (p.name !== "count" || (showCount && (p.max ?? 1) > 1)) &&
+            (p.name !== "count" || (batchLimit === undefined && showCount && (p.max ?? 1) > 1)) &&
             (p.name !== "size" || showSize) &&
             (p.name !== "quality" || showQuality) &&
             (p.name !== "transparentBackground" || showTransparent),
     );
+    // 拆单数量是本地调度控件，不重新启用被协议禁用或未声明的 count 参数。
+    if (showCount && batchLimit !== undefined && batchLimit > 1) fields.push({ name: "count", label: "生成张数", type: "integer", max: batchLimit });
     return (
         <div className="space-y-3" data-canvas-no-zoom onPointerDown={(event) => event.stopPropagation()}>
             {groupedSize ? (
@@ -161,7 +168,7 @@ export function ImageParameterFields({
             {fields.map((field) => {
                 if (field.name === "count") {
                     const max = Number(field.max ?? profile.maxOutputs ?? 15);
-                    const countVal = Number(values.count ?? config.count ?? 1);
+                    const countVal = batchLimit === undefined ? Number(values.count ?? config.count ?? 1) : generationBatchCount(config.count, batchLimit);
                     return (
                         <div className="space-y-2" key="count">
                             <div className="text-xs font-medium">生成张数</div>

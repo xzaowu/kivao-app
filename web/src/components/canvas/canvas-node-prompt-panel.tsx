@@ -15,6 +15,7 @@ import { referenceImageSizeSelection, type ImageDimensions } from "@/lib/canvas/
 import { navigateToSettings } from "@/lib/settings-navigation";
 import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
 import { useUserStore } from "@/stores/use-user-store";
+import { generationBatchCount, generationBatchQuote, useGenerationBatchLimit } from "@/lib/generation-batch-limit";
 import { CanvasCameraControlPopover } from "./canvas-camera-control-popover";
 import { CanvasImageSettingsPopover } from "./canvas-image-settings-popover";
 import { CanvasAudioSettingsPopover } from "./canvas-audio-settings-popover";
@@ -86,6 +87,7 @@ export function CanvasNodePromptPanel({ projectId, node, isRunning, onPromptChan
     const themeName = useActiveTheme();
     const theme = canvasThemes[themeName];
     const creditsEnabled = useUserStore((state) => state.features.creditsEnabled);
+    const imageBatchLimit = useGenerationBatchLimit();
     const promptOptimizerInstallation = usePluginStore((state) => state.installations.find((item) => item.manifest.id === PROMPT_OPTIMIZER_PLUGIN_ID));
     const promptOptimizerEnabled = usePluginStore((state) => state.pluginStates[PROMPT_OPTIMIZER_PLUGIN_ID]?.effectiveEnabled === true);
     const simpleMode = workspaceMode === "simple";
@@ -148,7 +150,7 @@ export function CanvasNodePromptPanel({ projectId, node, isRunning, onPromptChan
             ...globalConfig,
             size: node.metadata?.size || globalConfig.size,
             quality: node.metadata?.quality || globalConfig.quality,
-            count: String(node.metadata?.count || globalConfig.count),
+            count: mode === "image" ? "1" : String(node.metadata?.count || globalConfig.count),
             transparentBackground: node.metadata?.transparentBackground || globalConfig.transparentBackground,
             videoSeconds: node.metadata?.seconds ?? globalConfig.videoSeconds,
             vquality: node.metadata?.vquality || globalConfig.vquality,
@@ -162,14 +164,14 @@ export function CanvasNodePromptPanel({ projectId, node, isRunning, onPromptChan
     const config = buildNodeConfig(globalConfig, node, mode, requirements, referenceImageSize);
     const resolvedRequirements: ModelRequirements = {
         ...requirements,
-        options: modelRequestOptions(config, mode),
+        options: modelRequestOptions(mode === "image" ? { ...config, count: "1" } : config, mode),
         videoSeconds: mode === "video" ? config.videoSeconds : undefined,
     };
     const promptOptimizerProvider = useMemo(() => {
         if (!promptOptimizerEnabled || !promptOptimizerInstallation || !promptOptimizerPlugin.createPromptOptimizer) return null;
         return promptOptimizerPlugin.createPromptOptimizer(createPluginHostContext(promptOptimizerPlugin, promptOptimizerInstallation, globalConfig));
     }, [globalConfig, promptOptimizerEnabled, promptOptimizerInstallation]);
-    const generationCount = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
+    const generationCount = generationBatchCount(config.count, imageBatchLimit);
     const priceChannel = resolveModelChannel(config, config.model);
     const configuredCredits = requestCreditCost({
         channelMode: priceChannel.scope === "system" ? "remote" : "local",
@@ -181,10 +183,11 @@ export function CanvasNodePromptPanel({ projectId, node, isRunning, onPromptChan
         config,
         requirements: resolvedRequirements,
     });
-    const quoteRequest = modelQuoteRequest(config, config.model, mode, resolvedRequirements);
+    const quoteRequest = modelQuoteRequest(mode === "image" ? { ...config, count: "1" } : config, config.model, mode, resolvedRequirements);
     const quoteRequestKey = JSON.stringify(quoteRequest || null);
     const [routeQuote, setRouteQuote] = useState<LogicalModelQuote | null>(null);
-    const credits = routeQuote ? routeQuote.amountMicrocredits / 1_000_000 : configuredCredits;
+    const displayQuote = mode === "image" ? generationBatchQuote(routeQuote, generationCount) : routeQuote;
+    const credits = displayQuote ? displayQuote.amountMicrocredits / 1_000_000 : configuredCredits;
     const activeReferenceCount = activeReferences.length;
     const videoFrameOptions = resolvedMentionReferences.filter((item) => item.active && item.kind === "image").map((item) => ({ nodeId: item.nodeId, label: item.label, title: item.title, previewUrl: item.previewUrl }));
     const hasVideoPromptTools = mode === "video" && !simpleMode && videoFrameOptions.length > 0;
@@ -426,7 +429,7 @@ export function CanvasNodePromptPanel({ projectId, node, isRunning, onPromptChan
                 }
                 onClick={() => (expanded ? submitExpandedPrompt() : submit())}
                 aria-label={actionLabel}
-                title={routeQuote ? modelQuoteDescription(routeQuote) : actionLabel}
+                title={displayQuote ? modelQuoteDescription(displayQuote) : actionLabel}
             >
                 {showCost ? (
                     <span className="canvas-node-composer-submit-cost">
@@ -525,6 +528,7 @@ export function CanvasNodePromptPanel({ projectId, node, isRunning, onPromptChan
                             />
                             <CanvasImageSettingsPopover
                                 config={config}
+                                countLimit={imageBatchLimit}
                                 placement={expanded ? "topRight" : "topLeft"}
                                 buttonClassName="canvas-node-composer-settings-trigger [&>span]:min-w-0 [&_.lucide]:!size-3"
                                 onConfigChange={(key, value) => onConfigChange(node.id, key === "count" ? { count: Number(value) || 1 } : key === "size" ? { size: value, imageSizeSource: "user" } : { [key]: value })}
