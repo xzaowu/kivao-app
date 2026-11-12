@@ -165,7 +165,7 @@ func runDeclarativeAgentTask(ctx context.Context, input canvasGenerationInput, a
 			parser.emitReasoning = input.OnReasoningDelta
 			data, mime, err := executeProtocolBinaryRequestWithConsumer(ctx, input.Config, spec, parser.consume)
 			if err != nil {
-				return nil, err
+				return nil, parser.transportError(err)
 			}
 			if strings.Contains(strings.ToLower(mime), "event-stream") {
 				parser.flush()
@@ -173,7 +173,7 @@ func runDeclarativeAgentTask(ctx context.Context, input canvasGenerationInput, a
 			}
 			var payload map[string]interface{}
 			if err := json.Unmarshal(data, &payload); err != nil {
-				return nil, fmt.Errorf("Agent 接口返回格式无效：%w", err)
+				return nil, providerTextCompletionError{reason: "invalid", cause: err}
 			}
 			return parseAgentToolPayload(payload, wire)
 		}
@@ -369,6 +369,10 @@ func isAgentToolChoiceCompatibilityError(err error) bool {
 	if err == nil {
 		return false
 	}
+	var completionErr providerTextCompletionError
+	if errors.As(err, &completionErr) {
+		return false
+	}
 	message := strings.ToLower(err.Error())
 	var payloadErr providerPayloadError
 	if errors.As(err, &payloadErr) {
@@ -388,6 +392,9 @@ func isAutoAgentToolChoice(value interface{}) bool {
 
 func parseAgentToolPayload(payload map[string]interface{}, protocol string) (map[string]interface{}, error) {
 	if err := validateTextPayload(payload); err != nil {
+		return nil, err
+	}
+	if err := validateTextCompletionPayload(payload, protocol); err != nil {
 		return nil, err
 	}
 	result := map[string]interface{}{"mode": "text", "text": "", "toolCalls": []interface{}{}}

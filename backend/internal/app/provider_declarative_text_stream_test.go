@@ -16,11 +16,11 @@ import (
 func TestDeclarativeTextStreaming(t *testing.T) {
 	t.Setenv("CANVAS_ALLOWED_PRIVATE_UPSTREAM_HOSTS", "127.0.0.1")
 	for _, wire := range []struct {
-		id, path, event, response string
+		id, path, event, terminal, response string
 	}{
-		{"chat-completion", "/v1/chat/completions", "data: {\"choices\":[{\"delta\":{\"content\":\"hello\"}}]}\n\n", `{"choices":[{"message":{"content":"hello"}}]}`},
-		{"openai-response", "/v1/responses", "event: response.output_text.delta\ndata: {\"delta\":\"hello\"}\n\n", `{"output_text":"hello"}`},
-		{"claude-api", "/v1/messages", "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"hello\"}}\n\n", `{"content":[{"type":"text","text":"hello"}]}`},
+		{"chat-completion", "/v1/chat/completions", "data: {\"choices\":[{\"delta\":{\"content\":\"hello\"}}]}\n\n", "data: [DONE]\n\n", `{"choices":[{"message":{"content":"hello"}}]}`},
+		{"openai-response", "/v1/responses", "event: response.output_text.delta\ndata: {\"delta\":\"hello\"}\n\n", "event: response.completed\ndata: {\"response\":{\"status\":\"completed\",\"output_text\":\"hello\"}}\n\n", `{"output_text":"hello"}`},
+		{"claude-api", "/v1/messages", "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"hello\"}}\n\n", "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n", `{"content":[{"type":"text","text":"hello"}]}`},
 	} {
 		for _, scenario := range []string{"stream", "json_fallback", "stream_disabled", "http_524", "cancel"} {
 			t.Run(wire.id+"/"+scenario, func(t *testing.T) {
@@ -77,7 +77,9 @@ func TestDeclarativeTextStreaming(t *testing.T) {
 					}
 					if scenario == "cancel" {
 						<-r.Context().Done()
+						return
 					}
+					fmt.Fprint(w, wire.terminal)
 				}))
 				defer server.Close()
 				var deltas strings.Builder

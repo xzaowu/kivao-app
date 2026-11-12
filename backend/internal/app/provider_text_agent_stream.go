@@ -7,8 +7,6 @@ package app
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"math"
 	"sort"
 	"strings"
@@ -27,12 +25,12 @@ func postStreamingAgent(ctx context.Context, config providerConfig, path string,
 	}
 	data, mimeType, err := postStreamingBinary(ctx, config, path, body, parser.consume)
 	if err != nil {
-		return nil, err
+		return nil, parser.transportError(err)
 	}
 	if !strings.Contains(strings.ToLower(mimeType), "event-stream") {
 		var payload map[string]interface{}
 		if err := json.Unmarshal(data, &payload); err != nil {
-			return nil, fmt.Errorf("Agent 接口返回格式无效：%w", err)
+			return nil, providerTextCompletionError{reason: "invalid", cause: err}
 		}
 		return parseAgentToolPayload(payload, protocol)
 	}
@@ -55,6 +53,8 @@ type streamingAgentParser struct {
 	toolCalls     map[int]*streamingAgentToolCall
 	toolCallByID  map[string]int
 	completed     map[string]interface{}
+	terminal      bool
+	receivedSSE   bool
 	err           error
 	emit          func(string)
 	emitReasoning func(string)
@@ -69,7 +69,15 @@ func (p *streamingAgentParser) consume(mimeType string, chunk []byte) {
 		return
 	}
 	p.buffer += string(chunk)
+	p.receivedSSE = true
 	p.consumeFrames(false)
+}
+
+func (p *streamingAgentParser) transportError(err error) error {
+	if p.receivedSSE {
+		return providerTextCompletionError{reason: "missing_terminal", cause: err}
+	}
+	return err
 }
 
 func (p *streamingAgentParser) flush() {
@@ -106,16 +114,26 @@ func (p *streamingAgentParser) consumeFrame(frame string) {
 		}
 	}
 	raw := strings.TrimSpace(strings.Join(dataLines, "\n"))
-	if raw == "" || raw == "[DONE]" {
+	if raw == "" {
+		return
+	}
+	if raw == "[DONE]" {
+		if p.protocol == "chat-completion" {
+			p.terminal = true
+		}
 		return
 	}
 	var payload map[string]interface{}
 	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
-		p.err = fmt.Errorf("Agent 流式事件解析失败：%w", err)
+		p.err = providerTextCompletionError{reason: "invalid", cause: err}
 		return
 	}
 	if err := validateTextPayload(payload); err != nil {
-		p.err = err
+		p.err = providerTextCompletionError{reason: "failed", cause: err}
+		return
+	}
+	if eventName == "error" || stringField(payload, "type") == "error" {
+		p.err = providerTextCompletionError{reason: "failed"}
 		return
 	}
 	switch p.protocol {
@@ -137,6 +155,10 @@ func (p *streamingAgentParser) consumeResponsesEvent(eventName string, payload m
 		p.appendReasoning(stringField(payload, "delta"))
 	case "response.completed":
 		p.completed, _ = payload["response"].(map[string]interface{})
+		p.err = validateTextCompletionReason(p.protocol, stringField(p.completed, "status"))
+		p.terminal = true
+	case "response.incomplete", "response.failed", "response.cancelled", "error":
+		p.err = providerTextCompletionError{reason: "incomplete"}
 	case "response.output_item.added":
 		item, _ := payload["item"].(map[string]interface{})
 		if stringField(item, "type") == "function_call" {
@@ -166,6 +188,10 @@ func (p *streamingAgentParser) consumeChatCompletionEvent(payload map[string]int
 	choices, _ := payload["choices"].([]interface{})
 	for _, value := range choices {
 		choice, _ := value.(map[string]interface{})
+		// Match the non-streaming path: alternatives are not parts of choice 0.
+		if intField(choice, "index", 0) != 0 {
+			continue
+		}
 		delta, _ := choice["delta"].(map[string]interface{})
 		p.appendText(streamContentText(delta["content"]))
 		p.appendReasoning(firstRawString(stringField(delta, "reasoning_content"), stringField(delta, "reasoning"), stringField(delta, "reasoning_text")))
@@ -182,6 +208,13 @@ func (p *streamingAgentParser) consumeChatCompletionEvent(payload map[string]int
 				current.name += name
 			}
 			current.arguments += stringField(function, "arguments")
+		}
+		if reason := stringField(choice, "finish_reason"); reason != "" {
+			p.err = validateTextCompletionReason(p.protocol, reason)
+			p.terminal = true
+			if p.err != nil {
+				return
+			}
 		}
 	}
 }
@@ -217,9 +250,16 @@ func (p *streamingAgentParser) consumeClaudeEvent(payload map[string]interface{}
 		if stringField(delta, "type") == "input_json_delta" {
 			p.toolCall(index).arguments += stringField(delta, "partial_json")
 		}
+	case "message_delta":
+		delta, _ := payload["delta"].(map[string]interface{})
+		if reason := stringField(delta, "stop_reason"); reason != "" {
+			p.err = validateTextCompletionReason(p.protocol, reason)
+			p.terminal = true
+		}
+	case "message_stop":
+		p.terminal = true
 	case "error":
-		errValue, _ := payload["error"].(map[string]interface{})
-		p.err = errors.New(defaultString(stringField(errValue, "message"), "Claude 上游返回失败"))
+		p.err = providerTextCompletionError{reason: "failed"}
 	}
 }
 
@@ -272,9 +312,15 @@ func (p *streamingAgentParser) result() (map[string]interface{}, error) {
 	if p.err != nil {
 		return nil, p.err
 	}
+	if !p.terminal {
+		return nil, providerTextCompletionError{reason: "missing_terminal"}
+	}
 	if p.completed != nil {
 		result, err := parseAgentToolPayload(p.completed, p.protocol)
 		if err != nil {
+			return nil, providerTextCompletionError{reason: "invalid", cause: err}
+		}
+		if err := validateStreamingToolCalls(interfaceSlice(result["toolCalls"])); err != nil {
 			return nil, err
 		}
 		if p.text.Len() > 0 {
@@ -297,16 +343,12 @@ func (p *streamingAgentParser) result() (map[string]interface{}, error) {
 	calls := make([]interface{}, 0, len(indices))
 	for _, index := range indices {
 		call := p.toolCalls[index]
-		if call == nil || strings.TrimSpace(call.id) == "" || strings.TrimSpace(call.name) == "" {
-			continue
+		if call == nil {
+			return nil, providerTextCompletionError{reason: "invalid"}
 		}
 		arguments := call.arguments
 		if strings.TrimSpace(arguments) == "" {
 			arguments = "{}"
-		}
-		var parsed interface{}
-		if err := json.Unmarshal([]byte(arguments), &parsed); err != nil {
-			return nil, fmt.Errorf("Agent 工具参数不是完整 JSON：%w", err)
 		}
 		mapped := map[string]interface{}{"id": call.id, "type": "function", "function": map[string]interface{}{"name": call.name, "arguments": arguments}}
 		if call.itemID != "" {
@@ -315,10 +357,26 @@ func (p *streamingAgentParser) result() (map[string]interface{}, error) {
 		calls = append(calls, mapped)
 	}
 	result["toolCalls"] = calls
+	if err := validateStreamingToolCalls(calls); err != nil {
+		return nil, err
+	}
 	if p.text.Len() == 0 && len(calls) == 0 {
-		return nil, errors.New("画布 Agent 接口没有返回内容")
+		return nil, providerTextCompletionError{reason: "invalid"}
 	}
 	return result, nil
+}
+
+func validateStreamingToolCalls(calls []interface{}) error {
+	for _, value := range calls {
+		call, _ := value.(map[string]interface{})
+		function, _ := call["function"].(map[string]interface{})
+		var arguments map[string]interface{}
+		if strings.TrimSpace(stringField(call, "id")) == "" || strings.TrimSpace(stringField(function, "name")) == "" ||
+			json.Unmarshal([]byte(stringField(function, "arguments")), &arguments) != nil || arguments == nil {
+			return providerTextCompletionError{reason: "invalid"}
+		}
+	}
+	return nil
 }
 
 func intField(value map[string]interface{}, key string, fallback int) int {

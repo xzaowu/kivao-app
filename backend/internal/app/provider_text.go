@@ -4,6 +4,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -53,8 +54,15 @@ func executeProtocolCreateRequest(ctx context.Context, input canvasGenerationInp
 	parser := newStreamingAgentParser(wire, input.OnTextDelta)
 	parser.emitReasoning = input.OnReasoningDelta
 	data, mimeType, err := executeProtocolBinaryRequestWithConsumer(ctx, input.Config, spec, parser.consume)
-	if err != nil || !strings.Contains(strings.ToLower(mimeType), "event-stream") {
-		return data, nil, err
+	if err != nil {
+		return nil, nil, parser.transportError(err)
+	}
+	if !strings.Contains(strings.ToLower(mimeType), "event-stream") {
+		var payload map[string]interface{}
+		if err := json.Unmarshal(data, &payload); err != nil {
+			return nil, nil, providerTextCompletionError{reason: "invalid", cause: err}
+		}
+		return data, nil, validateTextCompletionPayload(payload, wire)
 	}
 	parser.flush()
 	parsed, err := parser.result()
@@ -310,6 +318,10 @@ func textChatContent(input canvasGenerationInput) (interface{}, error) {
 }
 
 func shouldFallbackTextToChat(err error) bool {
+	var completionErr providerTextCompletionError
+	if errors.As(err, &completionErr) {
+		return false
+	}
 	var httpErr providerHTTPError
 	if !errors.As(err, &httpErr) {
 		return false

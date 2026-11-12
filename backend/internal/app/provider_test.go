@@ -797,6 +797,9 @@ data: {"type":"response.function_call_arguments.delta","item_id":"fc-stream","de
 event: response.function_call_arguments.done
 data: {"type":"response.function_call_arguments.done","item_id":"fc-stream","arguments":"{\"nodeId\":\"n1\"}"}
 
+event: response.completed
+data: {"type":"response.completed"}
+
 `))
 	parser.flush()
 	result, err := parser.result()
@@ -843,9 +846,13 @@ data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use"
 event: content_block_delta
 data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"include\":"}}
 
+event: message_stop
+data: {"type":"message_stop"}
+
 `))
 	parser.flush()
-	if _, err := parser.result(); err == nil || !strings.Contains(err.Error(), "完整 JSON") {
+	var completionErr providerTextCompletionError
+	if _, err := parser.result(); !errors.As(err, &completionErr) || completionErr.reason != "invalid" {
 		t.Fatalf("incomplete tool arguments error = %v", err)
 	}
 }
