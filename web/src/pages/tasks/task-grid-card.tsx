@@ -6,14 +6,14 @@ import { Eye, FileText, Image as ImageIcon, RotateCcw, Video } from "lucide-reac
 
 import { MediaPreview } from "@/components/media-preview";
 import { CONTENT_MODERATION_ERROR_CODE, isContentModerationError } from "@/lib/generation-error";
-import { generationTaskShowsProgress, generationTaskStageLabel, generationTaskStatusLabel } from "@/lib/generation-task-display";
+import { generationTaskShowsProgress, generationTaskStageLabel, generationTaskStatusGroup, generationTaskStatusLabel } from "@/lib/generation-task-display";
 import type { GenerationTask } from "@/services/api/task-center";
 import { isTaskFailed, statusDotClassName, taskAttentionReason, TaskDate } from "./task-shared";
 import { TaskVideoThumbnail } from "./task-video-thumbnail";
 import { progressFillStyle } from "@/lib/progress-fill";
 
 export function TaskGridCard({ task, actingId, onOpen, onRetry }: { task: GenerationTask; actingId: string; onOpen: () => void; onRetry: () => void }) {
-    const isActive = task.status === "queued" || task.status === "running";
+    const isActive = generationTaskStatusGroup(task.status) === "active";
     const isFailed = isTaskFailed(task);
     const retryDisabled = task.errorCode === CONTENT_MODERATION_ERROR_CODE || isContentModerationError(task.error);
     const isVideo = task.previewKind === "video";

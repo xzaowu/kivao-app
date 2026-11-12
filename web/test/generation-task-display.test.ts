@@ -9,9 +9,29 @@ import {
     generationTaskShowsProgress,
     generationTaskStageLabel,
     generationTaskStatusLabel,
+    generationTaskStatusGroup,
     mediaDeliverySummary,
 } from "@/lib/generation-task-display";
 import { resetGenerationTaskMetadata } from "@/lib/canvas/canvas-task-state";
+import type { TaskStatus } from "@/services/api/task-center";
+
+describe("任务列表状态归类", () => {
+    test("所有状态均归入唯一分组，文本回放和未知状态不会遗漏", () => {
+        const statuses = ["queued", "running", "text_replay", "provider_waiting", "succeeded", "failed", "cancelled"];
+        const groups = { active: 0, succeeded: 0, failed: 0 };
+        for (const status of statuses) groups[generationTaskStatusGroup(status)]++;
+        expect(groups).toEqual({ active: 4, succeeded: 1, failed: 2 });
+        expect(Object.values(groups).reduce((sum, count) => sum + count, 0)).toBe(statuses.length);
+        expect(statuses.filter((status) => generationTaskStatusGroup(status) === "active")).toEqual(["queued", "running", "text_replay", "provider_waiting"]);
+    });
+
+    test("中间状态有标签，但不扩大取消权限", () => {
+        expect(generationTaskStatusLabel({ status: "text_replay" })).toBe("进行中");
+        expect(generationTaskStatusLabel({ status: "provider_waiting" as TaskStatus })).toBe("状态待确认");
+        expect(canCancelGenerationTask({ status: "text_replay" })).toBe(false);
+        expect(canCancelGenerationTask({ status: "provider_waiting" as TaskStatus })).toBe(false);
+    });
+});
 
 describe("作品保存阶段", () => {
     test("分别表达生成、下载、上传和登记，不把保存失败当成生成失败", () => {

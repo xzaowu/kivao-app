@@ -11,7 +11,7 @@ import { MediaPreview } from "@/components/media-preview";
 import { PageHeader, PaginationBar, WorkspacePage } from "@/components/layout/workspace-page";
 import { WorkspaceState } from "@/components/layout/workspace-state";
 import { CONTENT_MODERATION_ERROR_CODE, generationErrorMessage, isContentModerationError } from "@/lib/generation-error";
-import { formatTaskKind, generationTaskStatusLabel, mediaDeliverySummary, operationOptions, statusLabel } from "@/lib/generation-task-display";
+import { formatTaskKind, generationTaskStatusGroup, generationTaskStatusLabel, mediaDeliverySummary, operationOptions, statusLabel } from "@/lib/generation-task-display";
 import { buildVideoOperationPrompt } from "@/lib/prompts";
 import { backendProviderConfig, logicalModelIDForConfig } from "@/services/api/generation-task";
 
@@ -105,10 +105,7 @@ export default function TasksPage() {
     const modelOptions = useMemo(() => Array.from(new Set(tasks.map((task) => formatModelName(effectiveConfig, task)).filter(Boolean))).sort((left, right) => left.localeCompare(right, "zh-CN")), [effectiveConfig, tasks]);
     const filteredTasks = useMemo(() => tasks.filter((task) => {
         if (statusFilter === "all") return true;
-        if (statusFilter === "active") return task.status === "queued" || task.status === "running";
-        if (statusFilter === "failed") return task.status === "failed" || task.status === "cancelled";
-        if (statusFilter === "succeeded") return task.status === "succeeded";
-        return false;
+        return generationTaskStatusGroup(task.status) === statusFilter;
     }).filter((task) => {
         if (projectFilter !== "all" && task.projectId !== projectFilter) return false;
         if (kindFilter !== "all" && taskMediaKind(task) !== kindFilter) return false;
@@ -129,9 +126,10 @@ export default function TasksPage() {
                 const created = new Date(task.createdAt);
                 if (!Number.isNaN(created.getTime()) && created.getFullYear() === now.getFullYear() && created.getMonth() === now.getMonth() && created.getDate() === now.getDate()) today += 1;
             }
-            if (task.status === "queued" || task.status === "running") active += 1;
-            else if (task.status === "succeeded") succeeded += 1;
-            else if (task.status === "failed" || task.status === "cancelled") failed += 1;
+            const group = generationTaskStatusGroup(task.status);
+            if (group === "active") active += 1;
+            else if (group === "succeeded") succeeded += 1;
+            else failed += 1;
         }
         return { total: tasks.length, today, active, succeeded, failed };
     }, [tasks]);
@@ -283,7 +281,7 @@ export default function TasksPage() {
             const next = await loadTasks(initial);
             if (stopped) return;
             const items = next || tasksRef.current;
-            const hasActiveTasks = items.some((task) => task.status === "queued" || task.status === "running");
+            const hasActiveTasks = items.some((task) => generationTaskStatusGroup(task.status) === "active");
             timer = window.setTimeout(() => void poll(false), document.hidden ? 60_000 : hasActiveTasks ? 10_000 : 60_000);
         };
         const handleVisibility = () => {
@@ -305,7 +303,7 @@ export default function TasksPage() {
         try {
             const currentTask = await queryGenerationTask(id);
             const savingMedia = Boolean(currentTask.mediaStage);
-            const next = currentTask.status === "queued" || currentTask.status === "running" || currentTask.status === "succeeded"
+            const next = !isTaskFailed(currentTask)
                 ? currentTask
                 : savingMedia ? await recoverGenerationTaskMedia(id) : await retryGenerationTask(id);
             setTasks((items) => items.map((item) => (item.id === id ? next : item)));

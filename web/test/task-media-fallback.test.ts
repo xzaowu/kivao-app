@@ -48,7 +48,7 @@ describe("task cancellation policy", () => {
         expect(grid).not.toContain("取消任务");
         expect(page).not.toContain("cancelGenerationTask");
         expect(page).not.toContain('runAction(detailTask.id, "cancel")');
-        expect(page).toContain('if (task.status === "queued" || task.status === "running")');
+        expect(page).toContain("const next = !isTaskFailed(currentTask)");
     });
 
     test("batch stop only applies to items still waiting locally", () => {

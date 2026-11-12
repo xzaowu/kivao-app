@@ -2,7 +2,7 @@ import { getNodeListLabel } from "@/lib/canvas/node-registry";
 import { producedModelLabel, producedModelSearchTerms } from "@/lib/canvas/produced-model";
 import type { AiConfig } from "@/stores/use-config-store";
 import { canvasNodeCreatedAt, canvasNodeUpdatedAt } from "@/lib/canvas/canvas-node-timestamps";
-import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
+import { CanvasNodeType, type CanvasNodeData, type StoryboardRow } from "@/types/canvas";
 import { nodeGenerationPrompt } from "@/lib/canvas/generation-contract";
 const searchTimeFormatter = new Intl.DateTimeFormat("zh-CN", {
     month: "2-digit",
@@ -64,7 +64,14 @@ function canvasNodeSearchTerms(node: CanvasNodeData, config?: AiConfig) {
         node.metadata?.workflowDescription,
         typeof node.metadata?.shotIndex === "number" ? `镜头 ${node.metadata.shotIndex + 1}` : "",
         ...(node.metadata?.assetTags || []),
+        ...(node.metadata?.storyboard?.rows.flatMap(storyboardSearchTerms) || []),
+        ...(node.metadata?.batchTable?.rows.flatMap((row) => [row.prompt, ...Object.values(row.cells || {})]) || []),
+        ...(node.metadata?.batchTable?.contentKind === "storyboard" ? node.metadata.batchTable.storyboardRows?.flatMap(storyboardSearchTerms) || [] : []),
     ].filter((value): value is string => typeof value === "string" && Boolean(value));
+}
+
+function storyboardSearchTerms(row: StoryboardRow) {
+    return [row.videoMotionPrompt, row.plotDescription, row.dialogue, row.imageGenerationPrompt, row.narrativeIntent, row.performanceBlocking];
 }
 
 function timestampValue(value?: string) {

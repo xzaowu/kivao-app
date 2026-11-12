@@ -7,7 +7,7 @@ import { useState } from "react";
 
 import { MediaPreview } from "@/components/media-preview";
 import { CONTENT_MODERATION_ERROR_CODE, generationErrorMessage, isContentModerationError } from "@/lib/generation-error";
-import { formatTaskKind, generationTaskShowsProgress, generationTaskStageLabel, generationTaskStatusLabel } from "@/lib/generation-task-display";
+import { formatTaskKind, generationTaskShowsProgress, generationTaskStageLabel, generationTaskStatusGroup, generationTaskStatusLabel } from "@/lib/generation-task-display";
 import type { GenerationTask } from "@/services/api/task-center";
 import type { AiConfig } from "@/stores/use-config-store";
 import { formatModelName, getTaskCanvasContext, isTaskFailed, statusDotClassName, taskAttentionReason, TaskBilling, TaskDate } from "./task-shared";
@@ -36,7 +36,7 @@ export function TaskListRow({
     onPreview: () => void;
 }) {
     const context = getTaskCanvasContext(task, canvasById, projectNameById);
-    const isActive = task.status === "queued" || task.status === "running";
+    const isActive = generationTaskStatusGroup(task.status) === "active";
     const isFailed = isTaskFailed(task);
     const retryDisabled = task.errorCode === CONTENT_MODERATION_ERROR_CODE || isContentModerationError(task.error);
     const stageLabel = generationTaskStageLabel(task);
