@@ -798,7 +798,11 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
         setLibraryOpen(true);
     };
     const addLibraryAssets = async (ids: string[], items = libraryItems) => {
-        if (!useUserStore.getState().user) throw new Error("请先登录后选择素材");
+        if (!useUserStore.getState().user) {
+            setLibraryOpen(false);
+            useAuthDialogStore.getState().openDialog();
+            return;
+        }
         const candidates = ids.map((id) => {
             const asset = items.find((item) => item.id === id)?.asset;
             if (!asset || (asset.kind !== "image" && asset.kind !== "video" && asset.kind !== "audio") || asset.status === "archived" || !libraryMediaTypes.includes(asset.kind)) throw new Error("所选素材不适用于当前输入区，请重新选择");

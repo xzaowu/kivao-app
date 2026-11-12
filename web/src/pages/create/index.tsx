@@ -125,6 +125,22 @@ export default function CreatePage() {
     const [referenceReplacementBusy, setReferenceReplacementBusy] = useState(false);
     const [historyOpen, setHistoryOpen] = useState(false);
     const [libraryOpen, setLibraryOpen] = useState(false);
+    const materialSessionRef = useRef({});
+    useEffect(() => () => { materialSessionRef.current = {}; }, [userId, userSessionHydrated]);
+    const requireCreationLogin = useCallback(() => {
+        if (useUserStore.getState().user) return true;
+        setLibraryOpen(false);
+        useAuthDialogStore.getState().openDialog();
+        return false;
+    }, []);
+    const captureMaterialSession = useCallback(() => {
+        const session = materialSessionRef.current;
+        // 登录切换会卸载工作区；旧上传回调不能把素材写进新账号的 store。
+        return () => session === materialSessionRef.current && Boolean(userId) && useUserStore.getState().user?.id === userId && useUserStore.getState().hydrated;
+    }, [userId]);
+    const openReferenceLibrary = () => {
+        if (requireCreationLogin()) setLibraryOpen(true);
+    };
     const externalAssetSources = useExternalAssetSources(libraryOpen);
     const abortRef = useRef<AbortController | null>(null);
     const composerFocusRef = useRef<HTMLTextAreaElement>(null);
@@ -564,8 +580,9 @@ export default function CreatePage() {
             })),
         ...externalLibraryItems,
     ], [assets, externalLibraryItems, mode, videoReferenceLimits]);
-    const uploadCreationAsset = async (file: File) => {
+    const uploadCreationAsset = async (file: File, current: () => boolean) => {
         const { uploadImage, uploadMediaFile } = await loadCreationRuntime();
+        if (!current()) throw new DOMException("账号已切换，请重新选择素材", "AbortError");
         if (file.type.startsWith("video/")) {
             const uploaded = await uploadMediaFile(file, "create-upload");
             return {
@@ -591,12 +608,16 @@ export default function CreatePage() {
         };
     };
     const uploadLibraryAssets = async (files: FileList | File[]) => {
+        if (!requireCreationLogin()) return [];
+        const current = captureMaterialSession();
+        if (!current()) return [];
         const next = Array.from(files).filter((file) => creationFileAccepted(mode, file));
         if (!next.length) return [];
         const settled = await Promise.allSettled(next.map(async (file) => {
-            const { asset } = await uploadCreationAsset(file);
-            return asset ? addAsset(asset) : "";
+            const { asset } = await uploadCreationAsset(file, current);
+            return current() && asset ? addAsset(asset) : "";
         }));
+        if (!current()) return [];
         const assetIds = settled.flatMap((entry) => entry.status === "fulfilled" && entry.value ? [entry.value] : []);
         const failed = settled.filter((entry) => entry.status === "rejected");
         if (assetIds.length) toast.success(`${assetIds.length} 个素材已上传到素材库并自动选中`);
@@ -605,12 +626,16 @@ export default function CreatePage() {
     };
 
     const handleLibrarySelect = async (selectedIds: string[], pickedItems = libraryItems) => {
+        if (!requireCreationLogin()) return;
+        const currentSession = captureMaterialSession();
+        if (!currentSession()) return;
         const next = creationLibrarySelectionToAttachments(selectedIds, pickedItems, mode, videoReferenceLimits);
         if (!next.length) return;
         const selected = new Set(selectedIds);
         const cachedIds = new Set(useAssetStore.getState().assets.map((asset) => asset.id));
         const uncachedAssetIds = pickedItems.filter((item) => item.asset && selected.has(item.id) && !cachedIds.has(item.id)).map((item) => item.id);
         if (uncachedAssetIds.length) await loadAssetsForUse(uncachedAssetIds);
+        if (!currentSession()) return;
         setAttachments((current) => {
             const candidates = [...current.filter((item) => !next.some((candidate) => candidate.id === item.id)), ...next];
             const reconciled = mode === "video" && videoReferenceLimits
@@ -665,15 +690,18 @@ export default function CreatePage() {
     }, []);
 
     const replaceReferenceFromTrack = useCallback((targetAttachmentId: string, replacement: CreationAttachment) => {
+        if (!requireCreationLogin()) return;
         try {
             if (replaceAttachmentReference(targetAttachmentId, replacement)) toast.success("参考图已替换，槽位不变，提示词无需修改");
         } catch (error) {
             toast.error(error instanceof Error ? error.message : "参考图替换失败");
         }
-    }, [replaceAttachmentReference, toast]);
+    }, [replaceAttachmentReference, requireCreationLogin, toast]);
 
     const replaceReferenceFromFiles = useCallback(async (targetAttachmentId: string, files: File[]) => {
+        if (!requireCreationLogin()) return;
         if (busy || referenceReplacementBusy) return;
+        const current = captureMaterialSession();
         const file = files.find((item) => item.type.startsWith("image/"));
         if (!file) {
             toast.warning("请拖入图片文件进行替换");
@@ -681,16 +709,17 @@ export default function CreatePage() {
         }
         setReferenceReplacementBusy(true);
         try {
-            const { asset, attachment } = await uploadCreationAsset(file);
+            const { asset, attachment } = await uploadCreationAsset(file, current);
+            if (!current()) return;
             if (creationAttachmentKind(attachment) !== "image") throw new Error("上传结果不是可用图片");
             if (asset) addAsset(asset);
             if (replaceAttachmentReference(targetAttachmentId, attachment)) toast.success("参考图已替换，槽位不变，提示词无需修改");
         } catch (error) {
-            toast.error(error instanceof Error ? error.message : "参考图上传或替换失败");
+            if (current()) toast.error(error instanceof Error ? error.message : "参考图上传或替换失败");
         } finally {
-            setReferenceReplacementBusy(false);
+            if (current()) setReferenceReplacementBusy(false);
         }
-    }, [addAsset, busy, referenceReplacementBusy, replaceAttachmentReference, toast]);
+    }, [addAsset, busy, captureMaterialSession, referenceReplacementBusy, replaceAttachmentReference, requireCreationLogin, toast]);
 
     const submit = async (retryContext?: CreationRetryContext, retryLockKey?: string) => {
         const releaseRetryLock = () => {
@@ -1198,7 +1227,7 @@ export default function CreatePage() {
         onReorderAttachments: reorderAttachments,
         onReplaceAttachment: replaceReferenceFromTrack,
         onReplaceReferenceFiles: replaceReferenceFromFiles,
-        onOpenLibrary: () => setLibraryOpen(true),
+        onOpenLibrary: openReferenceLibrary,
         onModeChange: selectMode,
         model: selectedModel,
         modelRequirements,
@@ -1297,7 +1326,13 @@ export default function CreatePage() {
             categoryLabels={{ ...creationAssetCategoryLabels, ...externalAssetSources.categoryLabels }}
             folders={externalAssetSources.folders}
             initialSelectedIds={attachments.flatMap((item) => item.id.startsWith("asset:") ? [item.id.slice(6)] : item.id.startsWith("external:") ? [item.id] : [])}
-            upload={{ accept: creationUploadAccept(mode), description: mode === "text" ? "支持图片、视频、音频和常用文档；媒体会保存到素材库" : `支持图片${mode === "video" ? "、视频和音频" : ""}，上传后保存到素材库`, onUpload: uploadLibraryAssets, external: { accept: "image/*", description: "写入当前 Eagle 文件夹；Eagle 当前支持图片文件", onUpload: (files, folderId) => externalAssetSources.uploadExternalFiles(files, folderId) } }}
+            upload={{ accept: creationUploadAccept(mode), description: mode === "text" ? "支持图片、视频、音频和常用文档；媒体会保存到素材库" : `支持图片${mode === "video" ? "、视频和音频" : ""}，上传后保存到素材库`, onUpload: uploadLibraryAssets, external: { accept: "image/*", description: "写入当前 Eagle 文件夹；Eagle 当前支持图片文件", onUpload: async (files, folderId) => {
+                if (!requireCreationLogin()) return [];
+                const current = captureMaterialSession();
+                if (!current()) return [];
+                const items = await externalAssetSources.uploadExternalFiles(files, folderId);
+                return current() ? items : [];
+            } } }}
             onClose={() => setLibraryOpen(false)}
             onConfirm={handleLibrarySelect}
         /></Suspense> : null}
