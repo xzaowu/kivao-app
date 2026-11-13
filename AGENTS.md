@@ -2,6 +2,15 @@
 
 本文件是影策仓库中 AI、自动化工具和协作者的工作约定。用户当前任务优先于本文件；本文件优先于个人习惯。所有结论应能回溯到代码、配置、测试、日志或文档，不用历史印象替代现状。
 
+## KIVAO 工作区例外
+
+- 本仓库为 `xzaowu/kivao-app`。新基线来自固定上游提交 `3979305c1413be231cbaef242e50afc67f553c5e`；旧实现和定制取舍保留在 `dev/kivao-ecommerce-agent` 的 `a17dc6a08a2ad26f7b10545b45dd81d7ff2d9a62`，可用 `git show dev/kivao-ecommerce-agent:docs/plans/kivao-customization-pruning.md` 读取。
+- 采用上游手机/桌面布局和多页面助手，只补必要 KIVAO 定制。不得把旧实现全部复制覆盖新版。
+- 新基线开发数据使用 `.local/rebaseline-3979305c/data`。旧 `.local/project-workbench-debug` 和 `.local/operations` 保存旧数据、恢复资料和私钥，禁止让新版自动迁移它们。旧 `.local/development/compose.override.yml` 尚未适配新基线，不直接启动。
+- `app.kivao.cc` 已使用 KIVAO 自有镜像，优先于下文官方部署默认方案。保留现有 Compose 组合、项目名、数据挂载和 Agent `init: true`；只使用获批准的自有 GHCR 固定 digest。禁止官方 latest、安装器或 Host Updater 覆盖。
+- 生产备份、切换、迁移、恢复及真实模型/支付/外部写入仍需对应授权。源码准备和本地虚拟验证不构成生产放行。
+- `.local`、环境配置、密钥和真实业务备份不进 Git。推送新基线前核对 workflow 触发范围，避免自动发布镜像或部署。
+
 ## 1. 项目边界
 
 影策（`ddcat-ai/open-ai-canvas`）是面向 AI 影视与短剧创作的工作台，当前仍在快速开发。公开接口、数据结构和部署配置可能直接调整；除非任务明确要求，不为旧字段、旧 API 或旧数据增加兼容层。
@@ -30,7 +39,7 @@ cd backend/agent-runtime/pi && npm install && cd ../../..
 
 # 2. 启动后端（自动使用嵌入模式）
 cd backend
-CANVAS_BACKEND_DATA_DIR=../.local/project-workbench-debug go run ./cmd/server
+CANVAS_BACKEND_DATA_DIR=../.local/rebaseline-3979305c/data go run ./cmd/server
 
 # 3. 启动前端
 cd web && bun run dev
@@ -135,9 +144,9 @@ cd web && bun run dev
 
 ## 7. 本地开发、部署和数据目录
 
-- 先阅读 `.env.example` 和对应 Compose 文件。宿主机后端开发必须使用 Git 忽略的 `.local/project-workbench-debug`，通过 `CANVAS_BACKEND_DATA_DIR` 显式指定；不要把 `backend/data` 当作开发账号数据库。
+- 先阅读 `.env.example` 和对应 Compose 文件。新基线宿主机后端开发必须使用 Git 忽略的 `.local/rebaseline-3979305c/data`，通过 `CANVAS_BACKEND_DATA_DIR` 显式指定；不要把 `backend/data` 或旧 `.local/project-workbench-debug` 当作新基线开发数据库。
 - 本地缓存放 `.local/cache`；不要提交数据库、上传文件、`.env`、真实密钥、构建产物或编辑器配置。
-- 宿主机开发：`backend/` 运行 `CANVAS_BACKEND_DATA_DIR=../.local/project-workbench-debug go run ./cmd/server`，`web/` 使用 Bun 和 Vite；不要用 pnpm/npm 覆盖同一套 `node_modules`，也不要提交 `pnpm-lock.yaml` 或 `package-lock.json`。Docker 热更新使用 `docker-compose.dev.yml`；本地构建运行使用 `docker-compose.local.yml`。
+- 宿主机开发：`backend/` 运行 `CANVAS_BACKEND_DATA_DIR=../.local/rebaseline-3979305c/data go run ./cmd/server`，`web/` 使用 Bun 和 Vite；不要用 pnpm/npm 覆盖同一套 `node_modules`，也不要提交 `pnpm-lock.yaml` 或 `package-lock.json`。Docker 热更新使用 `docker-compose.dev.yml`；本地构建运行使用 `docker-compose.local.yml`。
 - 用户要求“部署到服务器/云服务器/生产环境”且未指定方式时，默认采用 `scripts/install-server-image.sh` + 官方已发布 Release + `docker-compose.deploy.yml` + Host Updater；先确认该 Release 的镜像、更新器二进制和 `SHA256SUMS` 可用，按同一 Release 固定 `CANVAS_IMAGE_TAG` 和 `REPOSITORY_REF`。不要自行简化成 `web/backend` 两容器 SQLite 编排或生成替代 `compose.yml`；用户明确要求源码构建或轻量试运行时才选择对应方案，并说明在线更新边界。GHCR 拉取失败应排查网络、包可见性和认证，不静默切换为不受管源码部署。
 - 生产 Compose 使用 `docker-compose.deploy.yml`（PostgreSQL、Redis、migrate、yingce-agent、backend、web）。源码构建可叠加 `docker-compose.build.yml`，但本地镜像不由 Host Updater 管理；`scripts/install-server.sh` 不安装更新器，不能当作在线更新安装入口。公网只暴露 web 的 `CANVAS_HTTP_PORT`（默认 `3000`），backend `8080` 留在 Compose 网络内。
 - 诊断已有部署时，依据实际 Compose 文件、容器镜像、数据库驱动、数据挂载和 Host Updater 状态分别报告。源码构建不等于 local，SQLite 不证明使用了 `docker-compose.local.yml`，自定义文件名也不证明采用了任何仓库编排。已有 SQLite/自定义部署须先备份、迁移和验证，再转为受管部署；不要直接覆盖原 Compose 或数据卷。
