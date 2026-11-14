@@ -13,6 +13,7 @@ import "@/styles/workspace-product.css";
 import "@/styles/workspace-menus.css";
 
 const workspaceTheme = getWorkspaceAntThemeConfig();
+const inheritedAgentTheme = { inherit: true };
 // 平台唯一的 Agent 面板按需加载，不拖慢首屏；画布编辑器只发布画布上下文，不再自己渲染面板。
 const GlobalAgentPanel = lazy(() => import("@/components/canvas/canvas-cloud-agent-panel").then((module) => ({ default: module.CanvasCloudAgentPanel })));
 
@@ -48,36 +49,37 @@ export default function UserLayout({ children }: { children: ReactNode }) {
         };
     }, [adminWorkspace, spatialWorkbench, productWorkspace]);
 
-    // 所有登录页面共用同一个面板实例：跨路由不卸载，对话、运行和事件流都不中断。
+    const controlOverrides = {
+        select: productWorkspace ? { classNames: { popup: { root: "workspace-quiet-popup" } } } : undefined,
+        dropdown: productWorkspace ? { classNames: { root: "workspace-quiet-popup" } } : undefined,
+        popover: productWorkspace ? { classNames: { root: "workspace-quiet-popup" } } : undefined,
+    };
+    // 助手独立于页面主题包装。ConfigProvider 的 theme 从对象变为 undefined 会更换内部
+    // Provider 层级并重新挂载子树；助手自己的 theme 始终为对象，跨页保留同一个实例。
     const globalAgent = userId ? (
-        <Suspense fallback={null}>
-            <GlobalAgentPanel key={userId} />
-        </Suspense>
+        <ConfigProvider theme={productWorkspace ? workspaceTheme : inheritedAgentTheme} {...controlOverrides}>
+            <Suspense fallback={null}>
+                <GlobalAgentPanel key={userId} />
+            </Suspense>
+        </ConfigProvider>
     ) : null;
 
-    if (adminWorkspace)
-        return (
-            <>
-                {children}
-                {globalAgent}
-            </>
-        );
-
     return (
-        <ConfigProvider
-            theme={productWorkspace ? workspaceTheme : undefined}
-            select={productWorkspace ? { classNames: { popup: { root: "workspace-quiet-popup" } } } : undefined}
-            dropdown={productWorkspace ? { classNames: { root: "workspace-quiet-popup" } } : undefined}
-            popover={productWorkspace ? { classNames: { root: "workspace-quiet-popup" } } : undefined}
-        >
-            <div
-                className={cn("app-user-workspace h-dvh overflow-hidden text-foreground", spatialWorkbench && "app-spatial-workspace", productWorkspace && "app-product-workspace")}
-                style={agentDocked ? { paddingRight: agentDock.width } : undefined}
-                data-agent-docked={agentDocked || undefined}
-            >
-                <AppWorkspaceShell>{children}</AppWorkspaceShell>
-            </div>
+        <>
+            {adminWorkspace ? (
+                children
+            ) : (
+                <ConfigProvider theme={productWorkspace ? workspaceTheme : undefined} {...controlOverrides}>
+                    <div
+                        className={cn("app-user-workspace h-dvh overflow-hidden text-foreground", spatialWorkbench && "app-spatial-workspace", productWorkspace && "app-product-workspace")}
+                        style={agentDocked ? { paddingRight: agentDock.width } : undefined}
+                        data-agent-docked={agentDocked || undefined}
+                    >
+                        <AppWorkspaceShell>{children}</AppWorkspaceShell>
+                    </div>
+                </ConfigProvider>
+            )}
             {globalAgent}
-        </ConfigProvider>
+        </>
     );
 }

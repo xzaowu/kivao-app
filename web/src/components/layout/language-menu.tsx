@@ -21,6 +21,7 @@ export function LanguageMenu({ variant = "topbar", className }: { variant?: "top
         <Dropdown
             trigger={["click"]}
             placement="bottomRight"
+            align={{ overflow: { shiftX: true } }}
             rootClassName="language-menu-dropdown"
             menu={{
                 selectedKeys: [locale],

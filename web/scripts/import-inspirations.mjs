@@ -14,6 +14,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { localizeInspirationEntries } from "./inspiration-localization.mjs";
+import { seedanceVideoURL } from "./inspiration-media.mjs";
 
 const WEB_DIR = resolve(import.meta.dir, "..");
 const PUBLIC_DIR = join(WEB_DIR, "public", "inspirations");
@@ -199,12 +200,14 @@ function buildSeedanceEntries(raw) {
         .sort((left, right) => (right.heatScore ?? 0) - (left.heatScore ?? 0))
         .map((item) => {
             const category = item.templateId || "";
+            const videoUrl = seedanceVideoURL(item);
             if (category && !SEEDANCE_CATEGORY_LABELS[category]) unknown.add(category);
             return {
                 id: `seedance:${item.slug}`,
                 title: item.title,
                 description: seedanceDescription(item, category),
                 image: item.posterUrl,
+                ...(videoUrl ? { videoUrl } : {}),
                 mode: "video",
                 prompt: item.promptFull,
                 ...(category ? { category } : {}),

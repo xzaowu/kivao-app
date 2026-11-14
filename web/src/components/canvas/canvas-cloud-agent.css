@@ -32,6 +32,16 @@
     box-shadow: none;
 }
 
+.canvas-agent-panel.is-compact {
+    border-radius: 0;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+.canvas-agent-panel.is-compact .agent-header-actions .ant-btn {
+    min-width: calc(var(--space-10) + var(--space-1));
+    height: calc(var(--space-10) + var(--space-1));
+}
+
 .canvas-agent-panel.is-docked [data-agent-drag-handle] {
     cursor: default;
     touch-action: auto;
@@ -2477,6 +2487,59 @@ summary.agent-tool-step:hover {
     .agent-outbox-head-action {
         transition: none;
     }
+}
+
+.canvas-agent-mobile-launcher {
+    position: fixed;
+    z-index: var(--z-panel-floating);
+    display: grid;
+    width: var(--space-12);
+    height: var(--space-12);
+    place-items: center;
+    border: 0;
+    border-radius: var(--r-full);
+    background: transparent;
+    padding: 0;
+    box-shadow: none;
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+}
+
+.canvas-agent-mobile-launcher.is-dragging {
+    cursor: grabbing;
+}
+
+.canvas-agent-mobile-launcher > * {
+    pointer-events: none;
+}
+
+.canvas-agent-mobile-launcher:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: -2px;
+}
+
+.canvas-agent-mobile-status {
+    position: absolute;
+    top: var(--space-1);
+    right: var(--space-1);
+    width: var(--space-2);
+    height: var(--space-2);
+    border-radius: var(--r-full);
+    background: var(--canvas-agent-status-color);
+}
+
+.canvas-agent-mobile-badge {
+    position: absolute;
+    right: 0;
+    bottom: calc(-1 * var(--space-2));
+    border-radius: var(--r-sm);
+    background: var(--background);
+    padding: var(--space-1);
+    color: var(--foreground);
+    font-size: var(--fs-tiny);
+    line-height: 1;
+    white-space: nowrap;
 }
 
 .canvas-agent-launcher {

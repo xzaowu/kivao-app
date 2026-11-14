@@ -5,6 +5,12 @@ description: 信封、错误码与 OpenAPI
 
 # HTTP API 合同
 
+## 创作首页快捷入口
+
+- `GET /public/appearance` 的 `data.appearance.creationShortcuts` 返回分组导航入口；`GET /admin/settings/appearance` 的 `data.setting` 包含同一字段。
+- `PATCH /admin/settings/appearance` 仅管理员可调用，沿用整页外观保存流程。`creationShortcuts` 最多 10 项，每项 `group/title` 为 1–20 字，`icon` 为预设图标，`target` 为最长 512 字节的站内工作区路径及可选查询参数。外站、管理页面和 API 地址拒绝；省略或 null 保留现值，`[]` 清空。
+- 支持创作、图片／视频工作台、画布、技能、电商、短剧、素材和创作历史等页面；工具入口可携带 `?tool=工具ID`。该配置仅提供导航，不授予页面、画布或工具权限，不自动提交生成；游客由目标路由引导登录。
+
 ## 微信登录
 
 - `GET/PATCH /admin/settings/wechat`：仅管理员；读取 `data.setting`，保存 `{enabled, appId, appSecret, redirectUrl}`。读取仅返回 `hasAppSecret`；密钥留空保留。回调须为 HTTPS 且路径固定为 `/api/auth/wechat/callback`。
@@ -114,6 +120,23 @@ Agent 通过 `mcp_list_tools` 分三步读取连接目录、指定连接的工�
 使用说明见[渠道、模板与批量配置](/docs/backend/channel-configuration)，迁移见[后端数据库](/docs/backend/backend-database)。
 
 ## 灵感上新
+
+### 灵感作品示例
+
+| 接口 | 入参与结果 |
+| --- | --- |
+| `GET /api/public/inspirations/showcases` | 匿名读取已公开配置，返回 `data.showcases`；每条包含 `inspirationId,title,enabled,examples[{resourceId,type,title,description,mediaUrl}]`，`mediaUrl` 由服务端生成 |
+| `GET /api/admin/settings/inspiration-showcases` | 管理员读取全部作品示例配置，含停用条目及受保护的预览地址 |
+| `PUT /api/admin/settings/inspiration-showcases` | 管理员按 `inspirationId` 保存一条配置，请求体 `{inspirationId,title,enabled,examples}`，最多 10 个示例；只允许自己上传或已公开的本地图片／视频，客户端媒体 URL 不入库。个人本地灵感不接受全站示例配置 |
+| `POST /api/admin/settings/inspiration-showcases/assets/:kind` | 管理员上传，`kind=image|video`，multipart 字段 `file`；图片 PNG/JPEG/WebP ≤10 MiB，视频 MP4/WebM ≤256 MiB，按实际内容校验 MIME，保存配置前不公开；返回 `data.resource={id,kind}` |
+| `GET /api/public/inspirations/showcases/media/:id` | 仅当前已公开引用的媒体可读，支持视频 Range；停用或移除后返回 404 |
+| `GET /api/admin/settings/inspiration-showcases/media/:id` | 管理员预览自己的上传或已经公开的媒体，不开放其他管理员的私有草稿；支持 Range |
+
+上述管理接口均在服务层校验管理员权限；保存记录管理员审计。配置写入现有系统设置，不改变 Schema，也不触发模型任务。
+
+### 自动上新
+
+公开条目可带 `videoUrl`，这是上游成品视频 HTTPS 直链；`sourceUrl` 仍是原作品页面，不能当作视频源。静态目录保留原提示词与署名，同时允许上新接口刷新同 ID 的视频地址。
 
 后端每 6 小时从 GitHub 拉取 YouMind 提示词库（两个 `README_zh.md`）和 awesome-seedance（`data/cases.json`、`data/case-taxonomy.json`），经出站 SSRF 客户端下载，只收正文已是中文的条目。上次有来源失败时 1 小时后重试；多实例部署通过协调器锁只让一个实例同步。服务器访问 GitHub 需要正常 DNS，必要时配置 `HTTPS_PROXY`。数据表见 [后端数据库](/docs/backend/backend-database)。
 

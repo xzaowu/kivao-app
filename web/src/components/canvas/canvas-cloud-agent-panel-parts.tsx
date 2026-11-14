@@ -9,7 +9,7 @@ import { agentAvatarClipForState, agentAvatarStateForRunStatus, agentCopy, DEFAU
 import { type CSSProperties, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { usePopoverAnchorAlign } from "@/hooks/use-popover-anchor-align";
 import { useAgentLauncherPosition } from "./use-agent-launcher-position";
-import { resolveAgentLauncherAvatarHeight } from "@/lib/canvas/agent-launcher-position";
+import { AGENT_MOBILE_LAUNCHER_POSITION_KEY, resolveAgentLauncherAvatarHeight } from "@/lib/canvas/agent-launcher-position";
 import { useMatch } from "react-router";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { cn } from "@/lib/utils";
@@ -242,6 +242,44 @@ function readAgentLauncherCollapsed() {
         return false;
     }
 }
+
+// 手机入口不读取或改写桌面形象偏好，也不加载动画包、视频或 Live2D。
+export const AgentMobileLauncher = memo(function AgentMobileLauncher({
+    theme,
+    status,
+    statusLabel,
+    statusColor,
+    attentionPending,
+    onOpen,
+}: {
+    theme: CanvasTheme;
+    status: string;
+    statusLabel: string;
+    statusColor: string;
+    attentionPending: boolean;
+    onOpen: () => void;
+}) {
+    const appearance = useAppearanceStore((state) => state.appearance.canvas) || DEFAULT_CANVAS_APPEARANCE;
+    const { position, dragging, handlers } = useAgentLauncherPosition(onOpen, AGENT_LAUNCHER_COLLAPSED_SIZE, AGENT_LAUNCHER_COLLAPSED_SIZE, AGENT_MOBILE_LAUNCHER_POSITION_KEY);
+    return (
+        <button
+            type="button"
+            className={cn("canvas-agent-mobile-launcher", dragging && "is-dragging")}
+            style={{ ...position, color: theme.node.text, "--canvas-agent-status-color": statusColor } as CSSProperties}
+            aria-label={`打开${appearance.agentName} · ${statusLabel}`}
+            aria-haspopup="dialog"
+            aria-expanded={false}
+            title={`${appearance.agentName} · ${statusLabel} · 拖动可调整位置`}
+            data-canvas-no-zoom
+            onDragStart={(event) => event.preventDefault()}
+            {...handlers}
+        >
+            <AgentOrb size={30} state={agentOrbStateForAvatar(agentAvatarStateForRunStatus(status))} color="#7164f6" />
+            <span className="canvas-agent-mobile-status" aria-hidden="true" />
+            {attentionPending ? <span className="canvas-agent-mobile-badge">待确认</span> : null}
+        </button>
+    );
+});
 
 export function AgentHeader({
     theme,

@@ -42,6 +42,48 @@ tags:
   - name: pose-library
     description: 站点姿势库：浏览、选用，管理员导入与图片同步
 paths:
+  /public/appearance:
+    get:
+      tags: [meta]
+      security: []
+      summary: 读取公开站点外观及创作快捷入口
+      description: data.appearance.creationShortcuts 为最多 10 个分组导航入口，每项包含 group、title、icon、target；顺序即展示顺序，空数组隐藏全部入口。仅用于站内导航，不授予目标页面权限，也不提交生成。
+      responses:
+        "200": { $ref: "#/components/responses/Envelope" }
+        default: { $ref: "#/components/responses/Error" }
+  /admin/settings/appearance:
+    get:
+      tags: [admin]
+      summary: 管理员读取外观与创作快捷入口
+      responses:
+        "200": { $ref: "#/components/responses/Envelope" }
+        default: { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [admin]
+      summary: 管理员更新外观及创作入口
+      description: creationShortcuts 省略或为 null 时保留现值，空数组清空。仅允许站内工作区页面；外站、管理页面及 API 地址拒绝。其他外观字段按既有合同处理。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                creationShortcuts:
+                  type: array
+                  nullable: true
+                  maxItems: 10
+                  items:
+                    type: object
+                    required: [group, title, icon, target]
+                    properties:
+                      group: { type: string, minLength: 1, maxLength: 20 }
+                      title: { type: string, minLength: 1, maxLength: 20 }
+                      icon: { type: string, enum: [image, video, canvas, skill, text, wand, camera, shopping] }
+                      target: { type: string, maxLength: 512, description: 站内页面及可选查询参数 }
+      responses:
+        "200": { $ref: "#/components/responses/Envelope" }
+        default: { $ref: "#/components/responses/Error" }
   /admin/api-logs/{id}:
     get:
       tags: [admin]
@@ -2060,7 +2102,7 @@ paths:
       summary: 读取灵感上新条目（匿名可读）
       description: 后端定时从 YouMind、awesome-seedance 同步的中文条目，按首次收录时间倒序，最多 3000 条；进程内缓存 5 分钟。按 IP 每分钟 120 次。
       responses:
-        "200": { description: "data={enabled,entries[{id,title,description,image,mode,prompt,category?,tags?,sourceId,credit?,sourceUrl?,addedAt,publishedAt?}],categories{来源:{分类码:名称}},syncedAt?}；enabled=false 时 entries 为空" }
+        "200": { description: "data={enabled,entries[{id,title,description,image,videoUrl?,mode,prompt,category?,tags?,sourceId,credit?,sourceUrl?,addedAt,publishedAt?}],categories{来源:{分类码:名称}},syncedAt?}；videoUrl 为上游成品 HTTPS 直链；enabled=false 时 entries 为空" }
         "429": { $ref: "#/components/responses/Error" }
         "500": { $ref: "#/components/responses/Error" }
   /admin/settings/inspiration-feed:
@@ -2100,6 +2142,98 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "409": { description: 上新已关闭，或另一实例/请求正在同步 }
         "502": { description: 全部来源都同步失败 }
+  /public/inspirations/showcases:
+    get:
+      tags: [inspirations]
+      security: []
+      summary: 读取管理员公开的灵感作品示例
+      responses:
+        "200": { description: "data.showcases=[{inspirationId,title,enabled,examples[{resourceId,type,title,description,mediaUrl}]}]；不含停用条目" }
+        "500": { $ref: "#/components/responses/Error" }
+  /admin/settings/inspiration-showcases:
+    get:
+      tags: [inspirations, admin]
+      summary: 管理员读取全部灵感作品示例配置
+      responses:
+        "200": { description: "data.showcases 包含全部配置，媒体 URL 为管理员预览地址" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+    put:
+      tags: [inspirations, admin]
+      summary: 按灵感稳定 ID 保存作品示例
+      description: 最多 10 个本地图片或视频；仅自己上传或已公开的资源可用，忽略客户端 mediaUrl。不改变 Schema，不创建生成任务。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [inspirationId, title, enabled, examples]
+              properties:
+                inspirationId: { type: string, maxLength: 500 }
+                title: { type: string, maxLength: 200 }
+                enabled: { type: boolean }
+                examples:
+                  type: array
+                  maxItems: 10
+                  items:
+                    type: object
+                    required: [resourceId, type]
+                    properties:
+                      resourceId: { type: string, maxLength: 80 }
+                      type: { type: string, enum: [image, video] }
+                      title: { type: string, maxLength: 80 }
+                      description: { type: string, maxLength: 1000 }
+      responses:
+        "200": { description: data.showcase 为保存后的配置 }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+  /admin/settings/inspiration-showcases/assets/{kind}:
+    post:
+      tags: [inspirations, admin]
+      summary: 上传灵感作品示例，保存配置前保持私有
+      parameters:
+        - { in: path, name: kind, required: true, schema: { type: string, enum: [image, video] } }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        "200": { description: "data.resource={id,kind}；图片最大 10 MiB，视频最大 256 MiB" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+  /public/inspirations/showcases/media/{id}:
+    get:
+      tags: [inspirations]
+      security: []
+      summary: 读取当前已公开引用的图片或视频
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+        - { in: header, name: Range, schema: { type: string } }
+      responses:
+        "200": { description: 媒体字节流 }
+        "206": { description: Range 媒体片段 }
+        "404": { $ref: "#/components/responses/Error" }
+  /admin/settings/inspiration-showcases/media/{id}:
+    get:
+      tags: [inspirations, admin]
+      summary: 管理员预览自己上传或已公开的灵感作品示例
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+        - { in: header, name: Range, schema: { type: string } }
+      responses:
+        "200": { description: 媒体字节流 }
+        "206": { description: Range 媒体片段 }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
   /agent/capabilities:
     get:
       tags: [agent]

@@ -6,6 +6,7 @@ export type InspirationFeedEntry = {
     title: string;
     description: string;
     image: string;
+    videoUrl?: string;
     mode: "text" | "image" | "video";
     prompt: string;
     category?: string;

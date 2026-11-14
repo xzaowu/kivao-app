@@ -13,6 +13,7 @@ type FeedEntry struct {
 	Title       string     `json:"title"`
 	Description string     `json:"description"`
 	Image       string     `json:"image"`
+	VideoURL    string     `json:"videoUrl,omitempty"`
 	Mode        string     `json:"mode"`
 	Prompt      string     `json:"prompt"`
 	Category    string     `json:"category,omitempty"`
@@ -85,8 +86,9 @@ func (s *Service) loadFeed() (*Feed, error) {
 	}
 	feed.Entries = make([]FeedEntry, 0, len(rows))
 	for _, row := range rows {
+		videoURL, _ := httpsURL(state.VideoURLs[row.ID])
 		feed.Entries = append(feed.Entries, FeedEntry{
-			ID: row.ID, Title: row.Title, Description: row.Description, Image: row.Image, Mode: row.Mode, Prompt: row.Prompt,
+			ID: row.ID, Title: row.Title, Description: row.Description, Image: row.Image, VideoURL: videoURL, Mode: row.Mode, Prompt: row.Prompt,
 			Category: row.Category, Tags: row.Tags, SourceID: row.SourceID, Credit: row.Credit, SourceURL: row.SourceURL,
 			AddedAt: row.FirstSeenAt, PublishedAt: row.PublishedAt,
 		})

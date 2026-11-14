@@ -165,6 +165,8 @@
     grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
     gap: var(--space-1);
     max-height: none;
+    /* 列表随弹窗主体滚动，避免旧内层滚动设置让 Grid 将其压成细缝。 */
+    overflow: visible;
     margin: calc(var(--space-2) * -1) 0 0;
     padding: var(--space-2);
     border: 0;

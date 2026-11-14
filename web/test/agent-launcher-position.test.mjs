@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { fileURLToPath } from "node:url";
 import { runInNewContext } from "node:vm";
-import { clampAgentLauncherPosition, moveAgentLauncher, restoreAgentLauncherPosition } from "../src/lib/canvas/agent-launcher-position";
+import { AGENT_LAUNCHER_POSITION_KEY, AGENT_MOBILE_LAUNCHER_POSITION_KEY, clampAgentLauncherPosition, moveAgentLauncher, restoreAgentLauncherPosition } from "../src/lib/canvas/agent-launcher-position";
 
 const viewport = { width: 1280, height: 800 };
 const start = { right: 20, bottom: 20 };
@@ -53,11 +53,11 @@ const build = await Bun.build({
 expect(build.success).toBe(true);
 const source = await build.outputs[0].text();
 
-function harness() {
+function harness({ storageKey, initialPositions = [] } = {}) {
     const cells = [];
     let cursor = 0;
     let opens = 0;
-    const stored = new Map();
+    const stored = new Map(initialPositions);
     const listeners = new Map();
     const window = { innerWidth: 1280, innerHeight: 800, addEventListener: (name, fn) => listeners.set(name, fn), removeEventListener: (name) => listeners.delete(name) };
     const module = { exports: {} };
@@ -87,7 +87,7 @@ function harness() {
     runInNewContext(source, { module, exports: module.exports, hooks, window, localStorage: { getItem: (key) => stored.get(key) ?? null, setItem: (key, value) => stored.set(key, value) }, console });
     const render = () => {
         cursor = 0;
-        return module.exports.useAgentLauncherPosition(() => opens++);
+        return module.exports.useAgentLauncherPosition(() => opens++, 76, 76, storageKey);
     };
     let current = render();
     let captured = null;
@@ -121,6 +121,9 @@ function harness() {
         get saved() {
             return [...stored.values()].map(JSON.parse);
         },
+        get storage() {
+            return Object.fromEntries(stored);
+        },
         get captured() {
             return captured;
         },
@@ -151,6 +154,24 @@ test("production handlers preserve click and suppress drag-release activation", 
     expect(h.opens).toBe(3);
 });
 
+test("touch taps open once even without a compatibility click after dragging", () => {
+    const h = harness();
+    h.fire("onPointerDown", { pointerType: "touch" });
+    h.fire("onPointerUp", { pointerType: "touch" });
+    expect(h.opens).toBe(1);
+    h.fire("onClick");
+    expect(h.opens).toBe(1);
+    h.fire("onPointerDown", { pointerType: "touch" });
+    h.fire("onPointerMove", { pointerType: "touch", clientX: 400 });
+    h.fire("onPointerUp", { pointerType: "touch", clientX: 400 });
+    expect(h.opens).toBe(1);
+    h.fire("onClick");
+    expect(h.opens).toBe(1);
+    h.fire("onPointerDown", { pointerType: "touch" });
+    h.fire("onPointerUp", { pointerType: "touch" });
+    expect(h.opens).toBe(2);
+});
+
 for (const ending of ["onPointerCancel", "onLostPointerCapture"]) {
     test(`production handlers stop safely on ${ending} and ignore other pointers`, () => {
         const h = harness();
@@ -179,4 +200,21 @@ test("production handlers support keyboard movement and viewport resizing", () =
     expect(h.state.position).toEqual({ right: 12, bottom: 12 });
     h.fire("onClick", { detail: 0 });
     expect(h.opens).toBe(1);
+});
+
+test("mobile position restores independently without overwriting the desktop position", () => {
+    const desktop = JSON.stringify({ right: 240, bottom: 180 });
+    const h = harness({
+        storageKey: AGENT_MOBILE_LAUNCHER_POSITION_KEY,
+        initialPositions: [
+            [AGENT_LAUNCHER_POSITION_KEY, desktop],
+            [AGENT_MOBILE_LAUNCHER_POSITION_KEY, JSON.stringify({ right: 140, bottom: 160 })],
+        ],
+    });
+    expect(h.state.position).toEqual({ right: 140, bottom: 160 });
+    h.fire("onKeyDown", { key: "ArrowLeft" });
+    expect(h.state.position).toEqual({ right: 150, bottom: 160 });
+    expect(h.storage[AGENT_LAUNCHER_POSITION_KEY]).toBe(desktop);
+    const restored = harness({ storageKey: AGENT_MOBILE_LAUNCHER_POSITION_KEY, initialPositions: Object.entries(h.storage) });
+    expect(restored.state.position).toEqual(h.state.position);
 });

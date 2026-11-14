@@ -94,7 +94,7 @@ func (s *Service) DeleteAdminResources(actor *model.User, req AdminResourceDelet
 		blocked.References = appendUniqueAdminResourceReference(blocked.References, AdminResourceReferenceView{Kind: reference.Kind, ID: reference.ID, Title: reference.Title})
 		blockedByID[reference.ResourceID] = blocked
 	}
-	for resourceID, references := range s.appearanceResourceReferences(resourceIDs) {
+	for resourceID, references := range s.siteResourceReferences(resourceIDs) {
 		for _, reference := range references {
 			blocked := blockedByID[resourceID]
 			blocked.ID = resourceID

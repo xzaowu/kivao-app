@@ -144,6 +144,8 @@ SQLite 写事务与 PostgreSQL 行锁串行化同一对话的修订检查；读�
 
 ## 灵感上新（Schema 87）
 
+灵感作品示例使用现有 `system_settings`，键为 `inspiration_showcase:<灵感稳定 ID 的 SHA-256>`，每条灵感独立保存 `{inspirationId,title,enabled,examples}`；`examples` 最多 10 个，包含 `resourceId`、`type`（图片／视频）、标题与说明。媒体通过管理员上传保存在本地资源目录，沿用 `resources` 元信息。不新增表、字段或迁移，Schema 保持不变。只有已启用配置中的媒体允许匿名读取；未启用的配置仍保护资源不被清理，移除引用后才可按原资源管理流程删除。配置解析失败时资源清理采取保留策略。
+
 版本 87 `inspiration_feed` 只建一张新表 `inspiration_feed_entries`，不改写既有数据。表中是后端定时从 GitHub 上的 YouMind 提示词库和 awesome-seedance 同步的灵感条目，只收正文已是中文的条目。
 
 | 字段 | 说明 |
@@ -155,6 +157,8 @@ SQLite 写事务与 PostgreSQL 行锁串行化同一对话的修订检查；读�
 | `first_seen_at` | 本站首次收录时间，只在新增时写入；前台据此标记「新」和排序 |
 
 开关与同步记录存在 `system_settings`：`inspiration_feed` 为 `{enabled}`（缺省为开启），`inspiration_feed_sync` 为最近一次同步的时间、触发方式、各来源结果和上游分类名。两者分成两个键，后台同步写记录时不会覆盖管理员刚改的开关。上游删掉的条目不删除；关闭上新后公开接口不再返回任何条目。
+
+`inspiration_feed_sync.videoUrls` 另外按灵感 ID 保留已收录视频的上游 HTTPS 成品直链，公开接口投影为条目的 `videoUrl`。同步失败沿用原地址；同一条目成功同步但不再提供有效视频地址时清除旧地址。该元信息使用既有 JSON，不增加表字段或 Schema 迁移，关闭上新仍不返回任何同步条目。
 
 ## 方舟素材组（Schema 86）
 
@@ -437,6 +441,8 @@ Schema 45 新增 `upload_reservations`：`id`、`user_id`、`size`、`day`、`ex
 预留有效期 90 分钟。失败或会话删除时释放原日额度；再次创建该账号会话时清理已到期预留。进程重启不批量删除其他实例的预留。分片文件与路由会话仍在本机，需要粘性路由；崩溃后的残片需要部署侧临时目录清理策略，未增加跨实例文件恢复或启动时全局清扫。
 
 ## 更新公告配置
+
+创作首页入口保存在既有 `system_settings.key=appearance` 的 `creationShortcuts` 数组，每项为 `group/title/icon/target`，最多 10 项，顺序即展示顺序。缺少字段时读取内置四项；显式空数组保持为空。更新时省略或传入 null 保留现值；不新增表、列或数据库 Schema 迁移，也不改变模型、账务或资源数据。
 
 外观 JSON 合同版本 10 新增 `updates`：`enabled`、`currentVersion`、`releases`。每个版本保存 `id/version/title/date/blocks`，内容块保存 `id/type/text/resourceId/caption/layout`；公共媒体 URL 由服务端按当前引用生成，不保存客户端 URL。关闭开关保留公告和资源引用，只关闭公共展示。不增加数据库表或 schema 迁移。
 

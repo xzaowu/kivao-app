@@ -27,13 +27,6 @@
     line-height: 1.35;
 }
 
-.inspiration-hall-header p {
-    margin: var(--space-1) 0 0;
-    color: var(--user-ink-muted);
-    font-size: var(--fs-caption);
-    line-height: 1.6;
-}
-
 .inspiration-hall-actions {
     display: flex;
     flex-shrink: 0;
@@ -147,24 +140,30 @@
 }
 
 .inspiration-gallery {
-    display: grid;
-    gap: var(--space-4);
-    grid-template-columns: repeat(auto-fill, minmax(min(100%, 232px), 1fr));
-    align-items: stretch;
+    columns: 232px;
+    column-gap: var(--space-4);
 }
 
 .inspiration-card {
+    --inspiration-card-action-size: var(--space-8);
+    --inspiration-card-title-end: calc(var(--inspiration-card-action-size) + var(--space-4));
+    --inspiration-on-media: var(--color-neutral-0);
     position: relative;
-    display: flex;
+    display: block;
+    width: 100%;
+    margin-bottom: var(--space-4);
+    break-inside: avoid;
+    vertical-align: top;
     min-width: 0;
     overflow: hidden;
     border: 0;
     border-radius: var(--user-radius-card);
     background: var(--library-surface);
     box-shadow: none;
-    transition:
-        transform var(--user-motion),
-        background-color var(--user-motion);
+    transition: background-color var(--user-motion);
+}
+.inspiration-card.is-manageable {
+    --inspiration-card-title-end: calc(var(--inspiration-card-action-size) * 2 + var(--space-1) + var(--space-4));
 }
 
 .inspiration-card:hover,
@@ -173,13 +172,14 @@
 }
 
 .inspiration-card-open {
+    position: relative;
     display: flex;
     width: 100%;
     min-width: 0;
     flex-direction: column;
     border: 0;
     border-radius: inherit;
-    padding: var(--space-2);
+    padding: 0;
     background: transparent;
     color: inherit;
     text-align: left;
@@ -194,80 +194,54 @@
 
 .inspiration-card-cover {
     position: relative;
-    display: block;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
     width: 100%;
+    min-height: var(--space-16);
     flex-shrink: 0;
-    aspect-ratio: 4 / 3;
     overflow: hidden;
     border-radius: var(--user-radius-media);
     background: var(--library-cover-surface);
 }
 
-.inspiration-card-cover img {
+.inspiration-card-cover img,
+.inspiration-card-cover video {
     display: block;
     width: 100%;
-    height: 100%;
-    object-fit: cover;
+    height: auto;
+    aspect-ratio: auto;
+    object-fit: contain;
 }
-.inspiration-card-source {
-    position: absolute;
-    bottom: var(--space-2);
-    left: var(--space-2);
-    max-width: calc(100% - var(--space-4));
-    overflow: hidden;
-    padding: var(--space-1) var(--space-2);
-    border-radius: var(--r-full);
-    background: var(--user-surface-raised);
+.inspiration-example-error {
+    margin-bottom: var(--space-2);
     color: var(--user-ink-muted);
-    font-size: var(--fs-tiny);
-    line-height: 1.5;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    font-size: var(--fs-caption);
 }
-
-/* 上新 7 天内的条目：左上角小标签，与右上角的操作按钮错开。 */
-.inspiration-card-new {
-    position: absolute;
-    top: var(--space-2);
-    left: var(--space-2);
-    padding: 0 var(--space-2);
-    border-radius: var(--r-full);
-    background: var(--user-surface-raised);
-    color: var(--user-ink);
-    font-size: var(--fs-tiny);
-    font-weight: 600;
-    line-height: 1.8;
+.inspiration-example-error a {
+    margin-left: var(--space-2);
+    text-decoration: underline;
 }
-
-/* 操作与详情按钮是兄弟节点；收藏和展开的菜单始终可见。 */
+/* The title stays clear of the small, separate corner actions. */
 .inspiration-card-actions {
     position: absolute;
-    top: var(--space-4);
-    right: var(--space-4);
+    top: var(--space-2);
+    right: var(--space-2);
     display: flex;
+    flex-shrink: 0;
     gap: var(--space-1);
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity var(--user-motion);
-}
-
-.inspiration-card-actions.is-visible,
-.inspiration-card:hover .inspiration-card-actions,
-.inspiration-card:focus-within .inspiration-card-actions {
-    opacity: 1;
-    pointer-events: auto;
 }
 
 .inspiration-card-action {
     display: grid;
     place-items: center;
-    width: var(--space-8);
-    height: var(--space-8);
+    width: var(--inspiration-card-action-size);
+    height: var(--inspiration-card-action-size);
     padding: 0;
     border: 0;
     border-radius: var(--r-full);
-    background: var(--user-surface-raised);
-    color: var(--user-ink);
+    background: color-mix(in srgb, var(--color-neutral-950) 28%, transparent);
+    color: var(--inspiration-on-media);
     cursor: pointer;
     touch-action: manipulation;
     transition:
@@ -280,7 +254,7 @@
 }
 .inspiration-card-action:hover,
 .inspiration-card-action[aria-expanded="true"] {
-    background: var(--user-surface-hover);
+    background: color-mix(in srgb, var(--color-neutral-950) 48%, transparent);
 }
 .inspiration-card-action[aria-pressed="true"] {
     color: var(--control-selected-fg);
@@ -293,41 +267,26 @@
 }
 
 .inspiration-card-body {
-    display: flex;
-    width: 100%;
+    position: absolute;
+    left: var(--space-2);
+    right: var(--inspiration-card-title-end);
+    bottom: var(--space-1);
+    display: block;
     min-width: 0;
-    flex: 1;
-    flex-direction: column;
-    gap: var(--space-1);
-    padding: var(--space-3) var(--space-2) var(--space-1);
+    pointer-events: none;
 }
 
 .inspiration-card-title {
+    display: block;
+    max-width: 100%;
     overflow: hidden;
-    color: var(--user-ink);
-    font-size: var(--fs-body);
-    font-weight: 600;
+    color: var(--inspiration-on-media);
+    font-size: var(--fs-caption);
+    font-weight: 500;
     line-height: 1.4;
     text-overflow: ellipsis;
     white-space: nowrap;
-}
-
-.inspiration-card-desc {
-    display: -webkit-box;
-    overflow: hidden;
-    color: var(--user-ink-muted);
-    font-size: var(--fs-caption);
-    line-height: 1.5;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-}
-
-.inspiration-card-tags {
-    display: flex;
-    min-width: 0;
-    flex-wrap: wrap;
-    gap: var(--space-1);
-    margin-top: var(--space-2);
+    text-shadow: 0 var(--stroke-1) var(--space-1) var(--color-neutral-950);
 }
 
 .inspiration-chip {
@@ -355,14 +314,6 @@
 .inspiration-chip:focus-visible {
     outline: var(--stroke-2) solid var(--control-focus-ring);
     outline-offset: var(--space-half);
-}
-
-.inspiration-card-tags .inspiration-chip {
-    display: block;
-    padding: var(--space-half) var(--space-2);
-    color: var(--user-ink-muted);
-    background: color-mix(in srgb, var(--user-ink) 6%, transparent);
-    font-size: var(--fs-tiny);
 }
 
 /* 详情图标按钮使用 span 与 data-icon-only，避开共享按钮的装饰 hover。 */
@@ -400,28 +351,115 @@
     outline-offset: var(--space-half);
 }
 
-.inspiration-detail-cover {
-    position: relative;
-    flex-shrink: 0;
-    height: 256px;
-    overflow: hidden;
-    border-radius: var(--r-xl);
-    background: var(--library-cover-surface);
+.inspiration-detail-shell {
+    display: flex;
+    height: min(82dvh, 820px);
+    max-height: calc(100dvh - var(--space-8));
+    flex-direction: column;
+    min-width: 0;
 }
-
-.inspiration-detail-cover img {
+.inspiration-detail-layout {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+}
+.inspiration-detail-examples,
+.inspiration-detail-information {
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+    flex-direction: column;
+    gap: var(--space-4);
+    padding: var(--space-5);
+}
+.inspiration-detail-examples {
+    border-bottom: 1px solid var(--user-border);
+    background: var(--user-surface-muted);
+}
+.inspiration-detail-information {
+    overflow-wrap: anywhere;
+}
+.inspiration-detail-footer {
+    display: flex;
+    flex-shrink: 0;
+    justify-content: flex-end;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-5);
+    border-top: 1px solid var(--user-border);
+}
+@media (min-width: 960px) {
+    .inspiration-detail-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1.3fr) minmax(340px, 1fr);
+        overflow: hidden;
+    }
+    .inspiration-detail-examples,
+    .inspiration-detail-information {
+        overflow-y: auto;
+    }
+    .inspiration-detail-examples {
+        border-right: 1px solid var(--user-border);
+        border-bottom: 0;
+    }
+    .inspiration-example-gallery.is-single {
+        flex: 1;
+        align-items: center;
+    }
+    .inspiration-example-gallery.is-single .inspiration-example {
+        max-width: none;
+    }
+    .inspiration-example-gallery img,
+    .inspiration-example-gallery video {
+        max-height: max(140px, calc(min(82dvh, 820px) - 148px));
+    }
+}
+.inspiration-example-gallery {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: center;
+    gap: var(--space-3);
+}
+.inspiration-example {
+    flex: 1 1 240px;
+    min-width: 0;
+    max-width: 560px;
+    margin: 0;
+}
+.inspiration-example img,
+.inspiration-example video {
     display: block;
     width: 100%;
-    height: 100%;
-    object-fit: cover;
+    height: auto;
+    aspect-ratio: auto;
+    object-fit: contain;
+    border-radius: var(--user-radius-media);
+    background: var(--library-cover-surface);
+}
+.inspiration-example figcaption {
+    padding-top: var(--space-2);
+    color: var(--user-ink-muted);
+    font-size: var(--fs-caption);
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+}
+.inspiration-example figcaption strong {
+    color: var(--user-ink);
+}
+.inspiration-example-empty,
+.inspiration-showcase-warning {
+    padding: var(--space-3);
+    border-radius: var(--user-radius-media);
+    background: var(--user-surface-muted);
+    color: var(--user-ink-muted);
+    font-size: var(--fs-caption);
 }
 
-/* 提示词正文保留原始换行，长内容只在区域内部滚动。 */
+/* The information panel owns scrolling, so long prompts do not create nested scrollers. */
 .inspiration-prompt-block {
     position: relative;
-    max-height: 320px;
     padding: var(--space-3);
-    overflow: auto;
+    overflow-wrap: anywhere;
     border: 0;
     border-radius: var(--r-lg);
     background: var(--user-surface-muted);
@@ -453,23 +491,23 @@
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
     .inspiration-gallery {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: var(--space-3);
+        columns: 2;
+        column-gap: var(--space-3);
     }
-    .inspiration-card-body {
-        padding: var(--space-2) var(--space-1) 0;
+    .inspiration-card {
+        margin-bottom: var(--space-3);
     }
-    .inspiration-card-source {
-        font-size: var(--fs-tiny);
+    .inspiration-card.is-manageable {
+        --inspiration-card-title-end: calc(var(--inspiration-card-action-size) + var(--space-4));
     }
-    .inspiration-card-tags {
-        gap: var(--space-half);
+    .inspiration-card.is-manageable .inspiration-card-favorite {
+        display: none;
     }
     .inspiration-mode-count {
         display: none;
     }
-    .inspiration-detail-cover {
-        height: 224px;
+    .inspiration-hover-toggle {
+        display: none;
     }
 }
 
@@ -486,33 +524,21 @@
     .inspiration-hall-modes > button {
         flex: 1;
     }
-    .inspiration-card-source {
-        left: var(--space-1);
-        bottom: var(--space-1);
-        max-width: calc(100% - var(--space-2));
-        padding-inline: var(--space-2);
-    }
-    .inspiration-card-title {
-        font-size: var(--fs-caption);
-    }
-    .inspiration-card-tags {
-        display: none;
-    }
 }
 
 @media (max-width: 340px) {
-    .inspiration-gallery,
+    .inspiration-gallery {
+        column-count: 1;
+    }
     .inspiration-hall-filters {
         grid-template-columns: minmax(0, 1fr);
     }
 }
 
 @media (hover: none), (pointer: coarse) {
-    .inspiration-card-actions {
-        opacity: 1;
-        pointer-events: auto;
+    .inspiration-card {
+        --inspiration-card-action-size: var(--space-10);
     }
-    .inspiration-card-action,
     .inspiration-icon-button {
         width: var(--space-10);
         height: var(--space-10);

@@ -8,6 +8,7 @@ import { Switch } from "@/pages/admin/ui/controls";
 import { getAdminInspirationFeed, syncAdminInspirationFeed, updateAdminInspirationFeed, type AdminInspirationFeedStatus } from "@/services/api/inspiration-feed";
 import { invalidateInspirationCatalog } from "@/services/inspiration-catalog";
 import { AdminStatusBadge } from "./admin-ui";
+import { InspirationShowcaseEditor } from "./inspiration-showcase-editor";
 
 const QUERY_KEY = ["admin", "inspiration-feed"] as const;
 const SOURCE_NAMES: Record<string, string> = { youmind: "YouMind", seedance: "awesome-seedance" };
@@ -20,6 +21,7 @@ export function InspirationFeedRow() {
     const { message } = App.useApp();
     const queryClient = useQueryClient();
     const [busy, setBusy] = useState<"toggle" | "sync" | null>(null);
+    const [showcaseOpen, setShowcaseOpen] = useState(false);
     const query = useQuery({ queryKey: QUERY_KEY, queryFn: ({ signal }) => getAdminInspirationFeed(signal) });
     const status = query.data;
 
@@ -100,12 +102,16 @@ export function InspirationFeedRow() {
                 </div>
             </div>
             <div className="afp-row-control">
+                <Button size="small" onClick={() => setShowcaseOpen(true)}>
+                    作品示例
+                </Button>
                 <AdminStatusBadge label={!status ? "读取中" : enabled ? "已开放" : "已关闭"} tone={enabled ? "success" : "neutral"} />
                 <Button size="small" icon={<RefreshCw className="size-3.5" />} loading={busy === "sync"} disabled={!enabled || busy !== null} onClick={() => void sync()}>
                     立即同步
                 </Button>
                 <Switch checked={enabled} loading={busy === "toggle"} disabled={!status || busy !== null} onChange={(checked) => void toggle(checked)} aria-label="灵感上新，切换后立即保存" />
             </div>
+            {showcaseOpen ? <InspirationShowcaseEditor onClose={() => setShowcaseOpen(false)} /> : null}
         </article>
     );
 }

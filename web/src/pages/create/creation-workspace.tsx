@@ -208,6 +208,7 @@ type ComposerProps = {
 type CreationReferenceFilter = "all" | "image" | "video" | "audio" | "file";
 
 export function CreationComposer(props: ComposerProps) {
+    const [expanded, setExpanded] = useState(false);
     const [previewUrl, setPreviewUrl] = useState("");
     const [previewType, setPreviewType] = useState<"image" | "video">("image");
     const [promptOptimizerOpen, setPromptOptimizerOpen] = useState(false);
@@ -386,9 +387,19 @@ export function CreationComposer(props: ComposerProps) {
     // 否则高光停在页签下沿，会把选中页签和内容面切成两块。
     const embedded = props.variant === "empty";
     const surface = (
-        <SpotlightSurface className={`creation-chat-composer is-${props.variant}`} contentClassName="contents" spotlightColor={embedded ? "transparent" : "color-mix(in srgb, var(--user-ink) 12%, transparent)"} spotlightRadius={280}>
+        <SpotlightSurface
+            className={`creation-chat-composer is-${props.variant}${expanded ? " is-expanded" : ""}`}
+            contentClassName="contents"
+            spotlightColor={embedded ? "transparent" : "color-mix(in srgb, var(--user-ink) 12%, transparent)"}
+            spotlightRadius={280}
+        >
             <div className="creation-chat-writing-surface">
                 <div className="creation-chat-editor">
+                    <Tooltip title={expanded ? "缩小输入框" : "扩大输入框"}>
+                        <button type="button" className="creation-composer-expand" aria-label={expanded ? "缩小输入框" : "扩大输入框"} aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}>
+                            {expanded ? <Minimize2 aria-hidden="true" /> : <Maximize2 aria-hidden="true" />}
+                        </button>
+                    </Tooltip>
                     <CanvasResourceMentionTextarea
                         ref={props.composerFocusRef}
                         value={props.prompt}
@@ -544,18 +555,6 @@ export function CreationComposer(props: ComposerProps) {
                             </button>
                         </Tooltip>
                     ) : null}
-                    <ModelPicker
-                        config={props.config}
-                        value={props.model}
-                        onChange={props.onModelChange}
-                        capability={props.mode}
-                        requirements={props.modelRequirements}
-                        className="creation-model-picker"
-                        placeholder={`选择${modeLabels[props.mode]}模型`}
-                        showSelectedPrice={false}
-                        showOptionPrices
-                        variant="creation"
-                    />
                     {props.mode === "video" || (props.mode === "image" && imageSettingsSupported) ? <GenerationSettingsMenu {...props} /> : null}
                     {props.mode === "video" ? <DurationMenu profile={props.videoProfile} seconds={props.seconds} onChange={props.setSeconds} /> : null}
                     {props.mode === "text" ? (
@@ -579,32 +578,49 @@ export function CreationComposer(props: ComposerProps) {
                         </Tooltip>
                     ) : null}
                 </div>
-                <Button
-                    type="text"
-                    className={`creation-submit ${showCost ? "has-cost" : ""}`}
-                    disabled={interactionBusy || !canSubmit}
-                    style={
-                        {
-                            position: "relative",
-                            color: "var(--user-ink)",
-                        } as CSSProperties
-                    }
-                    onClick={interactionBusy ? undefined : props.onSubmit}
-                    aria-label={actionLabel}
-                    title={!canSubmit && !interactionBusy ? "输入创作想法后即可生成" : actionLabel}
-                >
-                    {showWorkingGlow ? <WorkingGlow active color="var(--creation-text)" radius="var(--button-radius)" /> : null}
-                    {showCost ? (
-                        <span className="creation-submit-cost" title={routeQuote ? modelQuoteDescription(routeQuote) : undefined}>
-                            <CreditSymbol />
-                            <span>{routeQuote?.estimated ? `预估:${formattedCredits}` : formattedCredits}</span>
+                <div className="creation-composer-actions">
+                    <div className="creation-composer-model">
+                        <ModelPicker
+                            config={props.config}
+                            value={props.model}
+                            onChange={props.onModelChange}
+                            capability={props.mode}
+                            requirements={props.modelRequirements}
+                            className="creation-model-picker"
+                            placeholder={`选择${modeLabels[props.mode]}模型`}
+                            showSelectedPrice={false}
+                            showOptionPrices
+                            fullWidth
+                            variant="creation"
+                        />
+                    </div>
+                    <Button
+                        type="text"
+                        className={`creation-submit ${showCost ? "has-cost" : ""}`}
+                        disabled={interactionBusy || !canSubmit}
+                        style={
+                            {
+                                position: "relative",
+                                color: "var(--user-ink)",
+                            } as CSSProperties
+                        }
+                        onClick={interactionBusy ? undefined : props.onSubmit}
+                        aria-label={actionLabel}
+                        title={!canSubmit && !interactionBusy ? "输入创作想法后即可生成" : actionLabel}
+                    >
+                        {showWorkingGlow ? <WorkingGlow active color="var(--creation-text)" radius="var(--button-radius)" /> : null}
+                        {showCost ? (
+                            <span className="creation-submit-cost" title={routeQuote ? modelQuoteDescription(routeQuote) : undefined}>
+                                <CreditSymbol />
+                                <span>{routeQuote?.estimated ? `预估:${formattedCredits}` : formattedCredits}</span>
+                            </span>
+                        ) : null}
+                        <span className="creation-submit-action" aria-hidden>
+                            {showWorkingSpinner ? <LoaderCircle className="size-4 animate-spin" /> : <ArrowUp className="size-4" />}
+                            <span>{showWorkingSpinner ? "生成中" : "开始创作"}</span>
                         </span>
-                    ) : null}
-                    <span className="creation-submit-action" aria-hidden>
-                        {showWorkingSpinner ? <LoaderCircle className="size-4 animate-spin" /> : <ArrowUp className="size-4" />}
-                        <span>{showWorkingSpinner ? "生成中" : "开始创作"}</span>
-                    </span>
-                </Button>
+                    </Button>
+                </div>
             </footer>
             {props.mode === "image" || props.mode === "video" ? (
                 <MediaSettingsNotice

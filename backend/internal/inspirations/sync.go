@@ -112,12 +112,16 @@ func (s *Service) sync(ctx context.Context, trigger string, actorID string) (*Sy
 		Trigger:       trigger,
 		Sources:       make([]SourceResult, 0, len(s.sources)),
 		Categories:    map[string]map[string]string{},
+		VideoURLs:     map[string]string{},
 	}
 	for id, labels := range previous.Categories {
 		state.Categories[id] = labels
 	}
+	for id, video := range previous.VideoURLs {
+		state.VideoURLs[id] = video
+	}
 	for _, src := range s.sources {
-		result, labels, err := s.syncSource(ctx, src, startedAt)
+		result, parsed, err := s.syncSource(ctx, src, startedAt)
 		if err != nil {
 			result.Error = clipText(err.Error(), 300)
 			if state.LastError == "" {
@@ -126,8 +130,16 @@ func (s *Service) sync(ctx context.Context, trigger string, actorID string) (*Sy
 			if ctx.Err() == nil {
 				slog.Warn("inspiration feed source sync failed", "source", src.id, "error", err)
 			}
-		} else if len(labels) > 0 {
-			state.Categories[src.id] = labels
+		} else {
+			if len(parsed.categories) > 0 {
+				state.Categories[src.id] = parsed.categories
+			}
+			for _, entry := range parsed.entries {
+				delete(state.VideoURLs, entry.ID)
+			}
+			for id, video := range parsed.videos {
+				state.VideoURLs[id] = video
+			}
 		}
 		state.Sources = append(state.Sources, result)
 	}
@@ -147,11 +159,11 @@ func (s *Service) sync(ctx context.Context, trigger string, actorID string) (*Sy
 	return state, true, nil
 }
 
-func (s *Service) syncSource(ctx context.Context, src source, seenAt time.Time) (SourceResult, map[string]string, error) {
+func (s *Service) syncSource(ctx context.Context, src source, seenAt time.Time) (SourceResult, batch, error) {
 	result := SourceResult{SourceID: src.id}
 	parsed, err := src.load(ctx, s.fetch)
 	if err != nil {
-		return result, nil, err
+		return result, batch{}, err
 	}
 	result.Upstream = parsed.upstream
 	result.Accepted = len(parsed.entries)
@@ -161,7 +173,7 @@ func (s *Service) syncSource(ctx context.Context, src source, seenAt time.Time) 
 	}
 	hashes, err := s.repo.InspirationFeedContentHashes(ids)
 	if err != nil {
-		return result, nil, fmt.Errorf("读取已收录条目：%w", err)
+		return result, batch{}, fmt.Errorf("读取已收录条目：%w", err)
 	}
 	var created, updated []model.InspirationFeedEntry
 	for _, entry := range parsed.entries {
@@ -176,10 +188,10 @@ func (s *Service) syncSource(ctx context.Context, src source, seenAt time.Time) 
 		}
 	}
 	if err := s.repo.SaveInspirationFeedEntries(created, updated); err != nil {
-		return result, nil, fmt.Errorf("保存条目：%w", err)
+		return result, batch{}, fmt.Errorf("保存条目：%w", err)
 	}
 	result.Created, result.Updated = len(created), len(updated)
-	return result, parsed.categories, nil
+	return result, parsed, nil
 }
 
 // fetch 经出站客户端下载上游文件；超过 maxBytes 视为异常，不截断使用。

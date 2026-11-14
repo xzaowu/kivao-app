@@ -12,6 +12,12 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import { catalogIdOf, type CreationInspiration, type InspirationSourceId } from "@/lib/inspirations/catalog";
 import { CUSTOM_ID_PREFIX, isCustomInspiration, type InspirationOverride } from "@/lib/inspirations/resolve";
 import { localForageStorageForScope } from "@/lib/localforage-storage";
+import { useUserStore } from "./use-user-store";
+
+function requireInspirationAdmin() {
+    const { hydrated, user } = useUserStore.getState();
+    if (!hydrated || user?.role !== "admin" || user.status !== "active") throw new Error("只有管理员可以管理灵感");
+}
 
 export const INSPIRATION_STORE_KEY = "open_ai_canvas:inspirations";
 /** 导入导出文件的格式版本，字段变化时递增并在这里做迁移。 */
@@ -121,6 +127,7 @@ export const useInspirationStore = create<InspirationStore>()(
             favorites: [],
 
             createEntry: (draft) => {
+                requireInspirationAdmin();
                 const id = `${CUSTOM_ID_PREFIX}${createClientUUID()}`;
                 const entry: CreationInspiration = { ...normalizeDraft(draft), id, sourceId: "original" };
                 set((state) => ({ custom: [entry, ...state.custom] }));
@@ -128,6 +135,7 @@ export const useInspirationStore = create<InspirationStore>()(
             },
 
             updateEntry: (id, patch) => {
+                requireInspirationAdmin();
                 if (!id) throw new Error("缺少要修改的灵感 ID");
                 const sanitized = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined && value !== ""));
                 if (!Object.keys(sanitized).length) return;
@@ -139,6 +147,7 @@ export const useInspirationStore = create<InspirationStore>()(
             },
 
             removeEntry: (id) => {
+                requireInspirationAdmin();
                 if (!id) throw new Error("缺少要删除的灵感 ID");
                 if (isCustomInspiration(id)) {
                     set((state) => ({
@@ -154,7 +163,10 @@ export const useInspirationStore = create<InspirationStore>()(
                 }));
             },
 
-            restoreEntry: (id) => set((state) => ({ hidden: state.hidden.filter((item) => item !== id) })),
+            restoreEntry: (id) => {
+                requireInspirationAdmin();
+                set((state) => ({ hidden: state.hidden.filter((item) => item !== id) }));
+            },
 
             toggleFavorite: (id) => {
                 if (!id) throw new Error("缺少要收藏的灵感 ID");
@@ -162,6 +174,7 @@ export const useInspirationStore = create<InspirationStore>()(
             },
 
             exportPayload: () => {
+                requireInspirationAdmin();
                 const state = get();
                 const payload: InspirationPayload = {
                     version: INSPIRATION_PAYLOAD_VERSION,
@@ -175,6 +188,7 @@ export const useInspirationStore = create<InspirationStore>()(
             },
 
             importPayload: (text) => {
+                requireInspirationAdmin();
                 let parsed: unknown;
                 try {
                     parsed = JSON.parse(text);

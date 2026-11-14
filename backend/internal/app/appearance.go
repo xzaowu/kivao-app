@@ -53,6 +53,7 @@ const (
 )
 
 type AppearanceSetting struct {
+	CreationShortcuts         []CreationShortcut    `json:"creationShortcuts"`
 	Updates                   UpdateAnnouncement    `json:"updates"`
 	Canvas                    CanvasAppearance      `json:"canvas"`
 	SchemaVersion             int                   `json:"schemaVersion"`
@@ -78,6 +79,7 @@ type AppearanceSetting struct {
 }
 
 type PublicAppearanceSetting struct {
+	CreationShortcuts         []CreationShortcut  `json:"creationShortcuts"`
 	Updates                   UpdateAnnouncement  `json:"updates"`
 	Canvas                    CanvasAppearance    `json:"canvas"`
 	SchemaVersion             int                 `json:"schemaVersion"`
@@ -120,6 +122,7 @@ type AdminAppearanceSetting struct {
 
 func defaultAppearanceSetting() AppearanceSetting {
 	return AppearanceSetting{
+		CreationShortcuts: defaultCreationShortcuts(),
 		Canvas:            defaultCanvasAppearance(),
 		SchemaVersion:     appearanceSchemaVersion,
 		BrandName:         defaultAppearanceBrandName,
@@ -228,6 +231,13 @@ func (s *Service) UpdateAppearance(actor *model.User, value AppearanceSetting) (
 	s.storageMu.Lock()
 	defer s.storageMu.Unlock()
 	current, before, err := s.readAppearance()
+	if err != nil {
+		return nil, err
+	}
+	if value.CreationShortcuts == nil {
+		value.CreationShortcuts = before.CreationShortcuts
+	}
+	value.CreationShortcuts, err = normalizeCreationShortcuts(value.CreationShortcuts)
 	if err != nil {
 		return nil, err
 	}
@@ -730,6 +740,7 @@ func publicAppearanceSetting(setting *model.SystemSetting, value AppearanceSetti
 		revision = strconv.FormatInt(setting.UpdatedAt.UTC().UnixNano(), 36)
 	}
 	result := &PublicAppearanceSetting{
+		CreationShortcuts:   value.CreationShortcuts,
 		Updates:             publicUpdateAnnouncement(value.Updates, revision),
 		Canvas:              value.Canvas,
 		SchemaVersion:       appearanceSchemaVersion,

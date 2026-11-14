@@ -1,4 +1,5 @@
 import { App, Button, Dropdown, Input } from "antd";
+import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, Download, Heart, Import, MoreHorizontal, Pencil, Plus, RotateCcw, Search, SlidersHorizontal, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -8,13 +9,16 @@ import { SegmentedControl } from "@/components/ui/base/segmented-control";
 import { Select } from "@/components/ui/base/select";
 import { Tooltip } from "@/components/ui/base/tooltip";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
-import { catalogIdOf, inspirationSourceOf, inspirationSources, type CreationInspiration, type InspirationSourceId } from "@/lib/inspirations/catalog";
+import { catalogIdOf, inspirationSources, type CreationInspiration, type InspirationSourceId } from "@/lib/inspirations/catalog";
+import { resolveInspirationExamples, type InspirationPreview } from "@/lib/inspirations/examples";
 import { isFreshInspiration, localDayKey, orderInspirationsByLatest, orderInspirationsForToday } from "@/lib/inspirations/daily-order";
 import { isCustomInspiration, resolveInspirations } from "@/lib/inspirations/resolve";
 import { loadInspirationCatalog, type InspirationCatalog } from "@/services/inspiration-catalog";
+import { getInspirationShowcases, inspirationShowcasesQueryKey } from "@/services/api/inspiration-showcases";
 import { useInspirationStore } from "@/stores/use-inspiration-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { InspirationCover, InspirationDetailModal } from "./inspiration-detail-modal";
+import { InspirationExampleMedia } from "./inspiration-example-media";
 import { InspirationEditorModal, type InspirationCategoryChoice } from "./inspiration-editor-modal";
 import "./inspirations.css";
 
@@ -68,6 +72,7 @@ function downloadText(text: string, fileName: string) {
 export function InspirationHall({ onUse }: { onUse: (item: CreationInspiration) => void }) {
     const { message, modal } = App.useApp();
     const inspirationSourcesVisible = useUserStore((state) => state.features.inspirationSourcesVisible);
+    const canManage = useUserStore((state) => state.hydrated && state.user?.role === "admin" && state.user.status === "active");
 
     const custom = useInspirationStore((state) => state.custom);
     const overrides = useInspirationStore((state) => state.overrides);
@@ -84,6 +89,9 @@ export function InspirationHall({ onUse }: { onUse: (item: CreationInspiration) 
 
     const [catalog, setCatalog] = useState<InspirationCatalog | null>(null);
     const [shouldLoadCatalog, setShouldLoadCatalog] = useState(false);
+    const showcases = useQuery({ queryKey: inspirationShowcasesQueryKey, queryFn: ({ signal }) => getInspirationShowcases(false, signal), enabled: shouldLoadCatalog });
+    const examplesByID = useMemo(() => new Map((showcases.data ?? []).map((item) => [item.inspirationId, item.examples])), [showcases.data]);
+    const [hoverPlayback, setHoverPlayback] = useState(true);
     const [loadError, setLoadError] = useState("");
     const [reloadKey, setReloadKey] = useState(0);
     const [filtersOpen, setFiltersOpen] = useState(false);
@@ -104,6 +112,10 @@ export function InspirationHall({ onUse }: { onUse: (item: CreationInspiration) 
     const [editorOpen, setEditorOpen] = useState(false);
     const [editing, setEditing] = useState<CreationInspiration | null>(null);
     const importRef = useRef<HTMLInputElement>(null);
+
+    useEffect(() => {
+        if (!canManage && view === "hidden") setView("all");
+    }, [canManage, view]);
 
     useEffect(() => {
         const section = sectionRef.current;
@@ -294,6 +306,7 @@ export function InspirationHall({ onUse }: { onUse: (item: CreationInspiration) 
 
     const handleDelete = useCallback(
         (item: CreationInspiration) => {
+            if (!canManage) return;
             const id = catalogIdOf(item);
             const isCustom = isCustomInspiration(id);
             modal.confirm({
@@ -310,11 +323,12 @@ export function InspirationHall({ onUse }: { onUse: (item: CreationInspiration) 
                 },
             });
         },
-        [detail, message, modal, removeEntry],
+        [canManage, detail, message, modal, removeEntry],
     );
 
     const handleSubmit = useCallback(
         (draft: Parameters<typeof createEntry>[0]) => {
+            if (!canManage) return;
             if (editing) {
                 updateEntry(catalogIdOf(editing), draft);
                 message.success("已保存修改");
@@ -334,16 +348,18 @@ export function InspirationHall({ onUse }: { onUse: (item: CreationInspiration) 
             setPage(1);
             message.success("灵感已创建");
         },
-        [createEntry, editing, message, updateEntry],
+        [canManage, createEntry, editing, message, updateEntry],
     );
 
     const handleExport = useCallback(() => {
+        if (!canManage) return;
         downloadText(exportPayload(), exportFileName());
         message.success("已导出本地改动（自建条目 / 改写 / 隐藏 / 收藏）");
-    }, [exportPayload, message]);
+    }, [canManage, exportPayload, message]);
 
     const handleImportFile = useCallback(
         async (file: File) => {
+            if (!canManage) return;
             try {
                 const result = importPayload(await file.text());
                 message.success(`导入完成：新增 ${result.created}，覆盖 ${result.updated}${result.skipped ? `，跳过 ${result.skipped} 条无效数据` : ""}`);
@@ -351,7 +367,7 @@ export function InspirationHall({ onUse }: { onUse: (item: CreationInspiration) 
                 message.error(error instanceof Error ? error.message : "导入失败");
             }
         },
-        [importPayload, message],
+        [canManage, importPayload, message],
     );
 
     const advancedFilterCount = Number(source !== "all") + Number(category !== "all") + Number(view !== "all") + Number(sort !== "daily");
@@ -370,35 +386,41 @@ export function InspirationHall({ onUse }: { onUse: (item: CreationInspiration) 
             <header className="inspiration-hall-header">
                 <div>
                     <h2 id="inspiration-hall-title">灵感大厅</h2>
-                    <p>每天换一批推荐，新上架的排在前面。点开查看完整提示词，用喜欢的创意继续创作。</p>
                 </div>
                 <div className="inspiration-hall-actions">
-                    <Button
-                        disabled={!hydrated}
-                        icon={<Plus className="size-4" />}
-                        onClick={() => {
-                            setEditing(null);
-                            setEditorOpen(true);
-                        }}
-                    >
-                        新建灵感
-                    </Button>
-                    <Dropdown
-                        trigger={["click"]}
-                        placement="bottomRight"
-                        menu={{
-                            items: [
-                                { key: "import", label: "导入灵感", icon: <Import className="size-4" />, disabled: !hydrated },
-                                { key: "export", label: "导出本地灵感", icon: <Download className="size-4" />, disabled: !hydrated },
-                            ],
-                            onClick: ({ key }) => {
-                                if (key === "import") importRef.current?.click();
-                                if (key === "export") handleExport();
-                            },
-                        }}
-                    >
-                        <Button type="text" icon={<MoreHorizontal className="size-4" />} aria-label="更多灵感管理操作" title="更多操作" />
-                    </Dropdown>
+                    <button type="button" className="inspiration-hover-toggle inspiration-chip" aria-pressed={hoverPlayback} onClick={() => setHoverPlayback((value) => !value)}>
+                        悬停播放：{hoverPlayback ? "开" : "关"}
+                    </button>
+                    {canManage ? (
+                        <>
+                            <Button
+                                disabled={!hydrated}
+                                icon={<Plus className="size-4" />}
+                                onClick={() => {
+                                    setEditing(null);
+                                    setEditorOpen(true);
+                                }}
+                            >
+                                新建灵感
+                            </Button>
+                            <Dropdown
+                                trigger={["click"]}
+                                placement="bottomRight"
+                                menu={{
+                                    items: [
+                                        { key: "import", label: "导入灵感", icon: <Import className="size-4" />, disabled: !hydrated },
+                                        { key: "export", label: "导出本地灵感", icon: <Download className="size-4" />, disabled: !hydrated },
+                                    ],
+                                    onClick: ({ key }) => {
+                                        if (key === "import") importRef.current?.click();
+                                        if (key === "export") handleExport();
+                                    },
+                                }}
+                            >
+                                <Button type="text" icon={<MoreHorizontal className="size-4" />} aria-label="更多灵感管理操作" title="更多操作" />
+                            </Dropdown>
+                        </>
+                    ) : null}
                 </div>
             </header>
 
@@ -418,7 +440,12 @@ export function InspirationHall({ onUse }: { onUse: (item: CreationInspiration) 
                 <div id="inspiration-hall-filters" className="inspiration-hall-filters" role="group" aria-label="灵感进阶筛选">
                     <div className="inspiration-hall-field">
                         <span>浏览范围</span>
-                        <Select options={VIEW_OPTIONS} value={view} onChange={(value) => setView(value as ViewFilter)} ariaLabel="按全部、收藏或隐藏状态筛选灵感" />
+                        <Select
+                            options={canManage ? VIEW_OPTIONS : VIEW_OPTIONS.filter((item) => item.value !== "hidden")}
+                            value={view}
+                            onChange={(value) => setView(value as ViewFilter)}
+                            ariaLabel={canManage ? "按全部、收藏或隐藏状态筛选灵感" : "按全部或收藏筛选灵感"}
+                        />
                     </div>
                     {inspirationSourcesVisible ? (
                         <div className="inspiration-hall-field">
@@ -464,6 +491,14 @@ export function InspirationHall({ onUse }: { onUse: (item: CreationInspiration) 
             ) : null}
 
             <div className="inspiration-hall-results">
+                {showcases.isError ? (
+                    <p role="alert" className="inspiration-showcase-warning">
+                        自定义作品示例暂时无法加载，当前显示目录示例。
+                        <Button type="link" onClick={() => void showcases.refetch()}>
+                            重试
+                        </Button>
+                    </p>
+                ) : null}
                 {!shouldLoadCatalog ? (
                     <div className="inspiration-hall-deferred" aria-hidden="true" />
                 ) : loadError ? (
@@ -479,10 +514,11 @@ export function InspirationHall({ onUse }: { onUse: (item: CreationInspiration) 
                                     <InspirationCard
                                         key={id}
                                         item={item}
+                                        examples={resolveInspirationExamples(item, examplesByID.get(id))}
+                                        hoverPlayback={hoverPlayback}
                                         favorite={favorites.includes(id)}
                                         hidden={view === "hidden"}
-                                        showSources={inspirationSourcesVisible}
-                                        categoryLabel={categoryLabel(item)}
+                                        canManage={canManage}
                                         onOpen={() => setDetail(item)}
                                         onToggleFavorite={() => toggleFavorite(id)}
                                         onRestore={() => {
@@ -490,6 +526,7 @@ export function InspirationHall({ onUse }: { onUse: (item: CreationInspiration) 
                                             message.success("灵感已恢复显示");
                                         }}
                                         onEdit={() => {
+                                            if (!canManage) return;
                                             setEditing(item);
                                             setEditorOpen(true);
                                         }}
@@ -511,19 +548,25 @@ export function InspirationHall({ onUse }: { onUse: (item: CreationInspiration) 
                 )}
             </div>
 
-            <input
-                ref={importRef}
-                type="file"
-                accept="application/json,.json"
-                className="hidden"
-                onChange={(event) => {
-                    const file = event.target.files?.[0];
-                    event.target.value = "";
-                    if (file) void handleImportFile(file);
-                }}
-            />
+            {canManage ? (
+                <input
+                    ref={importRef}
+                    type="file"
+                    accept="application/json,.json"
+                    className="hidden"
+                    onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        event.target.value = "";
+                        if (file) void handleImportFile(file);
+                    }}
+                />
+            ) : null}
             <InspirationDetailModal
                 item={detail}
+                canManage={canManage}
+                examples={detail ? resolveInspirationExamples(detail, examplesByID.get(catalogIdOf(detail))) : []}
+                examplesLoading={showcases.isPending}
+                examplesError={showcases.isError}
                 favorite={detail ? favorites.includes(catalogIdOf(detail)) : false}
                 categoryLabel={categoryLabel}
                 onClose={() => setDetail(null)}
@@ -531,6 +574,7 @@ export function InspirationHall({ onUse }: { onUse: (item: CreationInspiration) 
                 onCopy={handleCopy}
                 onToggleFavorite={(item) => toggleFavorite(catalogIdOf(item))}
                 onEdit={(item) => {
+                    if (!canManage) return;
                     setDetail(null);
                     setEditing(item);
                     setEditorOpen(true);
@@ -538,7 +582,7 @@ export function InspirationHall({ onUse }: { onUse: (item: CreationInspiration) 
                 onDelete={handleDelete}
             />
             <InspirationEditorModal
-                open={editorOpen}
+                open={editorOpen && canManage}
                 item={editing}
                 categoryOptions={categoryChoices}
                 onClose={() => {
@@ -553,10 +597,11 @@ export function InspirationHall({ onUse }: { onUse: (item: CreationInspiration) 
 
 function InspirationCard({
     item,
+    examples,
+    hoverPlayback,
     favorite,
     hidden,
-    showSources,
-    categoryLabel,
+    canManage,
     onOpen,
     onToggleFavorite,
     onRestore,
@@ -564,10 +609,11 @@ function InspirationCard({
     onDelete,
 }: {
     item: CreationInspiration;
+    examples: InspirationPreview[];
+    hoverPlayback: boolean;
     favorite: boolean;
     hidden: boolean;
-    showSources: boolean;
-    categoryLabel: string;
+    canManage: boolean;
     onOpen: () => void;
     onToggleFavorite: () => void;
     onRestore: () => void;
@@ -575,61 +621,66 @@ function InspirationCard({
     onDelete: () => void;
 }) {
     const [menuOpen, setMenuOpen] = useState(false);
+    const [hovered, setHovered] = useState(false);
+    const example = examples[0];
     const favoriteLabel = favorite ? "取消收藏" : "收藏";
     return (
-        <article className="inspiration-card">
+        <article
+            className={`inspiration-card${canManage ? " is-manageable" : ""}`}
+            onPointerEnter={(event) => {
+                if (event.pointerType === "mouse") setHovered(true);
+            }}
+            onPointerLeave={() => setHovered(false)}
+            onPointerMove={(event) => {
+                if (event.pointerType === "mouse" && !hovered) setHovered(true);
+            }}
+        >
             <button type="button" className="inspiration-card-open" aria-label={`查看灵感：${item.title}`} aria-haspopup="dialog" onClick={onOpen}>
-                <span className="inspiration-card-cover">
-                    <InspirationCover key={item.image} image={item.image} />
-                    {isFreshInspiration(item, Date.now()) ? <span className="inspiration-card-new">新</span> : null}
-                    {showSources ? <span className="inspiration-card-source">{inspirationSourceOf(item)?.label ?? "未标注来源"}</span> : null}
-                </span>
+                <span className="inspiration-card-cover">{example ? <InspirationExampleMedia key={example.id} example={example} preview={hoverPlayback && hovered} /> : <InspirationCover key={item.image} image={item.image} />}</span>
                 <span className="inspiration-card-body">
-                    <strong className="inspiration-card-title">{item.title}</strong>
-                    <span className="inspiration-card-desc">{item.description}</span>
-                    <span className="inspiration-card-tags">
-                        <span className="inspiration-chip">{categoryLabel}</span>
-                        {item.ratio ? <span className="inspiration-chip">{item.ratio}</span> : null}
-                        {showSources && item.credit ? <span className="inspiration-chip">{item.credit}</span> : null}
-                    </span>
+                    <strong className="inspiration-card-title" title={item.title}>
+                        {item.title}
+                    </strong>
                 </span>
             </button>
-            <div className={`inspiration-card-actions${favorite || menuOpen ? " is-visible" : ""}`}>
+            <div className="inspiration-card-actions">
                 <Tooltip title={favoriteLabel}>
-                    <button type="button" data-icon-only className="inspiration-card-action" aria-label={`${favoriteLabel}：${item.title}`} aria-pressed={favorite} onClick={onToggleFavorite}>
+                    <button type="button" data-icon-only className="inspiration-card-action inspiration-card-favorite" aria-label={`${favoriteLabel}：${item.title}`} aria-pressed={favorite} onClick={onToggleFavorite}>
                         <span aria-hidden="true">
                             <Heart className="size-3.5" fill={favorite ? "currentColor" : "none"} />
                         </span>
                     </button>
                 </Tooltip>
-                {hidden ? (
-                    <Tooltip title="恢复显示">
-                        <button type="button" data-icon-only className="inspiration-card-action" aria-label={`恢复显示：${item.title}`} onClick={onRestore}>
-                            <span aria-hidden="true">
-                                <RotateCcw className="size-3.5" />
-                            </span>
-                        </button>
-                    </Tooltip>
-                ) : (
-                    <Dropdown
-                        trigger={["click"]}
-                        placement="bottomRight"
-                        open={menuOpen}
-                        onOpenChange={setMenuOpen}
-                        menu={{
-                            items: [
-                                { key: "edit", icon: <Pencil className="size-3.5" />, label: "编辑", onClick: onEdit },
-                                { key: "delete", icon: <Trash2 className="size-3.5" />, label: isCustomInspiration(catalogIdOf(item)) ? "删除" : "隐藏", danger: true, onClick: onDelete },
-                            ],
-                        }}
-                    >
-                        <button type="button" data-icon-only className="inspiration-card-action" aria-label={`更多灵感操作：${item.title}`} aria-haspopup="menu" aria-expanded={menuOpen}>
-                            <span aria-hidden="true">
-                                <MoreHorizontal className="size-3.5" />
-                            </span>
-                        </button>
-                    </Dropdown>
-                )}
+                {canManage &&
+                    (hidden ? (
+                        <Tooltip title="恢复显示">
+                            <button type="button" data-icon-only className="inspiration-card-action" aria-label={`恢复显示：${item.title}`} onClick={onRestore}>
+                                <span aria-hidden="true">
+                                    <RotateCcw className="size-3.5" />
+                                </span>
+                            </button>
+                        </Tooltip>
+                    ) : (
+                        <Dropdown
+                            trigger={["click"]}
+                            placement="bottomRight"
+                            open={menuOpen}
+                            onOpenChange={setMenuOpen}
+                            menu={{
+                                items: [
+                                    { key: "favorite", icon: <Heart className="size-3.5" fill={favorite ? "currentColor" : "none"} />, label: favoriteLabel, onClick: onToggleFavorite },
+                                    { key: "edit", icon: <Pencil className="size-3.5" />, label: "编辑", onClick: onEdit },
+                                    { key: "delete", icon: <Trash2 className="size-3.5" />, label: isCustomInspiration(catalogIdOf(item)) ? "删除" : "隐藏", danger: true, onClick: onDelete },
+                                ],
+                            }}
+                        >
+                            <button type="button" data-icon-only className="inspiration-card-action" aria-label={`更多灵感操作：${item.title}`} aria-haspopup="menu" aria-expanded={menuOpen}>
+                                <span aria-hidden="true">
+                                    <MoreHorizontal className="size-3.5" />
+                                </span>
+                            </button>
+                        </Dropdown>
+                    ))}
             </div>
         </article>
     );

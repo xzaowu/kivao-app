@@ -3,8 +3,10 @@ import type { SkinDefinition } from "@/lib/skin-themes";
 import type { AgentAvatarBundleManifest, CanvasAppearance } from "@/lib/canvas/agent-appearance";
 import { apiBaseURL } from "@/services/api/request";
 import type { UpdateAnnouncement } from "@/lib/update-announcement";
+import type { CreationShortcut } from "@/lib/creation-shortcuts";
 
 export type PublicAppearance = {
+    creationShortcuts?: CreationShortcut[];
     updates?: UpdateAnnouncement;
     canvas?: CanvasAppearance;
     schemaVersion: number;
@@ -37,6 +39,7 @@ export type PublicAppearance = {
 };
 
 export type AdminAppearance = {
+    creationShortcuts?: CreationShortcut[];
     updates?: UpdateAnnouncement;
     canvas?: CanvasAppearance;
     schemaVersion: number;
@@ -98,6 +101,7 @@ export async function updateAdminAppearance(
         | "brandName"
         | "canvas"
         | "updates"
+        | "creationShortcuts"
         | "brandSlug"
         | "authHeroTitle"
         | "authHeroDescription"

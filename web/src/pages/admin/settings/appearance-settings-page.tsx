@@ -1,4 +1,6 @@
 import { commitPublicAppearance, DEFAULT_PUBLIC_APPEARANCE } from "@/stores/use-appearance-store";
+import { DEFAULT_CREATION_SHORTCUTS, normalizeCreationShortcuts, validCreationShortcut, type CreationShortcut } from "@/lib/creation-shortcuts";
+import { CreationShortcutsEditor } from "./components/creation-shortcuts-editor";
 import { deleteAdminResources } from "@/services/api/admin-storage";
 import { AdminStatusBadge, SettingsSectionCard } from "@/pages/admin/components/admin-ui";
 import { AdminPageFrame } from "@/pages/admin/components/admin-shell";
@@ -28,6 +30,7 @@ export default function AppearanceSettingsPage() {
     const { message, modal } = App.useApp();
     const [activeTab, setActiveTab] = useState("brand");
     const [setting, setSetting] = useState<AdminAppearance | null>(null);
+    const [creationShortcuts, setCreationShortcuts] = useState<CreationShortcut[]>(DEFAULT_CREATION_SHORTCUTS);
     const [brandName, setBrandName] = useState("");
     const [canvas, setCanvas] = useState<CanvasAppearance>(DEFAULT_CANVAS_APPEARANCE);
     const [updates, setUpdates] = useState<UpdateAnnouncement>(DEFAULT_UPDATE_ANNOUNCEMENT);
@@ -63,7 +66,8 @@ export default function AppearanceSettingsPage() {
 
     const dirty =
         Boolean(setting) &&
-        (JSON.stringify(updates) !== JSON.stringify(normalizeUpdateAnnouncement(setting?.updates)) ||
+        (JSON.stringify(creationShortcuts) !== JSON.stringify(normalizeCreationShortcuts(setting?.creationShortcuts)) ||
+            JSON.stringify(updates) !== JSON.stringify(normalizeUpdateAnnouncement(setting?.updates)) ||
             JSON.stringify(canvas) !== JSON.stringify(setting?.canvas || DEFAULT_CANVAS_APPEARANCE) ||
             canvasUploading ||
             brandName.trim() !== setting?.brandName ||
@@ -89,6 +93,7 @@ export default function AppearanceSettingsPage() {
         const themes = value.skinThemes.length ? value.skinThemes.map((theme) => normalizeSkinDefinition(theme)) : [cloneSkinDefinition(DEFAULT_CLASSIC_SKIN)];
         const selectedID = themes.some((theme) => theme.id === value.skinId) ? value.skinId : "classic";
         setSetting({ ...value, skinThemes: themes, skinId: selectedID });
+        setCreationShortcuts(normalizeCreationShortcuts(value.creationShortcuts));
         setBrandName(value.brandName);
         setCanvas(value.canvas || DEFAULT_CANVAS_APPEARANCE);
         setUpdates(normalizeUpdateAnnouncement(value.updates));
@@ -273,6 +278,11 @@ export default function AppearanceSettingsPage() {
 
     const save = async () => {
         if (!setting || saving || restoring || canvasUploading) return;
+        if (creationShortcuts.length > 10 || !creationShortcuts.every(validCreationShortcut)) {
+            setActiveTab("creation");
+            message.error("请检查创作入口：最多 10 个，分组和标题各 1–20 字，选择有效图标及站内页面链接。");
+            return;
+        }
         const updatesError = validateUpdateAnnouncement(updates);
         if (updatesError) {
             setActiveTab("updates");
@@ -365,6 +375,7 @@ export default function AppearanceSettingsPage() {
                 ids[slot] = resource.id;
             }
             const updated = await updateAdminAppearance({
+                creationShortcuts,
                 canvas,
                 updates,
                 brandName: nextBrandName,
@@ -449,7 +460,7 @@ export default function AppearanceSettingsPage() {
     };
 
     return (
-        <AdminPageFrame title="站点及外观" description="统一管理品牌身份、登录页、搜索信息、备案展示与全站皮肤主题" scroll>
+        <AdminPageFrame title="站点及外观" description="统一管理品牌身份、创作入口、登录页、搜索信息、备案展示与全站皮肤主题" scroll>
             {loading ? (
                 <AppearanceSkeleton />
             ) : loadError || !setting ? (
@@ -476,7 +487,7 @@ export default function AppearanceSettingsPage() {
                                     <strong>{dirty ? "站点配置有调整待保存" : "站点及外观已与服务端同步"}</strong>
                                     <AdminStatusBadge label={dirty ? "尚未生效" : "服务端当前值"} tone={dirty ? "warning" : "neutral"} />
                                 </div>
-                                <p>{dirty ? "切换分类保留草稿；保存修改会一次应用品牌、登录页、更新公告、SEO、备案和皮肤调整。" : "按分类管理站点配置；欢迎页开关独立即时保存，其余修改统一保存。"}</p>
+                                <p>{dirty ? "切换分类保留草稿；保存修改会一次应用品牌、创作入口、登录页、更新公告、SEO、备案和皮肤调整。" : "按分类管理站点配置；欢迎页开关独立即时保存，其余修改统一保存。"}</p>
                             </div>
                         </div>
                         <div className="admin-appearance-command-actions">
@@ -502,6 +513,15 @@ export default function AppearanceSettingsPage() {
                         activeKey={activeTab}
                         onChange={setActiveTab}
                         items={[
+                            {
+                                key: "creation",
+                                label: "创作入口",
+                                children: (
+                                    <SettingsSectionCard title="创作入口" description="设置首页输入框下方的分组快捷入口，点击只跳转页面，不自动生成或创建画布。">
+                                        <CreationShortcutsEditor value={creationShortcuts} onChange={setCreationShortcuts} disabled={saving || refreshing || restoring || canvasUploading} />
+                                    </SettingsSectionCard>
+                                ),
+                            },
                             {
                                 key: "brand",
                                 label: "品牌识别",

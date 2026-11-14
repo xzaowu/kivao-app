@@ -55,6 +55,7 @@
 }
 .ecs-kind-switch {
     display: inline-flex;
+    flex: 0 0 auto;
     gap: 2px;
     padding: var(--space-1);
     border-radius: var(--r-lg);
@@ -72,6 +73,7 @@
     color: var(--user-ink-muted);
     font-size: var(--fs-ui);
     font-weight: 500;
+    white-space: nowrap;
     cursor: pointer;
 }
 .ecs-kind-switch button.is-active {
@@ -457,7 +459,8 @@
 .ecs-composer .ecs-prompt textarea.ant-input {
     padding: 0;
     border: 0;
-    background: transparent;
+    /* 外壳承载底色，覆盖工作区通用表单的 important 背景。 */
+    background: transparent !important;
     color: var(--user-ink);
     font-size: var(--fs-body);
     line-height: 1.7;
@@ -991,6 +994,17 @@
     }
     .ecs-mobile-tabs {
         display: block;
+    }
+    .ecs-composer-head {
+        flex-wrap: wrap;
+        gap: var(--space-2);
+    }
+    .ecs-kind-switch {
+        max-width: 100%;
+    }
+    .ecs-head-actions {
+        flex-shrink: 0;
+        margin-inline-start: auto;
     }
     .ecs-shell[data-mobile-view="create"] .commerce-output-gallery,
     .ecs-shell[data-mobile-view="works"] .ecs-composer {

@@ -4,12 +4,13 @@ import { AGENT_DOCK_DEFAULT_WIDTH, clampAgentDockWidth } from "@/lib/canvas/agen
 import { useGlobalAgentStore } from "@/stores/use-global-agent-store";
 
 const viewport = () => ({ width: window.innerWidth, height: window.innerHeight });
+const compactViewport = () => window.matchMedia("(max-width: 639px), (max-width: 1023px) and (max-height: 519px) and (pointer: coarse)").matches;
 
 /** 停靠时只能拖左边缘调宽；浮动时可移动和从左上三个方向调整大小。 */
 type PanelGesture = AgentPanelGesture | "dock";
 
 export function useAgentPanelLayout(dock: { active: boolean; width: number } = { active: false, width: AGENT_DOCK_DEFAULT_WIDTH }) {
-    const [compact, setCompact] = useState(() => window.innerWidth < 640);
+    const [compact, setCompact] = useState(compactViewport);
     const [layout, setLayout] = useState(() => {
         try {
             return restoreAgentPanelLayout(localStorage.getItem(AGENT_PANEL_LAYOUT_KEY), viewport());
@@ -23,8 +24,9 @@ export function useAgentPanelLayout(dock: { active: boolean; width: number } = {
 
     useEffect(() => {
         const resize = () => {
-            setCompact(window.innerWidth < 640);
-            if (window.innerWidth >= 640) setLayout((current) => clampAgentPanelLayout(current, viewport()));
+            const nextCompact = compactViewport();
+            setCompact(nextCompact);
+            if (!nextCompact) setLayout((current) => clampAgentPanelLayout(current, viewport()));
         };
         window.addEventListener("resize", resize);
         return () => window.removeEventListener("resize", resize);
@@ -87,12 +89,21 @@ export function useAgentPanelLayout(dock: { active: boolean; width: number } = {
         setLayout((current) => changeAgentPanelLayout(current, kind, event.key === "ArrowLeft" ? -delta : event.key === "ArrowRight" ? delta : 0, event.key === "ArrowUp" ? -delta : event.key === "ArrowDown" ? delta : 0, viewport()));
     };
 
-    const style: CSSProperties = compact ? { left: 0, top: 8, width: "100%", height: "calc(100dvh - 8px)" } : dock.active ? { top: 0, right: 0, width: dock.width, height: "100dvh" } : layout;
+    const style: CSSProperties = compact ? { left: 0, top: 0, width: "100%", height: "100dvh" } : dock.active ? { top: 0, right: 0, width: dock.width, height: "100dvh" } : layout;
 
     return {
+        compact,
         style,
         reset: () => (dock.active ? setDockWidth(AGENT_DOCK_DEFAULT_WIDTH) : setLayout(defaultAgentPanelLayout(viewport()))),
         onResizeKeyDown,
-        pointerHandlers: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel: onPointerUp, onLostPointerCapture: () => { gestureRef.current = null; } },
+        pointerHandlers: {
+            onPointerDown,
+            onPointerMove,
+            onPointerUp,
+            onPointerCancel: onPointerUp,
+            onLostPointerCapture: () => {
+                gestureRef.current = null;
+            },
+        },
     };
 }

@@ -7,11 +7,11 @@ const viewport = () => ({ width: window.innerWidth, height: window.innerHeight }
  * 入口的拖拽、点击与键盘移动。指针处理器（onPointer*）可以挂在入口按钮上，也可以挂在按钮内的身体热区上
  * （大形象外框不接收指针）；指针捕获落在挂处理器的元素上，因此该元素必须能被命中。
  */
-export function useAgentLauncherPosition(onOpen: () => void, width = 76, height = 76) {
+export function useAgentLauncherPosition(onOpen: () => void, width = 76, height = 76, storageKey = AGENT_LAUNCHER_POSITION_KEY) {
     const size = { width, height };
     const [position, setPosition] = useState(() => {
         try {
-            return restoreAgentLauncherPosition(localStorage.getItem(AGENT_LAUNCHER_POSITION_KEY), viewport(), size);
+            return restoreAgentLauncherPosition(localStorage.getItem(storageKey), viewport(), size);
         } catch (error) {
             console.warn("Agent 入口位置无法读取", error);
             return restoreAgentLauncherPosition(null, viewport(), size);
@@ -23,7 +23,7 @@ export function useAgentLauncherPosition(onOpen: () => void, width = 76, height 
 
     const save = (next: AgentLauncherPosition) => {
         try {
-            localStorage.setItem(AGENT_LAUNCHER_POSITION_KEY, JSON.stringify(next));
+            localStorage.setItem(storageKey, JSON.stringify(next));
         } catch (error) {
             console.warn("Agent 入口位置无法保存", error);
         }
@@ -66,6 +66,12 @@ export function useAgentLauncherPosition(onOpen: () => void, width = 76, height 
         setPosition(next.position);
         if (next.dragged) save(next.position);
         if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+        // 触摸拖动后浏览器可能不补发 click；抬手激活，并拦住兼容 click，避免漏开或重复。
+        if (!cancelled && !next.dragged && event.pointerType === "touch") {
+            event.preventDefault();
+            suppressClick.current = true;
+            onOpen();
+        }
     };
     const onClick = (event: MouseEvent<HTMLElement>) => {
         event.stopPropagation();

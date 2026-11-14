@@ -382,6 +382,8 @@ HTTP 请求 -> handler -> service（稳定导入面 / 别名）-> app（组合�
 
 ## 画布外观
 
+创作首页快捷入口由 `web/src/lib/creation-shortcuts.ts` 定义展示合同和默认值，`pages/create/creation-workspace-empty.tsx` 按分组显示图标与标题；`pages/admin/settings/components/creation-shortcuts-editor.tsx` 随外观草稿统一编辑和保存。服务端 `backend/internal/app/appearance_creation.go` 校验数量、文案、图标与站内路由，`appearance.go` 复用原外观 JSON 持久化和管理员权限，不新增表或迁移。
+
 `web/src/lib/canvas/canvas-appearance.ts` 管理预设快照、浅深记忆与默认偏好；`web/src/components/canvas/canvas-appearance-controls.tsx` 管理展开与微调；`web/src/components/canvas/canvas-toolbar.tsx` 限制外观和添加节点浮层尺寸。`web/src/stores/canvas/use-canvas-store.ts` 在创建时写入实际外观与线网格默认值，后续沿用画布持久化。
 
 

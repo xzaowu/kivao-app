@@ -73,17 +73,22 @@ function isWebLink(value: string | undefined, httpsOnly = false) {
 /** 静态目录已有的条目以静态目录为准（带人工译审和本地缩略图），上新只补目录里没有的。 */
 function mergeFeed(entriesBySource: Map<InspirationSourceId, CreationInspiration[]>, feed: InspirationFeed | null, labelsOf: (sourceId: InspirationSourceId) => Record<string, string>) {
     if (!feed?.enabled) return;
-    const known = new Set([...entriesBySource.values()].flat().map(catalogIdOf));
+    const known = new Map([...entriesBySource.values()].flat().map((entry) => [catalogIdOf(entry), entry]));
     for (const entry of feed.entries) {
         const sourceId = entry.sourceId as InspirationSourceId;
-        if (!FEED_SOURCES.has(sourceId) || known.has(entry.id) || !entry.title || !entry.prompt || !isWebLink(entry.image, true)) continue;
-        known.add(entry.id);
-        entriesBySource.get(sourceId)?.push({
+        if (!FEED_SOURCES.has(sourceId) || !entry.title || !entry.prompt || !isWebLink(entry.image, true)) continue;
+        const existing = known.get(entry.id);
+        if (existing) {
+            if (existing.mode === "video" && isWebLink(entry.videoUrl, true)) existing.videoUrl = entry.videoUrl;
+            continue;
+        }
+        const item: CreationInspiration = {
             id: entry.id,
             title: entry.title,
             // 与静态目录一致：没有中文摘要时用分类名做描述。
             description: entry.description || (entry.category ? (labelsOf(sourceId)[entry.category] ?? "") : ""),
             image: entry.image,
+            ...(isWebLink(entry.videoUrl, true) ? { videoUrl: entry.videoUrl } : {}),
             mode: entry.mode,
             prompt: entry.prompt,
             sourceId,
@@ -93,7 +98,9 @@ function mergeFeed(entriesBySource: Map<InspirationSourceId, CreationInspiration
             ...(entry.credit ? { credit: entry.credit } : {}),
             ...(isWebLink(entry.sourceUrl) ? { sourceUrl: entry.sourceUrl } : {}),
             ...(entry.publishedAt ? { publishedAt: entry.publishedAt } : {}),
-        });
+        };
+        known.set(entry.id, item);
+        entriesBySource.get(sourceId)?.push(item);
     }
 }
 

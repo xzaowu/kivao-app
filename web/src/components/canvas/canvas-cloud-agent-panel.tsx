@@ -132,7 +132,7 @@ import { useAgentPanelDock } from "./use-agent-panel-dock";
 import { useAgentReasoningPreference } from "./use-agent-reasoning-preference";
 import "./canvas-cloud-agent.css";
 import { appendAgentError, appendUniqueMessage, applyAgentEvent, positiveNumber, type ApprovalState } from "./canvas-cloud-agent-events";
-import { AgentContextRing, AgentConversation, AgentHeader, AgentHistory, AgentLauncher, ComposerControls } from "./canvas-cloud-agent-panel-parts";
+import { AgentContextRing, AgentConversation, AgentHeader, AgentHistory, AgentLauncher, AgentMobileLauncher, ComposerControls } from "./canvas-cloud-agent-panel-parts";
 import { useGlobalAgentStore, type AgentInsertedNode } from "@/stores/use-global-agent-store";
 
 type AgentPanelView = "chat" | "history" | "settings";
@@ -393,6 +393,22 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
         return () => window.removeEventListener("keydown", onKeyDown);
     }, []);
     const panelLayout = useAgentPanelLayout(dock);
+    const hasPageContext = Boolean(canvasId || pageContext);
+    useEffect(() => {
+        if (panelLayout.compact && !hasPageContext) onCollapse();
+    }, [panelLayout.compact, hasPageContext, onCollapse]);
+    useEffect(() => {
+        if (!panelLayout.compact || !open) return;
+        const workspace = document.querySelector<HTMLElement>(".app-user-workspace");
+        const wasInert = workspace?.inert;
+        if (workspace) workspace.inert = true;
+        // 不聚焦输入框，避免打开助手就弹出手机键盘；底层页面的位置和草稿保持不变。
+        document.querySelector<HTMLElement>(".canvas-agent-panel")?.focus({ preventScroll: true });
+        return () => {
+            if (workspace) workspace.inert = wasInert ?? false;
+            if (!useGlobalAgentStore.getState().open) document.querySelector<HTMLElement>(".canvas-agent-mobile-launcher")?.focus({ preventScroll: true });
+        };
+    }, [panelLayout.compact, open]);
     const lastSeqRef = useRef(0);
     const replayCursorRef = useRef({ runId: "", seq: 0 });
     const canvasSyncRef = useRef<ReturnType<typeof createAgentCanvasSync> | null>(null);
@@ -2453,9 +2469,25 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
             />
         ) : null;
 
+    const mobileAttentionPending = Boolean(approval || pendingQuestion || pendingRetryText || outbox.items.length);
+    const mobileLauncherVisible = hasPageContext || running || busy || mobileAttentionPending;
+
     return (
         <>
-            <AgentLauncher theme={theme} statusColor={statusColor} approvalPending={Boolean(approval)} reducedMotion={Boolean(reducedMotion)} status={status} hidden={open} onOpen={onOpen} />
+            {panelLayout.compact ? (
+                !open && mobileLauncherVisible ? (
+                    <AgentMobileLauncher
+                        theme={theme}
+                        status={status}
+                        statusLabel={mobileAttentionPending ? "等待确认" : statusLabel}
+                        statusColor={mobileAttentionPending ? "var(--status-warning)" : statusColor}
+                        attentionPending={mobileAttentionPending}
+                        onOpen={onOpen}
+                    />
+                ) : null
+            ) : (
+                <AgentLauncher theme={theme} statusColor={statusColor} approvalPending={Boolean(approval)} reducedMotion={Boolean(reducedMotion)} status={status} hidden={open} onOpen={onOpen} />
+            )}
             <AnimatePresence>
                 {open ? (
                     <motion.aside
@@ -2463,12 +2495,15 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                         animate={{ opacity: 1, x: 0, y: 0, scale: 1 }}
                         exit={reducedMotion ? { opacity: 0 } : dock.active ? { opacity: 0, x: 24 } : { opacity: 0, y: 12, scale: 0.985 }}
                         transition={{ duration: reducedMotion ? 0 : 0.26, ease: [0.16, 1, 0.3, 1] }}
-                        className={`canvas-agent-panel fixed z-[calc(var(--z-toast)+1)] flex min-w-0 flex-col overflow-hidden${dock.active ? " is-docked" : ""}`}
+                        className={`canvas-agent-panel fixed z-[calc(var(--z-toast)+1)] flex min-w-0 flex-col overflow-hidden${dock.active ? " is-docked" : ""}${panelLayout.compact ? " is-compact" : ""}`}
                         style={
                             { ...panelLayout.style, "--agent-surface-base": theme.node.panel, "--agent-ink": theme.node.text, "--agent-accent": theme.accent.primary, "--agent-shadow-color": theme.spatial.shadow } as CSSProperties &
                                 Record<`--${string}`, string>
                         }
                         aria-label="Agent 工作台"
+                        role={panelLayout.compact ? "dialog" : undefined}
+                        aria-modal={panelLayout.compact || undefined}
+                        tabIndex={panelLayout.compact ? -1 : undefined}
                         data-popover-anchor-container
                         data-canvas-no-zoom
                         data-canvas-wheel-scroll

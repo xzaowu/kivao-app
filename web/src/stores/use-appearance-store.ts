@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { DEFAULT_BRAND_LOGO_URL, DEFAULT_BRAND_NAME, DEFAULT_BRAND_SLUG } from "@/lib/brand";
 import { DEFAULT_CANVAS_APPEARANCE } from "@/lib/canvas/agent-appearance";
+import { DEFAULT_CREATION_SHORTCUTS, normalizeCreationShortcuts } from "@/lib/creation-shortcuts";
 import { DEFAULT_UPDATE_ANNOUNCEMENT, normalizeUpdateAnnouncement } from "@/lib/update-announcement";
 
 import type { PublicAppearance } from "@/services/api/appearance";
@@ -10,6 +11,7 @@ import { applyThemeBrandVariables, applyThemePackCanvas } from "@/themes/apply";
 import { useDocumentTitleStore } from "@/stores/use-document-title-store";
 
 export const DEFAULT_PUBLIC_APPEARANCE: PublicAppearance = {
+    creationShortcuts: DEFAULT_CREATION_SHORTCUTS,
     updates: DEFAULT_UPDATE_ANNOUNCEMENT,
     canvas: DEFAULT_CANVAS_APPEARANCE,
     schemaVersion: 10,
@@ -83,6 +85,7 @@ export function normalizePublicAppearance(value?: Partial<PublicAppearance> | nu
         ...DEFAULT_PUBLIC_APPEARANCE,
         ...value,
         schemaVersion: 10,
+        creationShortcuts: normalizeCreationShortcuts(value?.creationShortcuts),
         updates: normalizeUpdateAnnouncement(value?.updates),
         canvas: { ...DEFAULT_CANVAS_APPEARANCE, ...value?.canvas },
         brandName: resolvedBrandName,

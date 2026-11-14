@@ -1652,15 +1652,7 @@ export default function CreatePage() {
                                         )}
                                     </CreationModeCard>
                                 </div>
-                                <CreationEmptySuggest
-                                    onStartPrompt={startPrompt}
-                                    onOpenLibrary={() => {
-                                        if (!requireCreationLogin()) return;
-                                        setAgentMode(false);
-                                        selectMode("image");
-                                        setLibraryOpen(true);
-                                    }}
-                                />
+                                <CreationEmptySuggest />
                             </section>
                             <CreationRecentCanvases onRequireLogin={() => openAuth()} />
                             <Suspense

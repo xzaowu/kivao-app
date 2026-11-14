@@ -32,7 +32,7 @@ export const inspirationSources: Record<InspirationSourceId, InspirationSourceIn
         repository: "https://github.com/LearnPrompt/awesome-seedance",
         revision: HIGHLIGHT_REVISIONS.seedance,
         license: "CC BY 4.0",
-        notice: "视频提示词与封面来自 awesome-seedance（数据每日同步自 goodcase.ai），提示词经中文翻译改编，按 CC BY 4.0 署名使用。封面为原案例画面，不代表本平台生成结果。",
+        notice: "视频提示词、封面与原作品链接来自 awesome-seedance（数据每日同步自 goodcase.ai），提示词经中文翻译改编，按 CC BY 4.0 署名使用。示例为原作者作品，不代表本平台生成结果。",
     },
     haohaoxue: {
         label: "好好学 AI · 图片提示词",
@@ -66,6 +66,8 @@ export type CreationInspiration = {
     title: string;
     description: string;
     image: string;
+    /** 上游公开的成品视频直链，与原页 sourceUrl 分开。 */
+    videoUrl?: string;
     mode: CreationMode;
     prompt: string;
     /** 自定义双语条目的中文正文；内置目录已将中文统一存入 prompt。 */

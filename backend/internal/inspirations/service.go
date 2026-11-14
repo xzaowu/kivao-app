@@ -117,6 +117,8 @@ type SyncState struct {
 	Sources       []SourceResult `json:"sources,omitempty"`
 	// Categories 是上游分类码的中文名（来源 → 分类码 → 名称）；某个来源本次失败时沿用上次的。
 	Categories map[string]map[string]string `json:"categories,omitempty"`
+	// VideoURLs shares the existing sync JSON; media metadata does not need a table migration.
+	VideoURLs map[string]string `json:"videoUrls,omitempty"`
 }
 
 // SourceResult 是单个来源在一次同步里的结果。
