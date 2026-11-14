@@ -15,8 +15,6 @@ export const workspaceRoutePages = {
     projectCreate: preloadableLazy(() => import("@/pages/projects/create")),
     skills: preloadableLazy(() => import("@/pages/skills")),
     skillWorkbench: preloadableLazy(() => import("@/pages/skills/skill-workbench-route")),
-    plugins: preloadableLazy(() => import("@/pages/plugins")),
-    eagleLibrary: preloadableLazy(() => import("@/pages/plugins/eagle")),
     tasks: preloadableLazy(() => import("@/pages/tasks")),
     settings: preloadableLazy(() => import("@/pages/settings")),
     referral: preloadableLazy(() => import("@/pages/referral")),
@@ -31,7 +29,6 @@ const workspaceRouteSlugs: Record<string, keyof typeof workspaceRoutePages> = {
     projects: "projects",
     tasks: "tasks",
     skills: "skills",
-    plugins: "plugins",
     settings: "settings",
     referral: "referral",
     ecommerce: "ecommerce",
@@ -54,10 +51,6 @@ export function preloadWorkspaceRoute(pathnameOrSlug: string) {
     }
     if (slug === "skills" && segments[2] === "edit") {
         warm("skillWorkbench");
-        return;
-    }
-    if (slug === "plugins" && segments[1] === "eagle") {
-        warm("eagleLibrary");
         return;
     }
     if (slug === "toolbox") {

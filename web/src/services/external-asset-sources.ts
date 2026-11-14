@@ -29,7 +29,7 @@ export type ExternalAssetSyncResult = {
 
 export function createHostedAssetSources(installations: PluginInstallation[]): HostedAssetSource[] {
     return installations.flatMap((installation) => {
-        if (!isPluginEffectivelyEnabled(installation.manifest.id, installation.enabled)) return [];
+        if (!isPluginEffectivelyEnabled(installation.manifest.id)) return [];
         const plugin = getRegisteredPlugin(installation.manifest.id);
         if (!plugin?.createAssetSource) return [];
         try {
@@ -53,7 +53,7 @@ export function createHostedAssetSources(installations: PluginInstallation[]): H
 
 export async function uploadGeneratedAssetToConfiguredSources(asset: Asset, signal?: AbortSignal): Promise<ExternalAssetSyncResult> {
     const installations = usePluginStore.getState().installations;
-    const autoUploadInstallations = installations.filter((installation) => isPluginEffectivelyEnabled(installation.manifest.id, installation.enabled) && isAutoUploadEnabled(installation.config.autoUploadGenerated));
+    const autoUploadInstallations = installations.filter((installation) => isPluginEffectivelyEnabled(installation.manifest.id) && isAutoUploadEnabled(installation.config.autoUploadGenerated));
     if (!autoUploadInstallations.length) return { records: readSyncRecords(asset), uploaded: [], failures: [] };
 
     const sources = createHostedAssetSources(autoUploadInstallations);

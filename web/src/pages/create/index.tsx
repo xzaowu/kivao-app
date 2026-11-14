@@ -154,7 +154,7 @@ export default function CreatePage() {
     const rememberVideoSettings = useCreationPreferencesStore((state) => state.rememberVideoSettings);
     const initialComposerPreferences = useCreationPreferencesStore.getState().preferences;
     const promptOptimizerInstallation = usePluginStore((state) => state.installations.find((item) => item.manifest.id === PROMPT_OPTIMIZER_PLUGIN_ID));
-    const promptOptimizerEnabled = usePluginStore((state) => state.pluginStates[PROMPT_OPTIMIZER_PLUGIN_ID]?.effectiveEnabled ?? Boolean(state.installations.find((item) => item.manifest.id === PROMPT_OPTIMIZER_PLUGIN_ID)?.enabled));
+    const promptOptimizerEnabled = usePluginStore((state) => state.pluginStates[PROMPT_OPTIMIZER_PLUGIN_ID]?.effectiveEnabled === true);
     const promptOptimizerProvider = useMemo<PromptOptimizerProvider | null>(() => {
         if (!promptOptimizerEnabled || !promptOptimizerInstallation || !promptOptimizerPlugin.createPromptOptimizer) return null;
         return promptOptimizerPlugin.createPromptOptimizer(createPluginHostContext(promptOptimizerPlugin, promptOptimizerInstallation, config));
@@ -1567,18 +1567,17 @@ export default function CreatePage() {
     return (
         <>
             <div className="creation-home relative flex h-full min-h-0 flex-col overflow-hidden">
-                <p role="status" aria-live="polite" className="mx-auto px-4 py-1 text-xs text-foreground/55">
-                    <span title={historySync.message}>{t(`create.historySync.${historySync.phase}`)}</span>
-                    {historySync.message ? <span> · {historySync.message}</span> : null}
-                    {historySync.phase === "error" ? (
+                {historySync.phase === "error" ? (
+                    <p role="alert" className="mx-auto mb-3 max-w-3xl px-4 text-xs text-foreground/65">
+                        {t("create.historySync.error")}
+                        {historySync.message ? <span> · {historySync.message}</span> : null}
                         <button type="button" className="ml-2 underline" onClick={() => void historySessionRef.current?.sync()}>
                             {t("create.historySync.retry")}
                         </button>
-                    ) : null}
-                    <CreationHistoryConflicts key={activeConversationScope} session={historySessionRef.current} status={historySync} busy={busy} />
-                </p>
+                    </p>
+                ) : null}
                 {conversationStorageError ? (
-                    <p role="status" className="mx-auto mb-3 max-w-3xl px-4 text-xs text-foreground/55">
+                    <p role="alert" className="mx-auto mb-3 max-w-3xl px-4 text-xs text-foreground/55">
                         本地历史读取失败，当前会话仍保留。 {conversationStorageError}{" "}
                         <button
                             type="button"
@@ -1738,6 +1737,18 @@ export default function CreatePage() {
             </div>
             <CreationHistoryDrawer
                 open={historyOpen}
+                syncStatus={
+                    <p role="status" aria-live="polite" className="mb-3 text-xs text-foreground/55">
+                        <span title={historySync.message}>{t(`create.historySync.${historySync.phase}`)}</span>
+                        {historySync.message ? <span> · {historySync.message}</span> : null}
+                        {historySync.phase === "error" ? (
+                            <button type="button" className="ml-2 underline" onClick={() => void historySessionRef.current?.sync()}>
+                                {t("create.historySync.retry")}
+                            </button>
+                        ) : null}
+                        <CreationHistoryConflicts key={activeConversationScope} session={historySessionRef.current} status={historySync} busy={busy} />
+                    </p>
+                }
                 conversations={historyConversations}
                 activeId={activeConversation.id}
                 onNew={startNewConversationFromHistory}

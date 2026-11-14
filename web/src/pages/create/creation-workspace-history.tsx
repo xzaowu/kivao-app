@@ -1,7 +1,7 @@
 // 创作页历史会话抽屉、导出与时间格式化。
 
 import { conversationTimeFormatter, type CreationConversation, type CreationMessage, historyDayFormatter, modeLabels } from "./creation-types";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAppearanceStore } from "@/stores/use-appearance-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { App, Button, Dropdown, Input } from "antd";
@@ -44,6 +44,7 @@ export const creationBucketLabels: Record<"today" | "yesterday" | "week" | "earl
 
 export function CreationHistoryDrawer({
     open,
+    syncStatus,
     conversations,
     activeId,
     onNew,
@@ -53,6 +54,7 @@ export function CreationHistoryDrawer({
     onRename,
 }: {
     open: boolean;
+    syncStatus?: ReactNode;
     conversations: CreationConversation[];
     activeId: string;
     onNew: () => void;
@@ -138,6 +140,7 @@ export function CreationHistoryDrawer({
             }
         >
             <div className="creation-history-content">
+                {syncStatus}
                 <div className="creation-history-toolbar">
                     <Input
                         className="creation-history-search"

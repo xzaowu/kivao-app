@@ -20,7 +20,12 @@ import {
     isArtCritiqueImageInput,
     type ArtCritiqueCategory,
     type ArtCritiqueNodeState,
-    type ArtCritiquePipelineStage, ART_CRITIQUE_SCHEMA_VERSION, type ArtCritiqueReport, artCritiqueStageLabel, artCritiqueCategoryLabel } from "@/lib/art-critique/contracts";
+    type ArtCritiquePipelineStage,
+    ART_CRITIQUE_SCHEMA_VERSION,
+    type ArtCritiqueReport,
+    artCritiqueStageLabel,
+    artCritiqueCategoryLabel,
+} from "@/lib/art-critique/contracts";
 import { ApprovedToolExecution, type ApprovedToolExecutionState } from "@/services/approved-tool-execution";
 import { getActiveUserScope } from "@/lib/user-scope";
 import { modelOptionLabel, useEffectiveConfig } from "@/stores/use-config-store";
@@ -51,8 +56,11 @@ export function AiArtCritiqueModal({ node, upstreamNodes, open, onClose, onUpdat
     const effectiveConfig = useEffectiveConfig();
     const selectedCritiqueModel = effectiveConfig.textModel.trim();
     const configuredCritiqueModelLabel = selectedCritiqueModel ? modelOptionLabel(effectiveConfig, selectedCritiqueModel) : t("canvasA.artCritique.noModel");
-    const enabled = usePluginStore((state) => state.pluginStates[ART_CRITIQUE_PLUGIN_ID]?.effectiveEnabled ?? (ART_CRITIQUE_PLUGIN_ID in state.runtimeStatuses ? state.runtimeStatuses[ART_CRITIQUE_PLUGIN_ID] === "enabled" : Boolean(state.installations.find((item) => item.manifest.id === ART_CRITIQUE_PLUGIN_ID)?.enabled)));
-    const input = useMemo(() => { const images = upstreamNodes.filter(isArtCritiqueImageInput); return images.length === 1 ? images[0] : undefined; }, [upstreamNodes]);
+    const enabled = usePluginStore((state) => state.pluginStates[ART_CRITIQUE_PLUGIN_ID]?.effectiveEnabled === true);
+    const input = useMemo(() => {
+        const images = upstreamNodes.filter(isArtCritiqueImageInput);
+        return images.length === 1 ? images[0] : undefined;
+    }, [upstreamNodes]);
     const state = node?.metadata?.artCritique || createDefaultArtCritiqueState();
     const currentFingerprint = input ? artCritiqueSourceFingerprint(input) : "";
     const stale = Boolean(state.report && currentFingerprint && state.report.sourceFingerprint !== currentFingerprint);
@@ -104,7 +112,9 @@ export function AiArtCritiqueModal({ node, upstreamNodes, open, onClose, onUpdat
 
     useEffect(() => () => abortRef.current?.abort(), []);
     useEffect(() => () => abortRef.current?.abort(), [node?.id, currentFingerprint]);
-    useEffect(() => { if (!enabled) abortRef.current?.abort(); }, [enabled]);
+    useEffect(() => {
+        if (!enabled) abortRef.current?.abort();
+    }, [enabled]);
 
     const issues = visibleState.report?.issues || [];
     const reportOptions = visibleState.report?.options || [];
@@ -189,45 +199,55 @@ export function AiArtCritiqueModal({ node, upstreamNodes, open, onClose, onUpdat
         const stageTaskIds: Record<string, string> = resume ? { ...state.stageTaskIds } : {};
         setPayment({ busy: false });
         const approval = new ApprovedToolExecution({
-            clientKey: `art-critique:${runId}`, runId: billingRunId,
-            identity: { kind: "art-critique", nodeId: node.id, sourceFingerprint, model: selectedCritiqueModel }, signal: controller.signal,
-            onRun: (id) => { billingRunId = id; publishState({ ...baseState, stageTaskIds: { ...stageTaskIds } }); },
-            onState: (next) => { if (currentRunTargetRef.current === runTarget) setPayment(next); },
+            clientKey: `art-critique:${runId}`,
+            runId: billingRunId,
+            identity: { kind: "art-critique", nodeId: node.id, sourceFingerprint, model: selectedCritiqueModel },
+            signal: controller.signal,
+            onRun: (id) => {
+                billingRunId = id;
+                publishState({ ...baseState, stageTaskIds: { ...stageTaskIds } });
+            },
+            onState: (next) => {
+                if (currentRunTargetRef.current === runTarget) setPayment(next);
+            },
         });
         approvalRef.current = approval;
         try {
             const report = await executeArtCritique({
-                    nodeId: node.id, runId, source: input, config: effectiveConfig,
-                    signal: controller.signal,
-                    submitStage: approval.execute,
-                    onTaskCreated: (stage, taskId) => {
-                        stageTaskIds[stage] = taskId;
-                        publishState({ ...baseState, stageTaskIds: { ...stageTaskIds }, analysisStage: latestStage, updatedAt: new Date().toISOString() });
-                    },
-                    onStage: (analysisStage) => {
-                        latestStage = analysisStage;
-                        setActiveStage(analysisStage);
-                        publishState({
-                            ...baseState,
-                            stageTaskIds: { ...stageTaskIds },
-                            ...(runningReport ? { report: { ...runningReport, modelLabel: modelOptionLabel(effectiveConfig, selectedCritiqueModel) } } : {}),
-                            analysisStage,
-                            updatedAt: new Date().toISOString(),
-                        });
-                    },
-                    onDraftReport: (draftReport) => {
-                        if (controller.signal.aborted || abortRef.current !== controller) return;
-                        runningReport = draftReport;
-                        setDraftReportVisible(true);
-                        publishState({
-                            ...baseState,
-                            stageTaskIds: { ...stageTaskIds },
-                            status: "running",
-                            analysisStage: latestStage,
-                            report: { ...draftReport, modelLabel: modelOptionLabel(effectiveConfig, selectedCritiqueModel) },
-                            updatedAt: new Date().toISOString(),
-                        });
-                    },
+                nodeId: node.id,
+                runId,
+                source: input,
+                config: effectiveConfig,
+                signal: controller.signal,
+                submitStage: approval.execute,
+                onTaskCreated: (stage, taskId) => {
+                    stageTaskIds[stage] = taskId;
+                    publishState({ ...baseState, stageTaskIds: { ...stageTaskIds }, analysisStage: latestStage, updatedAt: new Date().toISOString() });
+                },
+                onStage: (analysisStage) => {
+                    latestStage = analysisStage;
+                    setActiveStage(analysisStage);
+                    publishState({
+                        ...baseState,
+                        stageTaskIds: { ...stageTaskIds },
+                        ...(runningReport ? { report: { ...runningReport, modelLabel: modelOptionLabel(effectiveConfig, selectedCritiqueModel) } } : {}),
+                        analysisStage,
+                        updatedAt: new Date().toISOString(),
+                    });
+                },
+                onDraftReport: (draftReport) => {
+                    if (controller.signal.aborted || abortRef.current !== controller) return;
+                    runningReport = draftReport;
+                    setDraftReportVisible(true);
+                    publishState({
+                        ...baseState,
+                        stageTaskIds: { ...stageTaskIds },
+                        status: "running",
+                        analysisStage: latestStage,
+                        report: { ...draftReport, modelLabel: modelOptionLabel(effectiveConfig, selectedCritiqueModel) },
+                        updatedAt: new Date().toISOString(),
+                    });
+                },
             });
             setDraftReportVisible(false);
             publishState({
@@ -253,7 +273,10 @@ export function AiArtCritiqueModal({ node, upstreamNodes, open, onClose, onUpdat
             publishState({ ...baseState, stageTaskIds: { ...stageTaskIds }, status: "failed", analysisStage: "failed", errorCode: error instanceof Error ? error.message : "art_critique_failed", errorMessage, updatedAt: new Date().toISOString() });
         } finally {
             approval.dispose();
-            if (approvalRef.current === approval) { approvalRef.current = null; setPayment({ busy: false }); }
+            if (approvalRef.current === approval) {
+                approvalRef.current = null;
+                setPayment({ busy: false });
+            }
             if (abortRef.current === controller) abortRef.current = null;
             setRunning(false);
             onRunningChange?.(false);
@@ -268,23 +291,18 @@ export function AiArtCritiqueModal({ node, upstreamNodes, open, onClose, onUpdat
         void runReview(Boolean(!restartRequested && state.billingRunId && state.status !== "completed" && state.sourceFingerprint === currentFingerprint && state.lastRunModel === selectedCritiqueModel));
     }, [open, node?.id, startRequestId, running]);
 
-    const modelStatusLabel = running ? t("canvasA.artCritique.modelInUse") : visibleState.report?.modelLabel ? t("canvasA.artCritique.modelReport") : selectedCritiqueModel ? t("canvasA.artCritique.modelPending") : t("canvasA.artCritique.modelNeedsConfig");
+    const modelStatusLabel = running
+        ? t("canvasA.artCritique.modelInUse")
+        : visibleState.report?.modelLabel
+          ? t("canvasA.artCritique.modelReport")
+          : selectedCritiqueModel
+            ? t("canvasA.artCritique.modelPending")
+            : t("canvasA.artCritique.modelNeedsConfig");
     const modelStatusColor = selectedCritiqueModel || visibleState.report?.modelLabel ? theme.node.muted : "var(--status-warning)";
     const modelInlineLabel = selectedCritiqueModel || visibleState.report?.modelLabel ? `${modelStatusLabel} · ${displayedModelLabel}` : t("canvasA.artCritique.modelHint");
 
     return (
-        <AppModal
-            open={open}
-            title={null}
-            closable={false}
-            width="min(1240px, calc(100vw - 32px))"
-            centered
-            destroyOnClose={false}
-            onCancel={close}
-            footer={null}
-            className="art-critique-modal"
-            flush
-        >
+        <AppModal open={open} title={null} closable={false} width="min(1240px, calc(100vw - 32px))" centered destroyOnClose={false} onCancel={close} footer={null} className="art-critique-modal" flush>
             <div className="flex h-[min(820px,calc(100dvh-32px))] max-h-[calc(100dvh-32px)] min-h-0 flex-col overflow-hidden rounded-[var(--r-lg)]" style={{ background: theme.canvas.background, color: theme.node.text }}>
                 <header className="flex shrink-0 items-center gap-3 border-b px-5 py-4" style={{ borderColor: theme.node.edge }}>
                     <span className="grid size-9 shrink-0 place-items-center rounded-[var(--r-md)]" style={{ background: theme.accent.primarySoft, color: theme.accent.primary }}>
@@ -295,7 +313,11 @@ export function AiArtCritiqueModal({ node, upstreamNodes, open, onClose, onUpdat
                             <h2 className="truncate text-base font-semibold">{t("canvasA.artCritique.title")}</h2>
                             {visibleState.report ? (
                                 <span className="shrink-0 rounded-full px-2 py-0.5 text-[var(--fs-micro)] font-semibold" style={{ background: "color-mix(in oklch, var(--status-success) 12%, transparent)", color: "var(--status-success)" }}>
-                                    {visibleState.report.issues.length ? t("canvasA.artCritique.issueCount", { count: visibleState.report.issues.length }) : reportOptions.length ? t("canvasA.artCritique.optionCount", { count: reportOptions.length }) : t("canvasA.artCritique.noKeyIssues")}
+                                    {visibleState.report.issues.length
+                                        ? t("canvasA.artCritique.issueCount", { count: visibleState.report.issues.length })
+                                        : reportOptions.length
+                                          ? t("canvasA.artCritique.optionCount", { count: reportOptions.length })
+                                          : t("canvasA.artCritique.noKeyIssues")}
                                 </span>
                             ) : null}
                         </div>
@@ -344,7 +366,9 @@ export function AiArtCritiqueModal({ node, upstreamNodes, open, onClose, onUpdat
                             </div>
                             {visibleState.report?.issues.length ? (
                                 <span className="shrink-0 rounded-full px-2 py-1 text-[var(--fs-micro)] font-semibold" style={{ background: "color-mix(in oklch, var(--workspace-accent) 12%, transparent)", color: "var(--workspace-accent)" }}>
-                                    {view === "detail" && detailIssue && detailIndex >= 0 ? t("canvasA.artCritique.issuePosition", { index: detailIndex + 1, total: repairedIssues.length }) : t("canvasA.artCritique.issueCount", { count: visibleState.report.issues.length })}
+                                    {view === "detail" && detailIssue && detailIndex >= 0
+                                        ? t("canvasA.artCritique.issuePosition", { index: detailIndex + 1, total: repairedIssues.length })
+                                        : t("canvasA.artCritique.issueCount", { count: visibleState.report.issues.length })}
                                 </span>
                             ) : null}
                         </div>
@@ -352,8 +376,14 @@ export function AiArtCritiqueModal({ node, upstreamNodes, open, onClose, onUpdat
 
                     <aside className="min-h-0 flex-1 overflow-y-auto" data-canvas-wheel-scroll>
                         <div className="flex min-h-full flex-col gap-4 p-4">
-                            {payment.quote ? <CreativeQuoteCard quote={payment.quote} busy={payment.busy} onApprove={() => void approvalRef.current?.approve(payment.quote!.items.map((item) => item.id))} onRefresh={() => void approvalRef.current?.refresh()} /> : null}
-                            {payment.error ? <Callout tone="warning" title={t("canvasA.artCritique.paymentIncomplete")}>{payment.error}</Callout> : null}
+                            {payment.quote ? (
+                                <CreativeQuoteCard quote={payment.quote} busy={payment.busy} onApprove={() => void approvalRef.current?.approve(payment.quote!.items.map((item) => item.id))} onRefresh={() => void approvalRef.current?.refresh()} />
+                            ) : null}
+                            {payment.error ? (
+                                <Callout tone="warning" title={t("canvasA.artCritique.paymentIncomplete")}>
+                                    {payment.error}
+                                </Callout>
+                            ) : null}
                             {running || visibleState.status === "running" ? <ArtCritiqueProgress stage={progressStage} theme={theme} /> : null}
                             {draftReportVisible && visibleState.status === "running" && visibleState.report ? (
                                 <Callout tone="info" title={t("canvasA.artCritique.draftTitle")}>
@@ -467,7 +497,11 @@ export function AiArtCritiqueModal({ node, upstreamNodes, open, onClose, onUpdat
                                             {t("canvasA.artCritique.cancel")}
                                         </Button>
                                     ) : null}
-                                    {!running && state.billingRunId && state.status !== "completed" && !stale && state.lastRunModel === selectedCritiqueModel ? <Button size="small" disabled={!input || !enabled} onClick={() => void runReview(true)}>{t("canvasA.artCritique.resume")}</Button> : null}
+                                    {!running && state.billingRunId && state.status !== "completed" && !stale && state.lastRunModel === selectedCritiqueModel ? (
+                                        <Button size="small" disabled={!input || !enabled} onClick={() => void runReview(true)}>
+                                            {t("canvasA.artCritique.resume")}
+                                        </Button>
+                                    ) : null}
                                     <Button
                                         type="primary"
                                         size="small"

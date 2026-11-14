@@ -67,11 +67,10 @@ export const usePluginStore = create<PluginStore>()(
     ),
 );
 
-export function isPluginEffectivelyEnabled(pluginId: string, fallbackEnabled?: boolean) {
+export function isPluginEffectivelyEnabled(pluginId: string) {
     const state = usePluginStore.getState();
     const serverState = state.pluginStates[pluginId];
     if (serverState) return serverState.effectiveEnabled;
-    if (pluginId in state.runtimeStatuses) return state.runtimeStatuses[pluginId] === "enabled";
-    if (fallbackEnabled !== undefined) return fallbackEnabled;
-    return Boolean(state.installations.find((item) => item.manifest.id === pluginId)?.enabled);
+    // Local installation preferences cannot grant platform availability.
+    return state.runtimeStatuses[pluginId] === "enabled";
 }

@@ -169,7 +169,7 @@ func (s *Service) PluginsForUser(actor *model.User) ([]PluginView, error) {
 	}
 	filtered := make([]PluginView, 0, len(items))
 	for _, item := range items {
-		if item.Management.ActivationScope == PluginScopeUser {
+		if item.Management.Kind == PluginKindApplication {
 			filtered = append(filtered, item)
 		}
 	}

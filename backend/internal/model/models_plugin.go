@@ -12,8 +12,8 @@ type PluginPlatformState struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
-// UserPluginState stores one user's activation choice for an application
-// plugin. System-scoped protocol and uploaded plugins do not use this table.
+// UserPluginState retains historical activation choices. KIVAO uses the
+// administrator's platform state instead; existing rows remain for rollback.
 type UserPluginState struct {
 	ID        string    `json:"id" gorm:"primaryKey;size:36"`
 	UserID    string    `json:"userId" gorm:"size:36;index;uniqueIndex:idx_user_plugin_state_user_plugin,priority:1"`

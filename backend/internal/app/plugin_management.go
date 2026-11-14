@@ -61,31 +61,31 @@ type AdminPluginStateView struct {
 var officialApplicationPolicies = map[string]PluginManagementView{
 	WorkflowPluginRunningHub: {
 		Origin: PluginOriginOfficial, Kind: PluginKindApplication,
-		ActivationScope: PluginScopeUser, ConfigurationScope: PluginConfigurationUser,
+		ActivationScope: PluginScopeSystem, ConfigurationScope: PluginConfigurationUser,
 	},
 	PluginEagleAssetConnector: {
 		Origin: PluginOriginOfficial, Kind: PluginKindApplication,
-		ActivationScope: PluginScopeUser, ConfigurationScope: PluginConfigurationUser,
+		ActivationScope: PluginScopeSystem, ConfigurationScope: PluginConfigurationUser,
 	},
 	PluginPromptOptimizer: {
 		Origin: PluginOriginOfficial, Kind: PluginKindApplication,
-		ActivationScope: PluginScopeUser, ConfigurationScope: PluginConfigurationNone,
+		ActivationScope: PluginScopeSystem, ConfigurationScope: PluginConfigurationNone,
 	},
 	PluginPortraitClearance: {
 		Origin: PluginOriginOfficial, Kind: PluginKindApplication,
-		ActivationScope: PluginScopeUser, ConfigurationScope: PluginConfigurationNone,
+		ActivationScope: PluginScopeSystem, ConfigurationScope: PluginConfigurationNone,
 	},
 	PluginAIArtCritique: {
 		Origin: PluginOriginOfficial, Kind: PluginKindApplication,
-		ActivationScope: PluginScopeUser, ConfigurationScope: PluginConfigurationNone,
+		ActivationScope: PluginScopeSystem, ConfigurationScope: PluginConfigurationNone,
 	},
 	PluginMediaConversion: {
 		Origin: PluginOriginOfficial, Kind: PluginKindApplication,
-		ActivationScope: PluginScopeUser, ConfigurationScope: PluginConfigurationNone,
+		ActivationScope: PluginScopeSystem, ConfigurationScope: PluginConfigurationNone,
 	},
 	PluginUserFeedback: {
 		Origin: PluginOriginOfficial, Kind: PluginKindApplication,
-		ActivationScope: PluginScopeUser, ConfigurationScope: PluginConfigurationNone,
+		ActivationScope: PluginScopeSystem, ConfigurationScope: PluginConfigurationNone,
 	},
 }
 
@@ -196,7 +196,9 @@ func (s *Service) pluginStateForUser(actor *model.User, pluginID string, items [
 		return PluginStateView{}, fmt.Errorf("插件 %q 不存在", pluginID)
 	}
 	policy := pluginManagement(pluginID, source)
-	platformAvailable := policy.Kind == PluginKindApplication
+	// Keep the previously enabled built-in utilities available. Optional
+	// applications require an explicit administrator choice or enabled runtime.
+	platformAvailable := pluginID == PluginMediaConversion || pluginID == PluginUserFeedback
 	if hasRuntime && (policy.ActivationScope == PluginScopeSystem || s.repo == nil) {
 		platformAvailable = runtimePlugin.Status == "enabled"
 	}
@@ -247,7 +249,7 @@ func (s *Service) pluginStateForUser(actor *model.User, pluginID string, items [
 	if !platformAvailable {
 		state.BlockedReason = "管理员已停用该插件"
 	} else if policy.ActivationScope == PluginScopeSystem {
-		state.BlockedReason = "系统插件由管理员统一管理"
+		state.BlockedReason = "插件由管理员统一管理"
 	}
 	return state, nil
 }
@@ -267,7 +269,7 @@ func (s *Service) SetUserPluginEnabled(actor *model.User, pluginID string, enabl
 		source = runtimePlugin.Source
 	}
 	if pluginManagement(pluginID, source).ActivationScope != PluginScopeUser {
-		return PluginStateView{}, Forbidden("系统插件只能由管理员统一管理")
+		return PluginStateView{}, Forbidden("插件只能由管理员统一管理")
 	}
 	if !current.PlatformAvailable {
 		return PluginStateView{}, Forbidden("管理员已停用该插件")
@@ -318,14 +320,16 @@ func (s *Service) SetPluginPlatformAvailability(actor *model.User, pluginID stri
 	previousRuntimeEnabled := false
 	runtimeChanged := false
 	if policy.ActivationScope == PluginScopeSystem {
-		if !hasRuntime {
+		if !hasRuntime && policy.Kind != PluginKindApplication {
 			return AdminPluginStateView{}, fmt.Errorf("插件 %q 缺少运行时", pluginID)
 		}
-		previousRuntimeEnabled = runtimePlugin.Status == "enabled"
-		if _, err := s.SetPluginEnabled(pluginID, available); err != nil {
-			return AdminPluginStateView{}, err
+		if hasRuntime {
+			previousRuntimeEnabled = runtimePlugin.Status == "enabled"
+			if _, err := s.SetPluginEnabled(pluginID, available); err != nil {
+				return AdminPluginStateView{}, err
+			}
+			runtimeChanged = previousRuntimeEnabled != available
 		}
-		runtimeChanged = previousRuntimeEnabled != available
 	}
 	now := time.Now()
 	platformState := &model.PluginPlatformState{PluginID: pluginID, Available: available, UpdatedBy: actor.ID, CreatedAt: now, UpdatedAt: now}

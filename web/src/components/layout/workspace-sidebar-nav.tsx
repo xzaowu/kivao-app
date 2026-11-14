@@ -49,7 +49,6 @@ const COLLAPSED_TITLE_KEYS: Record<string, string> = {
     canvas: "nav.collapsed.canvas",
     assets: "nav.collapsed.assets",
     skills: "nav.collapsed.skills",
-    plugins: "nav.collapsed.plugins",
     tasks: "nav.collapsed.tasks",
 };
 
@@ -75,7 +74,6 @@ function buildNav(features: FeatureAvailability, t: TFunction): { groups: Worksp
                 ...(features.imageWorkbenchEnabled ? [{ id: "toolbox-image", title: t("nav.sidebar.toolboxImage"), icon: ImageIcon, to: "/toolbox/image" }] : []),
                 ...(features.videoWorkbenchEnabled ? [{ id: "toolbox-video", title: t("nav.sidebar.toolboxVideo"), icon: Video, to: "/toolbox/video" }] : []),
                 { ...toolItem("skills", "/skills", t), title: t("nav.sidebar.skills") },
-                ...(features.pluginCenterEnabled ? [{ ...toolItem("plugins", "/plugins", t), title: t("nav.sidebar.plugins") }] : []),
                 ...(features.taskCenterEnabled ? [{ id: "tasks", title: t("nav.sidebar.history"), icon: HistoryIcon, to: "/tasks" }] : []),
             ],
         },

@@ -126,7 +126,7 @@ export function CanvasNodePromptPanel({
     // 画布节点选几张等于拆几单，上限按账号同时任务数。
     const batchLimit = useGenerationBatchLimit();
     const promptOptimizerInstallation = usePluginStore((state) => state.installations.find((item) => item.manifest.id === PROMPT_OPTIMIZER_PLUGIN_ID));
-    const promptOptimizerEnabled = usePluginStore((state) => state.pluginStates[PROMPT_OPTIMIZER_PLUGIN_ID]?.effectiveEnabled ?? Boolean(state.installations.find((item) => item.manifest.id === PROMPT_OPTIMIZER_PLUGIN_ID)?.enabled));
+    const promptOptimizerEnabled = usePluginStore((state) => state.pluginStates[PROMPT_OPTIMIZER_PLUGIN_ID]?.effectiveEnabled === true);
     const simpleMode = workspaceMode === "simple";
     const mode = defaultMode(node.type);
     const showPromptTemplates = !simpleMode && mode !== "image";

@@ -24,7 +24,7 @@ const result = await Bun.build({
                         : path.endsWith("plugin-storage")
                           ? "export const pluginStorageFor = () => ({});"
                           : path.endsWith("use-plugin-store")
-                            ? "export const usePluginStore = { getState: () => globalThis.state }; export const isPluginEffectivelyEnabled = (id, fallback) => globalThis.state.pluginStates[id]?.effectiveEnabled ?? globalThis.state.installations.find(x => x.manifest.id === id)?.enabled ?? fallback ?? false;"
+                            ? "export const usePluginStore = { getState: () => globalThis.state }; export const isPluginEffectivelyEnabled = id => globalThis.state.pluginStates[id]?.effectiveEnabled ?? false;"
                             : path.endsWith("user-scope")
                               ? "export const getActiveUserScope = () => globalThis.scope;"
                               : "globalThis.runtimeLoads++; export const createEagleAssetSource = (_base, assertEnabled) => ({ list: async () => { assertEnabled(); globalThis.calls.push('list'); return []; }, uploadAssetToFolder: async () => { assertEnabled(); globalThis.calls.push('upload'); return {id:'external-id'}; } });",
@@ -68,6 +68,8 @@ test("Eagle metadata and disabled providers do not load the runtime or perform o
     expect(h.context.runtimeLoads).toBe(0);
     expect(h.context.calls).toEqual([]);
     h.installation.enabled = true;
+    await expect(provider.list!({})).rejects.toThrow("未启用");
+    h.context.state.pluginStates[h.installation.manifest.id] = { effectiveEnabled: true };
     await provider.list!({});
     expect(h.context.runtimeLoads).toBe(1);
     expect(h.context.calls).toEqual(["list"]);
@@ -78,7 +80,7 @@ test("Eagle metadata and disabled providers do not load the runtime or perform o
 
 test("automatic Eagle uploads require an explicit saved preference", async () => {
     const h = harness();
-    h.installation.enabled = true;
+    h.context.state.pluginStates[h.installation.manifest.id] = { effectiveEnabled: true };
     expect(h.api.eagleAssetPlugin.manifest.configuration?.fields.find((field) => field.name === "autoUploadGenerated")?.default).toBe(false);
     for (const value of [undefined, false, "false"]) {
         h.installation.config.autoUploadGenerated = value;
@@ -93,14 +95,14 @@ test("automatic Eagle uploads require an explicit saved preference", async () =>
         expect(h.installation.config.autoUploadGenerated).toBe(value);
     }
     expect(h.context.calls).toEqual(["upload", "upload"]);
-    h.installation.enabled = false;
+    h.context.state.pluginStates[h.installation.manifest.id] = { effectiveEnabled: false };
     expect((await h.api.uploadGeneratedAssetToConfiguredSources(h.asset)).uploaded).toHaveLength(0);
     expect(h.context.calls).toEqual(["upload", "upload"]);
 });
 
 test("a connector opened under another account cannot import or write", async () => {
     const h = harness();
-    h.installation.enabled = true;
+    h.context.state.pluginStates[h.installation.manifest.id] = { effectiveEnabled: true };
     const provider = h.api.createEagleAssetSource();
     h.context.scope = "other";
     await expect(provider.list!({})).rejects.toThrow("账号已切换");

@@ -67,8 +67,6 @@ const VideoWorkbenchPage = workspaceRoutePages.videoWorkbench;
 const NotFound = lazy(() => import("@/pages/not-found"));
 const SkillsPage = workspaceRoutePages.skills;
 const SkillWorkbenchPage = workspaceRoutePages.skillWorkbench;
-const PluginsPage = workspaceRoutePages.plugins;
-const EagleLibraryPage = workspaceRoutePages.eagleLibrary;
 const TasksPage = workspaceRoutePages.tasks;
 const ProjectsPage = workspaceRoutePages.projects;
 const ProjectDetailPage = workspaceRoutePages.projectDetail;
@@ -168,22 +166,6 @@ export const router = createBrowserRouter([
             { path: "/assets", element: <RequireAuth>{deferred(<AssetsPage />)}</RequireAuth> },
             { path: "/skills", element: <RequireAuth>{deferred(<SkillsPage />)}</RequireAuth> },
             { path: "/skills/:skillId/edit", element: <RequireAuth>{deferred(<SkillWorkbenchPage />)}</RequireAuth> },
-            {
-                path: "/plugins",
-                element: (
-                    <RequireAuth>
-                        <RequireFeature feature="pluginCenterEnabled">{deferred(<PluginsPage />)}</RequireFeature>
-                    </RequireAuth>
-                ),
-            },
-            {
-                path: "/plugins/eagle",
-                element: (
-                    <RequireAuth>
-                        <RequireFeature feature="pluginCenterEnabled">{deferred(<EagleLibraryPage />)}</RequireFeature>
-                    </RequireAuth>
-                ),
-            },
             {
                 path: "/wallet",
                 element: <RequireAuth>{null}</RequireAuth>,
