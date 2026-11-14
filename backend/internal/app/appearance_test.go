@@ -57,6 +57,20 @@ func TestAppearanceDefaultsPreserveBuiltInBrand(t *testing.T) {
 	}
 }
 
+func TestKivaoAppearanceDefaults(t *testing.T) {
+	svc, _, _, _ := newAppearanceTestService(t)
+	appearance, err := svc.Appearance()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if appearance.BrandName != "KIVAO" || appearance.BrandSlug != "kivao" || appearance.LogoURL != "/kivao-mark.png" || appearance.DarkLogoURL != "/kivao-mark.png" || appearance.Canvas.AgentName != "KIVAO" || appearance.SEOTitle != "KIVAO" {
+		t.Fatal("default public identity must use KIVAO")
+	}
+	if appearance.Configured || appearance.LogoConfigured {
+		t.Fatal("bundled branding must not be treated as a saved custom appearance")
+	}
+}
+
 func TestAppearanceAddsBundledSkinsToLegacyLibrary(t *testing.T) {
 	svc, db, _, admin := newAppearanceTestService(t)
 	installed := appearanceThemePackSkins[0]

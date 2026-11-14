@@ -1,6 +1,5 @@
 import { useId } from "react";
 import { useTranslation } from "react-i18next";
-import { useSearchParams } from "react-router";
 
 import { useAuthSettings } from "@/hooks/use-auth-entry";
 import type { AuthView } from "@/lib/auth-entry";
@@ -19,16 +18,16 @@ export type AuthPanelProps = {
     onAuthenticated: () => void;
     /** page：独立登录页里的卡片；dialog：登录弹窗右侧，由弹窗提供外壳。 */
     variant: "page" | "dialog";
+    /** 微信回跳补全注册仅由独立路由启用；全局弹窗不依赖路由上下文。 */
+    wechatRegistration?: boolean;
 };
 
 /** 登录注册一体表单与找回密码的共用面板。导航方式由外层决定：独立页面改路由，弹窗只切换视图。 */
-export function AuthPanel({ view, onViewChange, next, onAuthenticated, variant }: AuthPanelProps) {
+export function AuthPanel({ view, onViewChange, next, onAuthenticated, variant, wechatRegistration = false }: AuthPanelProps) {
     const { t } = useTranslation();
     const titleId = useId();
     const brand = useAppearanceStore((state) => state.appearance.brandName) || t("auth.register.platform");
     const { settings, failed, reload } = useAuthSettings();
-    const [params] = useSearchParams();
-    const wechatRegistration = params.get("wechat_register") === "1";
     // 登录与注册是同一个表单；/register 仍保留给推广链接，打开的也是一体表单。
     const themeLoginTitle = useThemePack()?.copy?.loginTitle;
     const title = wechatRegistration ? t("auth.wechat.completeTitle", { defaultValue: "完成微信注册" }) : view === "recovery" ? t("auth.panel.recoveryTitle") : themeLoginTitle || t("auth.panel.loginTitle", { brand });
