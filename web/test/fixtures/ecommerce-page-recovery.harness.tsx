@@ -614,6 +614,57 @@ describe("真实电商页面生命周期", () => {
         expect(paidSubmissions).toHaveLength(1);
     });
 
+    test("风格任务早于回执保存完成时，成功结果和选择弹窗不被旧状态覆盖", async () => {
+        draft.instruction = "为真实商品推荐四个视觉方向";
+        await sessions.writeEcommerceWorkspace(scope, { sessionId: crypto.randomUUID(), draft, plan: null, project: null, creationMode: "ai", autoGenerate: false });
+        const persistWorkspace = sessions.writeEcommerceWorkspace;
+        let releaseCheckpoint!: () => void;
+        const checkpoint = new Promise<void>((resolve) => {
+            releaseCheckpoint = resolve;
+        });
+        spyOn(sessions, "writeEcommerceWorkspace").mockImplementation(async (owner, snapshot) => {
+            const pending = persistWorkspace(owner, snapshot);
+            if (snapshot.draft.directionsTaskId) await checkpoint;
+            await pending;
+        });
+        const response = {
+            recommendationId: "instant-recommendation",
+            directions: Array.from({ length: 4 }, (_, index) => ({ id: `instant-${index}`, name: `即时风格${index}`, summary: "真实商品的视觉方向", tags: [] })),
+            evidence: [],
+            retrievalStatus: "ready",
+            productCategory: "商品",
+        };
+        spyOn(taskApi, "createGenerationTask").mockImplementation(async (input) => {
+            paidSubmissions.push(input);
+            const task = { ...runningTask("instant-directions"), status: "succeeded" as const, inputJson: JSON.stringify({ metadata: (input as unknown as { metadata: unknown }).metadata }), resultJson: JSON.stringify({ text: JSON.stringify(response) }) };
+            tasks.set(task.id, task);
+            return { ...task, status: "queued" as const, resultJson: "" };
+        });
+        await render();
+        try {
+            await act(async () => {
+                host.querySelector<HTMLButtonElement>(".ecs-submit")!.click();
+            });
+            const confirm = Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.trim().startsWith("确认并"))!;
+            await act(async () => {
+                confirm.click();
+            });
+            expect(host.textContent).toContain("即时风格0");
+            expect(document.querySelector(".commerce-style-picker-modal")).not.toBeNull();
+            await act(async () => {
+                releaseCheckpoint();
+            });
+            expect(document.querySelector(".commerce-style-picker-modal")).not.toBeNull();
+            expect(host.querySelector(".ecs-submit")?.getAttribute("aria-busy")).toBe("false");
+            expect(host.querySelector(".commerce-assistant-status")?.textContent).not.toContain("正在分析");
+            expect(paidSubmissions).toHaveLength(1);
+        } finally {
+            await act(async () => {
+                releaseCheckpoint();
+            });
+        }
+    });
+
     test("首张图片完成后恢复发送箭头，修改商品需求可开启新一轮创作", async () => {
         const first = {
             id: "first-image",

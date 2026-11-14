@@ -54,21 +54,6 @@ export function CommerceMarketPicker({
                     </button>
                 </header>
                 <div className="commerce-market-body" data-canvas-wheel-scroll>
-                    {groups.map(([group, title]) => (
-                        <section key={group} className="commerce-market-group">
-                            <h3>{title}</h3>
-                            <div className="commerce-market-grid">
-                                {commercePlatformGroups[group].map((id) => (
-                                    <button type="button" key={id} className={platform === id ? "is-selected" : ""} aria-pressed={platform === id} title={labelOf(platforms, id)} onClick={() => onPlatform(id)}>
-                                        <span className="commerce-market-logo" aria-hidden="true">
-                                            <PlatformMark platform={id} />
-                                        </span>
-                                        <span className="commerce-market-name">{labelOf(platforms, id)}</span>
-                                    </button>
-                                ))}
-                            </div>
-                        </section>
-                    ))}
                     <div className="commerce-market-fields">
                         <div className="commerce-market-field">
                             <h3>输出语言</h3>
@@ -103,6 +88,21 @@ export function CommerceMarketPicker({
                             ))}
                         </div>
                     ) : null}
+                    {groups.map(([group, title]) => (
+                        <section key={group} className="commerce-market-group">
+                            <h3>{title}</h3>
+                            <div className="commerce-market-grid">
+                                {commercePlatformGroups[group].map((id) => (
+                                    <button type="button" key={id} className={platform === id ? "is-selected" : ""} aria-pressed={platform === id} title={labelOf(platforms, id)} onClick={() => onPlatform(id)}>
+                                        <span className="commerce-market-logo" aria-hidden="true">
+                                            <PlatformMark platform={id} />
+                                        </span>
+                                        <span className="commerce-market-name">{labelOf(platforms, id)}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        </section>
+                    ))}
                     {knowledge ? (
                         <details className="commerce-market-rules" aria-label="所选平台图片规则">
                             <summary>{labelOf(platforms, platform)} 的图片与内容要求</summary>

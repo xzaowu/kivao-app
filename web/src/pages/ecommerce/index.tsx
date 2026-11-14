@@ -1171,6 +1171,12 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
             });
             if (getActiveUserScope() !== scope) throw new Error("登录账号已切换，已停止提交");
             const task = await createGenerationTask(input);
+            // 缓存发布回执后即可收到终态，先建立展示意图，避免保存回调覆盖成功状态。
+            if (isCurrent(owner)) {
+                stylePickerPendingRef.current = !followup;
+                setDirectionsTask(task);
+                setStage("正在分析商品并推荐风格，切换页面后任务会继续");
+            }
             const nextDraft = { ...snapshot, directionsTaskId: task.id };
             setEcommerceDirectionsReceipt(scope, destination.id, task.id);
             if (!followup) sessionStorage.setItem(`ecommerce-composer-submitted:${scope}:${destination.id}`, composerFingerprint(snapshot));
@@ -1191,12 +1197,9 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
             await save(nextDraft, existingPlan, owner);
             if (isCurrent(owner)) {
                 setPlan(existingPlan);
-                stylePickerPendingRef.current = !followup;
                 setDraft(nextDraft);
                 setChosenDirection(null);
-                setDirectionsTask(task);
                 if (!followup) clearSubmittedComposer(snapshot);
-                setStage("正在分析商品并推荐风格，切换页面后任务会继续");
             }
         } catch (cause) {
             if (isCurrent(owner)) {
