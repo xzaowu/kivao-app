@@ -134,7 +134,7 @@ go run ./cmd/kivao-import \
 
 迁入工具复核后，重新使用全新的本地 PG17 内存数据库运行合成测试：47 项通过；依赖真实历史插件包的专项沿用上述本地验收，未将私有夹具发送至 CI。测试数据库和容器已清理，不使用日常开发库或新生产备份。
 
-尚待：自有发布机制适配、准确发布 SHA 的 CI 与 GHCR digest、生产预拉与容量复核、功能开放／新支付人工配置，以及最终维护窗口备份和切换授权。当前上游 `publish-images.yml` 的所有执行 job 仍限定官方仓库，不会为 KIVAO 发布；不能直接套用上游 `v*`／latest。若后续发布提交变化，必须按新 SHA 构建和验证，不把本次本地 Image ID 当 Registry Digest。
+自有发布机制的本地准备见第七节。尚待：推送前完整验证、准确发布 SHA 的远端 CI 与 GHCR digest、生产预拉与容量复核、功能开放／新支付人工配置，以及最终维护窗口备份和切换授权。当前上游 `publish-images.yml` 的所有执行 job 仍限定官方仓库，不会为 KIVAO 发布；不能直接套用上游 `v*`／latest。若后续发布提交变化，必须按新 SHA 构建和验证，不把本次本地 Image ID 当 Registry Digest。
 
 真实提供商调用与支付没有验收。在线数据库快照及稳定密钥／插件只证明本次选择范围的一致性，不承诺媒体或 Redis 与数据库在同一时点，也不是最终停写备份。
 
@@ -146,3 +146,36 @@ go run ./cmd/kivao-import \
 - 正式授权后顺序：重新核对版本／容量／任务／资金 → 关写入口并停止旧应用写入 → 一套最终一致性备份 → 以同一快照选择性导入新库及最小文件 → 核验账号／权益／模型／密钥 → 切新库／新 data／隔离 Redis 与三镜像 → 业务验收 → 开放入口。当前不提供可直接对生产执行的命令。
 - 开放入口前失败：停止新版，恢复旧 DB／data／web／Redis 配置和上述旧三镜像；原库未迁移，不需要 Schema 降级。开放后有新写入则先停写、对账并保留新库，不能直接回切丢失新订单或作品。
 - 不升级 PG／Redis，不修改 Nginx／DNS，不删除生产数据。当前为 **本地候选镜像、真实副本运行与隔离切回通过 / PRODUCTION CUTOVER NOT AUTHORIZED**；尚未发布新镜像或获得最终维护窗口备份与正式切换授权。
+
+## 7. 新基线发布流程准备
+
+本轮只在专用开发分支准备流程和保存本地提交，没有推送分支／标签、设置授权变量或发布镜像。应用代码冻结在 `8eb3c995e02fc9bd0f0af5bd00fb96cd1e5bf24d`；后续提交仅包含离线迁入工具、测试、发布文件及对应文档。`.github/kivao-rebaseline.json` 固定产品与上游祖先、Schema、平台和当前生产回滚镜像。脚本拒绝产品范围外文件及冻结点之后的 merge；后续若要开发功能，应另行更新候选范围，不能靠修改检查结果放行。
+
+### 候选 CI 与版本
+
+- `.github/workflows/kivao-rebaseline-ci.yml` 仅监听 `dev/kivao-upstream-baseline-3979305c` 的 push，调用当前提交的 `quality.yml`，覆盖完整 Web／Backend／Agent 检查；额外使用 PG17 跑合成迁入用例。历史真实插件夹具仅在本地保留，CI 明确报告该项不重复，其余迁入测试跳过即失败。
+- 从实际候选 SHA 的 `git archive` 导出干净构建上下文，构建三个 `linux/amd64` 镜像。核验 OCI source／revision／version、自有发布版本、Web／Backend 内嵌提交，以及 Agent 实际源文件和依赖锁 hash。Agent Dockerfile 不嵌入 `BUILD_COMMIT`，因此不把空构建参数冒称为二进制版本证明。
+- CI 权限只有 `contents: read`，无 GHCR 登录、推送或部署步骤。报告 Artifact `kivao-rebaseline-ci-report` 只含源码／镜像身份与结果，不包含镜像归档、业务数据、恢复材料、截图或凭据。
+- 拟使用专用版本 `kivao-rebaseline-<实际提交前12位>-r1`；应用自身 `VERSION` 仍是上游 `v1.8.5`，两者分开记录。不是复用旧定制 1.0.x，也不创建 `v*` 或 `latest`。版本和完整 SHA 须在将来发布授权中明确，本轮没有创建标签。
+- 三个仓库仍是 `ghcr.io/xzaowu/kivao-app-web`、`kivao-app-backend`、`kivao-app-agent`。旧生产版本、标签、镜像及备份均不覆盖。
+
+### 沿用所有者人工授权
+
+`.github/workflows/kivao-rebaseline-publish.yml` 沿用旧版受审查的所有者授权方式，不新增 Environment，也不声称具备独立审核人。新变量名隔离旧版本授权，缺失即禁止发布：
+
+- 所有者明确授权后才设置 `KIVAO_REBASELINE_PUBLISH_ENABLED=true` 及 `KIVAO_REBASELINE_PUBLISH_APPROVAL`。记录包含 `decision=IMAGE_PUBLISH_APPROVED`、`approved_by=xzaowu`、完整 `sha`、唯一 `release`、整数 `ci_run_id`、`authorization_ref`、带时区的 `approved_at`／`expires_at`；有效期最多 24 小时。
+- 只接受所有者身份推送、第一次运行的专用注解标签；提交必须准确匹配。验证授权的 CI run 属于本仓库、专用分支、push 事件、同一 SHA／CI 文件并成功完成，再读取该 run 的完整报告。任何新提交都必须重新跑 CI；发布失败不通过重跑覆盖同名修订。
+- Actions 的读包权限先读取已知生产 rollback digest，证明包访问有效，再以准确 `404 MANIFEST_UNKNOWN` 判断三个版本均不存在；未授权、网络错误、包不可读或已有修订均停止。普通 GitHub CLI 的仓库权限不等于 GHCR 或 Actions 包权限。
+- 获准的发布 job 才申请 `packages: write`。先构建并验证全部三镜像，再逐个重新检查授权有效期和版本不存在，推送、读取 Registry Digest、按 digest 回拉，核对架构、实际镜像 ID 和源码身份。任何失败停止剩余步骤，保留已成功部分的报告；后续需新修订，不能覆盖。
+- 所有者必须在一次发布操作的 `finally`／shell `trap` 中，无论成功、失败、取消，都将开关恢复为 false、删除临时授权记录，并通过 API 复核。`GITHUB_TOKEN` 不能修改仓库变量，工作流只提示清理，不能冒称自动完成。撤销进行中授权还需取消当前 run；仅改变量不保证已启动 job 的环境立即刷新。
+- 安全边界是单人所有者确认，不是双人独立审批。仓库管理员仍可改 workflow／变量或使用其他凭据直接写 Registry；当前没有新建或声称存在标签 ruleset、不可变 Registry 策略或受保护 Environment。防重复依靠本流程与固定 digest，不能防止流程外管理员覆盖。
+
+只读确认仓库仍为 Private，本地 GitHub 身份具有仓库管理／推送权限；旧 `KIVAO_101_PUBLISH_ENABLED` 为 false，新版开关与授权记录均不存在。没有读取或输出令牌，也未改远端变量。本轮未重新验证 Actions 的包写权限或候选版本不存在；这些仍是正式发布的强制前置检查。
+
+### 成对锁与本轮验证边界
+
+发布三镜像全部回拉通过后，脚本才生成 `release-images.env`、`rollback-images.env`、`image-locks.json`。release 使用新 Registry Digest，rollback 固定第五节已验收的当前 KIVAO 1.0.5 三 digest。元数据明确 `agent_init_required=true`、Schema 104／79、独立 DB／data／Redis、`image_only_cutover_allowed=false`；不提供自动套用到生产的脚本。新版本不能接旧库直接启动，旧镜像也不能接新库回退。
+
+本轮通过 7 组离线发布门禁测试（含错误身份、SHA、版本、过期／超期、缺失 CI、架构、伪缺包结果及不完整锁），两份 workflow 经 actionlint v1.7.7 检查通过，Go 新文件 gofmt 检查通过。另有上述 PG17 合成回归。完整推送前验证、远端 CI、此轮最终 SHA 三镜像构建／发布尚未执行；此前 `8eb3c995` 本地镜像证据不能冒充新提交已构建。
+
+下一步先按 `AGENTS.md` 对待推送提交执行完整 `verify-before-push.mjs`，通过后推送专用开发分支并核对该 SHA 的 CI。镜像发布与最终生产切换分别等待对应明确授权；生产现有目录、容器和备份本轮保持原状。

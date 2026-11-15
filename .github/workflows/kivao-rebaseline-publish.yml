@@ -1,0 +1,145 @@
+name: KIVAO rebaseline publish
+
+on:
+  push:
+    tags: ['kivao-rebaseline-*-r*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kivao-rebaseline-publish
+  cancel-in-progress: false
+
+jobs:
+  authorize:
+    if: github.repository == 'xzaowu/kivao-app'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require owner approval bound to exact SHA, CI and expiry
+        id: approval
+        env:
+          KIVAO_REBASELINE_PUBLISH_ENABLED: ${{ vars.KIVAO_REBASELINE_PUBLISH_ENABLED }}
+          KIVAO_REBASELINE_PUBLISH_APPROVAL: ${{ vars.KIVAO_REBASELINE_PUBLISH_APPROVAL }}
+        run: |
+          python3 scripts/kivao-rebaseline-release.py authorize --sha "$GITHUB_SHA" \
+            --release "$GITHUB_REF_NAME" --output "$RUNNER_TEMP/approval.json"
+          test "$(git cat-file -t "refs/tags/$GITHUB_REF_NAME")" = tag
+          test "$(git rev-parse "refs/tags/$GITHUB_REF_NAME^{commit}")" = "$GITHUB_SHA"
+          python3 scripts/kivao-rebaseline-release.py source --sha "$GITHUB_SHA" \
+            --release "$GITHUB_REF_NAME" --output "$RUNNER_TEMP/source.json"
+      - name: Verify the approved CI run and its artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_RUN: ${{ steps.approval.outputs.ci_run_id }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CI_RUN" > "$RUNNER_TEMP/ci-run.json"
+          python3 scripts/kivao-rebaseline-release.py check-ci-run --sha "$GITHUB_SHA" \
+            --run-id "$CI_RUN" --report "$RUNNER_TEMP/ci-run.json" --output "$RUNNER_TEMP/ci-identity.json"
+          gh run download "$CI_RUN" --repo "$GITHUB_REPOSITORY" --name kivao-rebaseline-ci-report --dir "$RUNNER_TEMP/ci"
+          python3 scripts/kivao-rebaseline-release.py check-ci --sha "$GITHUB_SHA" \
+            --report "$RUNNER_TEMP/ci/ci-report.json" --output "$RUNNER_TEMP/ci-verified.json"
+      - name: Prove read access and absence of all three target revisions
+        env:
+          GHCR_READ_USER: ${{ github.actor }}
+          GHCR_READ_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/kivao-rebaseline-release.py registry-preflight --sha "$GITHUB_SHA" \
+            --release "$GITHUB_REF_NAME" --output "$RUNNER_TEMP/registry-before.json"
+
+  publish:
+    needs: authorize
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+    env:
+      KIVAO_REBASELINE_PUBLISH_ENABLED: ${{ vars.KIVAO_REBASELINE_PUBLISH_ENABLED }}
+      KIVAO_REBASELINE_PUBLISH_APPROVAL: ${{ vars.KIVAO_REBASELINE_PUBLISH_APPROVAL }}
+      GHCR_READ_USER: ${{ github.actor }}
+      GHCR_READ_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@v3
+      - id: source
+        run: |
+          python3 scripts/kivao-rebaseline-release.py authorize --sha "$GITHUB_SHA" --release "$GITHUB_REF_NAME" --output "$RUNNER_TEMP/approval.json"
+          python3 scripts/kivao-rebaseline-release.py source --sha "$GITHUB_SHA" --release "$GITHUB_REF_NAME" --output "$RUNNER_TEMP/source.json"
+          python3 scripts/kivao-rebaseline-release.py registry-preflight --sha "$GITHUB_SHA" --release "$GITHUB_REF_NAME" --output "$RUNNER_TEMP/registry-before.json"
+          mkdir "$RUNNER_TEMP/context" "$RUNNER_TEMP/built" "$RUNNER_TEMP/published"
+          git archive "$GITHUB_SHA" | tar -x -C "$RUNNER_TEMP/context"
+      - name: Build and verify all images before any push
+        env:
+          VERSION: ${{ steps.source.outputs.version }}
+          BUILD_TIME: ${{ steps.source.outputs.time }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for role in web backend agent; do
+            case "$role" in web) file=Dockerfile ;; backend) file=backend/Dockerfile ;; agent) file=yingce-agent/Dockerfile ;; esac
+            image="ghcr.io/$GITHUB_REPOSITORY-$role:$GITHUB_REF_NAME"
+            docker buildx build --platform linux/amd64 --load --provenance=false \
+              --file "$RUNNER_TEMP/context/$file" --tag "$image" \
+              --build-arg "BUILD_COMMIT=$GITHUB_SHA" --build-arg "BUILD_VERSION=$VERSION" --build-arg "BUILD_TIME=$BUILD_TIME" \
+              --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+              --label "org.opencontainers.image.revision=$GITHUB_SHA" --label "org.opencontainers.image.version=$VERSION" \
+              --label "io.kivao.release=$GITHUB_REF_NAME" "$RUNNER_TEMP/context"
+            python3 scripts/kivao-rebaseline-release.py verify-image --sha "$GITHUB_SHA" --release "$GITHUB_REF_NAME" \
+              --role "$role" --image "$image" --output "$RUNNER_TEMP/built/image-$role.json"
+          done
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Publish sequentially and verify registry pulls; never overwrite a revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          for role in web backend agent; do
+            python3 scripts/kivao-rebaseline-release.py authorize --sha "$GITHUB_SHA" --release "$GITHUB_REF_NAME" --output "$RUNNER_TEMP/approval.json"
+            python3 scripts/kivao-rebaseline-release.py registry-preflight --sha "$GITHUB_SHA" --release "$GITHUB_REF_NAME" \
+              --role "$role" --output "$RUNNER_TEMP/registry-$role.json"
+            image="ghcr.io/$GITHUB_REPOSITORY-$role:$GITHUB_REF_NAME"
+            before=$(docker image inspect --format '{{.Id}}' "$image")
+            docker push "$image"
+            digest=$(docker buildx imagetools inspect "$image" --format '{{.Manifest.Digest}}')
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+            ref="ghcr.io/$GITHUB_REPOSITORY-$role@$digest"
+            docker pull --platform linux/amd64 "$ref"
+            test "$(docker image inspect --format '{{.Id}}' "$ref")" = "$before"
+            python3 scripts/kivao-rebaseline-release.py verify-image --sha "$GITHUB_SHA" --release "$GITHUB_REF_NAME" \
+              --role "$role" --image "$ref" --registry-digest "$digest" --output "$RUNNER_TEMP/published/image-$role.json"
+          done
+      - name: Generate release and rollback locks
+        run: |
+          python3 scripts/kivao-rebaseline-release.py locks --sha "$GITHUB_SHA" \
+            --directory "$RUNNER_TEMP/published" --output "$RUNNER_TEMP/locks"
+      - name: Keep metadata even if publication is partial
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kivao-rebaseline-publication-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/built/*.json
+            ${{ runner.temp }}/published/*.json
+            ${{ runner.temp }}/locks/*
+          if-no-files-found: ignore
+          retention-days: 90
+      - name: Owner must close the one-time authorization
+        if: always()
+        run: |
+          echo 'Owner: set KIVAO_REBASELINE_PUBLISH_ENABLED=false and delete KIVAO_REBASELINE_PUBLISH_APPROVAL after success, failure or cancellation.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'GITHUB_TOKEN cannot edit repository variables. This run does not claim that cleanup has occurred.' >> "$GITHUB_STEP_SUMMARY"

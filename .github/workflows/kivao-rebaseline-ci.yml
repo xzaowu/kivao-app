@@ -1,0 +1,170 @@
+name: KIVAO rebaseline candidate
+
+on:
+  push:
+    branches: [dev/kivao-upstream-baseline-3979305c]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kivao-rebaseline-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source:
+    if: github.repository == 'xzaowu/kivao-app'
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.source.outputs.version }}
+      time: ${{ steps.source.outputs.time }}
+      release: ${{ steps.source.outputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: python3 -B scripts/test_kivao_rebaseline_release.py
+      - id: source
+        run: python3 scripts/kivao-rebaseline-release.py source --sha "$GITHUB_SHA" --output "$RUNNER_TEMP/source.json"
+
+  quality:
+    needs: source
+    uses: ./.github/workflows/quality.yml
+
+  import:
+    needs: source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: synthetic_ci_only
+          POSTGRES_DB: kivao_rehearsal_ci
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      KIVAO_IMPORT_TEST_DSN: postgres://postgres:synthetic_ci_only@127.0.0.1:5432/kivao_rehearsal_ci?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: Synthetic PG17 import and CLI checks
+        working-directory: backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          go test -json -count=1 -timeout=10m ./cmd/kivao-import ./internal/database -run Kivao > "$RUNNER_TEMP/import-tests.jsonl"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          rows = [json.loads(s) for s in Path(os.environ['RUNNER_TEMP'], 'import-tests.jsonl').read_text().splitlines()]
+          passed = [r['Test'] for r in rows if r.get('Action') == 'pass' and r.get('Test')]
+          assert any('Postgres' in t for t in passed), 'PG17 importer was not exercised'
+          skipped = {r['Test'] for r in rows if r.get('Action') == 'skip' and r.get('Test')}
+          assert skipped <= {'TestKivaoImportHistoricalPluginCopy'}, 'Unexpected skipped import tests'
+          print('Synthetic import checks passed:', len(passed))
+          print('Private historical plugin fixture stays local:', sorted(skipped))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kivao-import-synthetic-tests
+          path: ${{ runner.temp }}/import-tests.jsonl
+          retention-days: 14
+
+  images:
+    needs: source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - role: web
+            file: Dockerfile
+          - role: backend
+            file: backend/Dockerfile
+          - role: agent
+            file: yingce-agent/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@v3
+      - name: Export only committed sources
+        run: |
+          mkdir "$RUNNER_TEMP/context"
+          git archive "$GITHUB_SHA" | tar -x -C "$RUNNER_TEMP/context"
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ runner.temp }}/context
+          file: ${{ runner.temp }}/context/${{ matrix.file }}
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: kivao-ci-${{ matrix.role }}:${{ github.sha }}
+          provenance: false
+          build-args: |
+            BUILD_COMMIT=${{ github.sha }}
+            BUILD_VERSION=${{ needs.source.outputs.version }}
+            BUILD_TIME=${{ needs.source.outputs.time }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/xzaowu/kivao-app
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ needs.source.outputs.version }}
+            io.kivao.release=${{ needs.source.outputs.release }}
+          cache-from: type=gha,scope=kivao-rebaseline-${{ matrix.role }}
+          cache-to: type=gha,mode=max,scope=kivao-rebaseline-${{ matrix.role }}
+      - name: Verify actual image identity without application startup
+        env:
+          ROLE: ${{ matrix.role }}
+        run: |
+          python3 scripts/kivao-rebaseline-release.py verify-image --sha "$GITHUB_SHA" \
+            --role "$ROLE" --image "kivao-ci-$ROLE:$GITHUB_SHA" --output "$RUNNER_TEMP/image-$ROLE.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kivao-rebaseline-image-${{ matrix.role }}
+          path: ${{ runner.temp }}/image-${{ matrix.role }}.json
+          retention-days: 30
+
+  report:
+    needs: [source, quality, import, images]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Require all candidate jobs
+        env:
+          SOURCE: ${{ needs.source.result }}
+          QUALITY: ${{ needs.quality.result }}
+          IMPORT: ${{ needs.import.result }}
+          IMAGES: ${{ needs.images.result }}
+        run: test "$SOURCE/$QUALITY/$IMPORT/$IMAGES" = success/success/success/success
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: kivao-rebaseline-image-*
+          path: ${{ runner.temp }}/images
+          merge-multiple: true
+      - name: Produce machine-readable candidate evidence
+        env:
+          QUALITY_RESULT: ${{ needs.quality.result }}
+          IMPORT_RESULT: ${{ needs.import.result }}
+        run: |
+          python3 scripts/kivao-rebaseline-release.py summary --sha "$GITHUB_SHA" \
+            --directory "$RUNNER_TEMP/images" --output "$RUNNER_TEMP/ci-report.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kivao-rebaseline-ci-report
+          path: ${{ runner.temp }}/ci-report.json
+          retention-days: 30
