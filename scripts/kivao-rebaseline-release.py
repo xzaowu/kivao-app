@@ -31,6 +31,7 @@ PREPARATION = {
     'backend/cmd/kivao-import/main.go', 'backend/cmd/kivao-import/main_test.go',
     'backend/internal/database/kivao_import.go', 'backend/internal/database/kivao_import_files.go',
     'backend/internal/database/kivao_import_test.go', 'backend/internal/app/kivao_import_plugins_test.go',
+    'backend/internal/repository/cloud_agent_lifecycle_race_test.go',
     'docs/plans/kivao-production-upgrade.md', 'docs/content/docs/backend/backend-database.mdx',
     'docs/content/docs/progress/pending-test.mdx',
 }

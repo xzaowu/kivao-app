@@ -177,8 +177,10 @@ func TestEnsureCloudAgentDoesNotMutateExistingCheckpoint(t *testing.T) {
 func TestCloudAgentAdmissionAndCanvasDeletionAcrossConnections(t *testing.T) {
 	for _, driver := range []string{"sqlite", "postgres"} {
 		t.Run(driver, func(t *testing.T) {
-			admission, deletion := agentLifecycleRepositories(t, driver)
 			for index := 0; index < 8; index++ {
+				// Earlier admission winners must not consume the account quota of
+				// this independent canvas-deletion race.
+				admission, deletion := agentLifecycleRepositories(t, driver)
 				canvasID := fmt.Sprintf("canvas-%d", index)
 				runID := fmt.Sprintf("run-%d", index)
 				if err := admission.db.Create(&model.CanvasProject{ID: canvasID, UserID: "user", Revision: 1, PayloadJSON: `{"nodes":[]}`}).Error; err != nil {
