@@ -153,16 +153,7 @@ export function CanvasNodeLayerDecompositionDialog({
                     <Input.TextArea aria-label="拆层要求" rows={5} value={prompt} placeholder="描述需要拆分的内容" onChange={(event) => setPrompt(event.target.value)} />
                     <div className="space-y-2">
                         <div className="text-sm font-medium opacity-75">视觉规划模型</div>
-                        <ModelPicker
-                            config={config}
-                            value={plannerModel}
-                            capability="text"
-                            fullWidth
-                            showSelectedPrice
-                            placeholder="选择视觉规划模型"
-                            modelFilter={(model) => !imageLayerPlannerError(config, model)}
-                            onChange={setPlannerModel}
-                        />
+                        <ModelPicker config={config} value={plannerModel} capability="text" fullWidth showSelectedPrice placeholder="选择视觉规划模型" modelFilter={(model) => !imageLayerPlannerError(config, model)} onChange={setPlannerModel} />
                         {plannerError ? (
                             <p role="alert" className="text-xs text-red-500">
                                 {plannerError}

@@ -36,7 +36,12 @@ describe("creation library button", () => {
         expect(dockSource).not.toContain('aria-label="从本机上传附件"');
         expect(source).toContain("onClick={props.onOpenLibrary}");
         expect(source).toContain("creation-reference-add-button");
-        expect(compactSource(source)).toContain('showSelectedPrice={false} showOptionPrices variant="creation"');
+        const modelPicker = source.match(/<ModelPicker\b[\s\S]*?\/>/g)?.find((component) => component.includes('className="creation-model-picker"'));
+        expect(modelPicker).toBeDefined();
+        expect(modelPicker).toContain("showSelectedPrice={false}");
+        expect(modelPicker).toMatch(/\bshowOptionPrices\s/);
+        expect(modelPicker).toMatch(/\bfullWidth\s/);
+        expect(modelPicker).toContain('variant="creation"');
         expect(source).toContain("creation-submit-cost");
     });
 

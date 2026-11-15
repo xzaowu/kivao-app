@@ -1,4 +1,4 @@
-import { afterAll, expect, test } from "bun:test";
+import { afterAll, beforeEach, expect, test } from "bun:test";
 import { Window } from "happy-dom";
 
 const dom = new Window({ url: "http://localhost/" });
@@ -29,6 +29,8 @@ const { defaultImageCapabilityConfig } = await import("../../src/lib/model-capab
 const { imagePresetForRatio, imageSizeConfigWithPresets } = await import("../../src/lib/image-size-presets");
 const { imageParameterRequest, projectImageParameters } = await import("../../src/lib/image-parameters");
 const { createModelChannel, defaultConfig, normalizeConfigSnapshot, useConfigStore } = await import("../../src/stores/use-config-store");
+const { useUserStore } = await import("../../src/stores/use-user-store");
+const { useModelCatalogStore } = await import("../../src/stores/use-model-catalog-store");
 type AgentMediaSettings = import("../../src/services/api/agent").AgentMediaSettings;
 
 const ratios = ["1:1", "4:3", "3:4", "16:9", "9:16", "21:9"];
@@ -67,7 +69,15 @@ const channel = createModelChannel({
     })),
 });
 const config = normalizeConfigSnapshot({ config: { ...defaultConfig, channels: [channel] } }).config;
-useConfigStore.setState({ config });
+beforeEach(() => {
+    useConfigStore.setState({ config });
+    useUserStore.setState((state) => ({
+        user: { id: "agent-approval-fixture", username: "fixture", displayName: "审批测试", role: "user", status: "active", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" },
+        hydrated: true,
+        features: { ...state.features, creditsEnabled: false, customChannelsEnabled: false },
+    }));
+    useModelCatalogStore.setState({ status: "ready" });
+});
 afterAll(() => dom.happyDOM.abort());
 
 for (const toolName of ["generate_media", "generate_media_batch"])

@@ -13,10 +13,11 @@ describe("sidebar checkin offer", () => {
         expect(shouldShowSidebarCheckin({ creditsEnabled: true, checkinBonusMicrocredits: 100_000_000, checkedInToday: true })).toBe(false);
     });
 
-    test("uses the configured brand name instead of Buddy", () => {
+    test("uses the configured brand name and falls back to KIVAO for blank values", () => {
         expect(sidebarCheckinTitle("影策")).toBe("影策加油站");
         expect(sidebarCheckinTitle(" 本地工作室 ")).toBe("本地工作室加油站");
-        expect(sidebarCheckinTitle("")).toBe("影策加油站");
+        expect(sidebarCheckinTitle("")).toBe("KIVAO加油站");
+        expect(sidebarCheckinTitle("   ")).toBe("KIVAO加油站");
     });
 });
 
