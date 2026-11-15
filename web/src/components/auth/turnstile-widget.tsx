@@ -71,9 +71,20 @@ export function TurnstileWidget({ siteKey, onToken, resetKey = 0 }: { siteKey: s
         if (!siteKey || !containerRef.current) return;
         let disposed = false;
         const container = containerRef.current;
+        const size = container.clientWidth < 300 ? "compact" : "flexible";
         container.replaceChildren();
         onTokenRef.current("");
         setError("");
+        const resizeObserver = new window.ResizeObserver(() => {
+            const width = container.clientWidth;
+            if (disposed || width === 0 || (width < 300 ? "compact" : "flexible") === size) return;
+            // Flexible widgets cannot shrink below 300px. Invalidate this instance
+            // immediately so a late token cannot survive the size change.
+            disposed = true;
+            onTokenRef.current("");
+            setRetryKey((value) => value + 1);
+        });
+        resizeObserver.observe(container);
         const fail = (message: string) => {
             if (disposed) return;
             onTokenRef.current("");
@@ -84,7 +95,7 @@ export function TurnstileWidget({ siteKey, onToken, resetKey = 0 }: { siteKey: s
                 if (disposed || !containerRef.current) return;
                 widgetIDRef.current = turnstile.render(container, {
                     sitekey: siteKey,
-                    size: container.clientWidth < 300 ? "compact" : "flexible",
+                    size,
                     callback: (token: string) => {
                         if (disposed) return;
                         setError("");
@@ -98,6 +109,7 @@ export function TurnstileWidget({ siteKey, onToken, resetKey = 0 }: { siteKey: s
             .catch((cause) => fail(cause instanceof Error ? cause.message : "安全验证加载失败，请重试"));
         return () => {
             disposed = true;
+            resizeObserver.disconnect();
             if (widgetIDRef.current !== undefined) {
                 window.turnstile?.remove?.(widgetIDRef.current);
                 widgetIDRef.current = undefined;

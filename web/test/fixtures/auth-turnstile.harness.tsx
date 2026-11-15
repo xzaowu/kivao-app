@@ -20,6 +20,7 @@ let tokens: string[];
 let renders: Array<Record<string, unknown>>;
 let removed: Array<string | number>;
 let width: number;
+let observers: Array<{ active: boolean; callback: () => void }>;
 let append: ReturnType<typeof spyOn>;
 const nativeWidth = Object.getOwnPropertyDescriptor(dom.HTMLElement.prototype, "clientWidth");
 Object.defineProperty(dom.HTMLElement.prototype, "clientWidth", { configurable: true, get: () => width });
@@ -29,6 +30,22 @@ beforeEach(() => {
     renders = [];
     removed = [];
     width = 320;
+    observers = [];
+    Object.defineProperty(window, "ResizeObserver", {
+        configurable: true,
+        value: class {
+            active = false;
+            constructor(public callback: () => void) {
+                observers.push(this);
+            }
+            observe() {
+                this.active = true;
+            }
+            disconnect() {
+                this.active = false;
+            }
+        },
+    });
     delete window.turnstile;
     document.head.innerHTML = "";
     document.body.innerHTML = "<main></main>";
@@ -71,6 +88,12 @@ async function retry() {
     expect(button).toBeTruthy();
     expect(button.type).toBe("button");
     await act(async () => button.click());
+}
+async function resize(nextWidth: number) {
+    width = nextWidth;
+    await act(async () => {
+        for (const observer of [...observers]) if (observer.active) observer.callback();
+    });
 }
 
 test("关闭或缺失站点密钥不加载第三方脚本", async () => {
@@ -145,4 +168,73 @@ test("窄容器使用 compact，较宽容器使用 flexible", async () => {
     width = 360;
     await mount("test-site", 1);
     expect(renders[1].size).toBe("flexible");
+});
+
+test("跨过 300px 阈值时双向重建并清除令牌，旧实例不能回填", async () => {
+    api();
+    await mount();
+    const first = renders[0];
+    await callback("callback", "wide-token");
+    await resize(299);
+    expect(renders.map((options) => options.size)).toEqual(["flexible", "compact"]);
+    expect(tokens.at(-1)).toBe("");
+    await act(async () => (first.callback as (token: string) => void)("late-wide-token"));
+    expect(tokens.at(-1)).toBe("");
+    await callback("callback", "compact-token");
+    const second = renders[1];
+    await resize(300);
+    expect(renders.map((options) => options.size)).toEqual(["flexible", "compact", "flexible"]);
+    expect(tokens.at(-1)).toBe("");
+    await callback("callback", "new-wide-token");
+    await act(async () => {
+        (second.callback as (token: string) => void)("late-compact-token");
+        (second["error-callback"] as () => void)();
+    });
+    expect(tokens.at(-1)).toBe("new-wide-token");
+    expect(document.querySelector('[role="status"]')).toBeNull();
+    expect(removed).toEqual([1, 2]);
+});
+
+test("同一尺寸档和暂时隐藏不重建，也不清除已通过的令牌", async () => {
+    api();
+    await mount();
+    await callback("callback", "wide-token");
+    for (const next of [480, 300, 0, 320]) await resize(next);
+    expect(renders).toHaveLength(1);
+    expect(removed).toEqual([]);
+    expect(tokens.at(-1)).toBe("wide-token");
+    await resize(272);
+    await callback("callback", "compact-token");
+    for (const next of [150, 299, 0, 272]) await resize(next);
+    expect(renders).toHaveLength(2);
+    expect(tokens.at(-1)).toBe("compact-token");
+});
+
+test("脚本加载期间改变尺寸只渲染当前档位，继续复用同一脚本", async () => {
+    await mount();
+    const script = document.getElementById("cloudflare-turnstile-api")!;
+    await resize(272);
+    expect(document.querySelectorAll("script")).toHaveLength(1);
+    expect(document.getElementById("cloudflare-turnstile-api")).toBe(script);
+    api();
+    await act(async () => script.dispatchEvent(new dom.Event("load")));
+    expect(renders.map((options) => options.size)).toEqual(["compact"]);
+});
+
+test("卸载后断开尺寸监听并忽略排队中的尺寸和验证回调", async () => {
+    api();
+    await mount();
+    await callback("callback", "accepted-token");
+    const staleObserver = observers[0];
+    const staleToken = renders[0].callback as (token: string) => void;
+    await act(async () => root.render(null));
+    expect(observers.every((observer) => !observer.active)).toBe(true);
+    await act(async () => {
+        width = 272;
+        staleObserver.callback();
+        staleToken("late-token");
+    });
+    expect(tokens.at(-1)).toBe("accepted-token");
+    expect(renders).toHaveLength(1);
+    expect(removed).toEqual([1]);
 });
