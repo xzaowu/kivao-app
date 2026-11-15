@@ -11,6 +11,17 @@ import (
 	"gorm.io/gorm"
 )
 
+func TestRegistrationAgreementDefaultsToKivao(t *testing.T) {
+	svc := New(repository.New(newAgreementTestDB(t)), nil, nil)
+	settings, err := svc.PublicAuthSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.AgreementTitle != "KIVAO服务协议" {
+		t.Fatalf("default agreement title = %q", settings.AgreementTitle)
+	}
+}
+
 func TestRegistrationAgreementFollowsBrandNameWhenUnset(t *testing.T) {
 	svc := New(repository.New(newAgreementTestDB(t)), brandHost{name: "星野"}, nil)
 

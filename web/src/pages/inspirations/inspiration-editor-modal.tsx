@@ -62,10 +62,10 @@ export function InspirationEditorModal({
             image: values.image,
             mode: values.mode,
             prompt: values.prompt,
-            promptZh: values.promptZh,
-            category: values.category,
-            ratio: values.ratio,
-            ...(tags.length ? { tags } : {}),
+            promptZh: values.promptZh ?? "",
+            category: values.category ?? "",
+            ratio: values.ratio ?? "",
+            tags,
         });
         onSubmit(draft);
         form.resetFields();
@@ -75,7 +75,7 @@ export function InspirationEditorModal({
     return (
         <AppModal
             open={open}
-            title={item ? "编辑灵感" : "新建灵感"}
+            title={item ? "编辑本地灵感" : "新建本地灵感"}
             width={720}
             onCancel={() => {
                 form.resetFields();
@@ -95,21 +95,22 @@ export function InspirationEditorModal({
                         取消
                     </Button>
                     <Button type="primary" onClick={() => void handleOk()}>
-                        {item ? "保存" : "创建"}
+                        {item ? "保存到本地" : "创建到本地"}
                     </Button>
                 </div>
             }
         >
+            <p className="mb-4 text-sm text-[var(--user-ink-muted)]">仅保存在当前账号的此浏览器中，不会发布给其他用户。</p>
             <Form form={form} layout="vertical" initialValues={toFormValues(item)} preserve={false}>
                 {/* 字段较多，不限高的话底部按钮会被顶出视口，提交就点不到了。 */}
                 <div className="max-h-[64vh] overflow-y-auto pr-1">
-                    <Form.Item name="title" label="标题" rules={[{ required: true, message: "请填写标题" }]}>
+                    <Form.Item name="title" label="标题" rules={[{ required: true, whitespace: true, message: "请填写标题" }]}>
                         <Input placeholder="例如：护肤品质感广告主视觉" maxLength={80} />
                     </Form.Item>
                     <Form.Item name="description" label="一句话描述">
                         <Input placeholder="卡片上铺两行，说明这个提示词适合做什么" maxLength={120} />
                     </Form.Item>
-                    <Form.Item name="image" label="封面地址" rules={[{ required: true, message: "请填写封面图片地址" }]}>
+                    <Form.Item name="image" label="封面地址" rules={[{ required: true, whitespace: true, message: "请填写封面图片地址" }]}>
                         <Input placeholder="https:// 开头的图片地址，或 /public 下的本地路径" />
                     </Form.Item>
                     <div className="grid gap-x-4 sm:grid-cols-3">
@@ -132,7 +133,7 @@ export function InspirationEditorModal({
                     <Form.Item name="tags" label="标签" extra="用逗号分隔，最多六个">
                         <Input placeholder="电商产品，海报排版" maxLength={120} />
                     </Form.Item>
-                    <Form.Item name="prompt" label="提示词正文" rules={[{ required: true, message: "请填写提示词正文" }]}>
+                    <Form.Item name="prompt" label="提示词正文" rules={[{ required: true, whitespace: true, message: "请填写提示词正文" }]}>
                         <Input.TextArea rows={6} placeholder="粘贴完整提示词；外部英文提示词也可以直接放这里" />
                     </Form.Item>
                     <Form.Item name="promptZh" label="中文正文（可选）" extra="填了以后，卡片和「用这个创意创作」会优先用中文这版">

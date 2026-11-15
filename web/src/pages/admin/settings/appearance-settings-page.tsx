@@ -1,8 +1,10 @@
 import { commitPublicAppearance, DEFAULT_PUBLIC_APPEARANCE } from "@/stores/use-appearance-store";
+import { DEFAULT_CREATION_SHORTCUTS, normalizeCreationShortcuts, validCreationShortcut, type CreationShortcut } from "@/lib/creation-shortcuts";
+import { CreationShortcutsEditor } from "./components/creation-shortcuts-editor";
 import { deleteAdminResources } from "@/services/api/admin-storage";
 import { AdminStatusBadge, SettingsSectionCard } from "@/pages/admin/components/admin-ui";
 import { AdminPageFrame } from "@/pages/admin/components/admin-shell";
-import { Palette, RefreshCw, Undo2, RotateCcw, Save, Sun, Moon, MonitorPlay, Globe2, Search, Copyright, Type } from "lucide-react";
+import { Palette, RefreshCw, Undo2, RotateCcw, Save, Sun, Moon, MonitorPlay, Globe2, Search, Copyright, Type, ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Switch } from "@/pages/admin/ui/controls";
 import { WelcomeSetting } from "@/pages/admin/settings/components/welcome-setting";
@@ -15,7 +17,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useBlocker } from "react-router";
 import { cloneSkinDefinition, DEFAULT_CLASSIC_SKIN, normalizeSkinDefinition, type SkinDefinition, duplicateSkinDefinition } from "@/lib/skin-themes";
 import { DEFAULT_CANVAS_APPEARANCE, type CanvasAppearance } from "@/lib/canvas/agent-appearance";
-import { getAdminAppearance, type AdminAppearance, type AppearanceAssetSlot, resetAdminAppearance, uploadAppearanceAsset, updateAdminAppearance } from "@/services/api/appearance";
+import {
+    getAdminAppearance,
+    getAdminTurnstileSetting,
+    type AdminAppearance,
+    type AdminTurnstileSetting,
+    type AppearanceAssetSlot,
+    resetAdminAppearance,
+    uploadAppearanceAsset,
+    updateAdminAppearance,
+    updateAdminTurnstileSetting,
+} from "@/services/api/appearance";
 import { normalizeDraftCopy, normalizeSingleLine, hasUnsupportedControlCharacter, validateSkinDrafts, useAppearancePreviews, AppearanceSkeleton, AssetPicker, LogoThemePreview } from "./appearance-settings-parts";
 import { type DraftFiles, FILE_RULES, type ResetState } from "./appearance-settings-parts";
 
@@ -24,10 +36,135 @@ export { type DraftFiles, FILE_RULES, type ResetState } from "./appearance-setti
 const EMPTY_FILES: DraftFiles = { logo: null, "logo-dark": null, video: null, poster: null };
 const EMPTY_RESETS: ResetState = { logo: false, "logo-dark": false, video: false, poster: false };
 
+function TurnstileProtectionPanel() {
+    const { message } = App.useApp();
+    const [setting, setSetting] = useState<AdminTurnstileSetting | null>(null);
+    const [enabled, setEnabled] = useState(false);
+    const [siteKey, setSiteKey] = useState("");
+    const [secretKey, setSecretKey] = useState("");
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState("");
+
+    const load = useCallback(async () => {
+        setLoading(true);
+        setError("");
+        try {
+            const value = await getAdminTurnstileSetting();
+            setSetting(value);
+            setEnabled(value.enabled);
+            setSiteKey(value.siteKey);
+            setSecretKey("");
+        } catch (cause) {
+            setError(cause instanceof Error ? cause.message : "读取机器人保护配置失败");
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        void load();
+    }, [load]);
+
+    const dirty = Boolean(setting && (enabled !== setting.enabled || siteKey.trim() !== setting.siteKey || Boolean(secretKey.trim())));
+    const save = async () => {
+        if (saving) return;
+        const nextSiteKey = siteKey.trim();
+        const nextSecretKey = secretKey.trim();
+        if (enabled && !nextSiteKey) {
+            message.error("启用 Turnstile 前请填写站点密钥");
+            return;
+        }
+        if (enabled && !setting?.hasSecretKey && !nextSecretKey) {
+            message.error("启用 Turnstile 前请填写密钥");
+            return;
+        }
+        setSaving(true);
+        try {
+            const value = await updateAdminTurnstileSetting({ enabled, siteKey: nextSiteKey, secretKey: nextSecretKey });
+            setSetting(value);
+            setEnabled(value.enabled);
+            setSiteKey(value.siteKey);
+            setSecretKey("");
+            message.success("机器人保护配置已保存");
+        } catch (cause) {
+            message.error(cause instanceof Error ? cause.message : "保存机器人保护配置失败");
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    if (loading) return <AppearanceSkeleton />;
+    if (error) {
+        return (
+            <div className="admin-settings-stack admin-appearance-settings">
+                <div className="admin-appearance-load-error" role="alert">
+                    <span className="admin-appearance-load-error-icon">
+                        <ShieldCheck className="size-5" aria-hidden="true" />
+                    </span>
+                    <div>
+                        <h2>无法读取机器人保护配置</h2>
+                        <p>{error}</p>
+                    </div>
+                    <Button icon={<RefreshCw className="size-4" />} onClick={() => void load()}>
+                        重新读取
+                    </Button>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="admin-settings-stack admin-appearance-settings admin-turnstile-settings">
+            <div className={cn("admin-appearance-command-bar", dirty && "is-dirty")}>
+                <div className="admin-appearance-command-copy" aria-live="polite">
+                    <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <strong>{dirty ? "机器人保护有调整待保存" : "机器人保护已与服务端同步"}</strong>
+                            <AdminStatusBadge label={enabled ? "已开启" : "未开启"} tone={enabled ? "success" : "neutral"} />
+                        </div>
+                        <p>使用 Cloudflare Turnstile 保护登录和注册；密钥只在服务端保存，浏览器不会读取密钥原文。</p>
+                    </div>
+                </div>
+                <div className="admin-appearance-command-actions">
+                    <Button type="primary" icon={<Save className="size-4" />} loading={saving} disabled={!dirty} onClick={() => void save()}>
+                        保存更改
+                    </Button>
+                </div>
+            </div>
+            <SettingsSectionCard className="admin-appearance-section" icon={<ShieldCheck className="size-4" aria-hidden="true" />} title="机器人保护" description="配置后，登录、注册和微信注册补充信息会要求完成 Cloudflare Turnstile 验证。">
+                <div className="admin-appearance-section-form">
+                    <div className="admin-appearance-logo-frame-option">
+                        <div className="admin-appearance-logo-frame-copy">
+                            <strong>启用 Turnstile</strong>
+                            <p id="appearance-turnstile-help">使用 Cloudflare Turnstile 保护登录和注册</p>
+                        </div>
+                        <div className="admin-appearance-logo-frame-control">
+                            <span>{enabled ? "已开启" : "已关闭"}</span>
+                            <Switch checked={enabled} disabled={saving} aria-label="启用 Turnstile" aria-describedby="appearance-turnstile-help" onChange={setEnabled} />
+                        </div>
+                    </div>
+                    <Form className="admin-appearance-form" layout="vertical" requiredMark={false} disabled={saving}>
+                        <div className="admin-appearance-form-grid">
+                            <Form.Item label="站点密钥" extra="Cloudflare Turnstile 的 Site key，可公开放在浏览器中。">
+                                <Input value={siteKey} maxLength={256} autoComplete="off" placeholder="您的 Turnstile 站点密钥" onChange={(event) => setSiteKey(event.target.value)} />
+                            </Form.Item>
+                            <Form.Item label="密钥" extra={setting?.hasSecretKey ? "已保存密钥；留空则保持不变。" : "Cloudflare Turnstile 的 Secret key，仅保存到服务端。"}>
+                                <Input.Password value={secretKey} maxLength={512} autoComplete="new-password" placeholder={setting?.hasSecretKey ? "留空以保持当前密钥" : "您的 Turnstile 密钥"} onChange={(event) => setSecretKey(event.target.value)} />
+                            </Form.Item>
+                        </div>
+                    </Form>
+                </div>
+            </SettingsSectionCard>
+        </div>
+    );
+}
+
 export default function AppearanceSettingsPage() {
     const { message, modal } = App.useApp();
     const [activeTab, setActiveTab] = useState("brand");
     const [setting, setSetting] = useState<AdminAppearance | null>(null);
+    const [creationShortcuts, setCreationShortcuts] = useState<CreationShortcut[]>(DEFAULT_CREATION_SHORTCUTS);
     const [brandName, setBrandName] = useState("");
     const [canvas, setCanvas] = useState<CanvasAppearance>(DEFAULT_CANVAS_APPEARANCE);
     const [updates, setUpdates] = useState<UpdateAnnouncement>(DEFAULT_UPDATE_ANNOUNCEMENT);
@@ -63,7 +200,8 @@ export default function AppearanceSettingsPage() {
 
     const dirty =
         Boolean(setting) &&
-        (JSON.stringify(updates) !== JSON.stringify(normalizeUpdateAnnouncement(setting?.updates)) ||
+        (JSON.stringify(creationShortcuts) !== JSON.stringify(normalizeCreationShortcuts(setting?.creationShortcuts)) ||
+            JSON.stringify(updates) !== JSON.stringify(normalizeUpdateAnnouncement(setting?.updates)) ||
             JSON.stringify(canvas) !== JSON.stringify(setting?.canvas || DEFAULT_CANVAS_APPEARANCE) ||
             canvasUploading ||
             brandName.trim() !== setting?.brandName ||
@@ -89,6 +227,7 @@ export default function AppearanceSettingsPage() {
         const themes = value.skinThemes.length ? value.skinThemes.map((theme) => normalizeSkinDefinition(theme)) : [cloneSkinDefinition(DEFAULT_CLASSIC_SKIN)];
         const selectedID = themes.some((theme) => theme.id === value.skinId) ? value.skinId : "classic";
         setSetting({ ...value, skinThemes: themes, skinId: selectedID });
+        setCreationShortcuts(normalizeCreationShortcuts(value.creationShortcuts));
         setBrandName(value.brandName);
         setCanvas(value.canvas || DEFAULT_CANVAS_APPEARANCE);
         setUpdates(normalizeUpdateAnnouncement(value.updates));
@@ -245,7 +384,7 @@ export default function AppearanceSettingsPage() {
     const restoreBuiltInAppearance = () => {
         if (!setting?.configured || saving || refreshing || restoring || canvasUploading) return;
         modal.confirm({
-            title: "恢复影策默认品牌标识？",
+            title: "恢复KIVAO默认品牌标识？",
             content: "品牌名称、英文标识、Logo、画布 Agent 名称/文案/形象、更新公告、登录页文案、视频、封面、SEO、备案和皮肤主题会立即恢复为项目内置值；自定义公告会清空并关闭，展示原有更新日志。已上传文件仍保留在存储资源中，不会被删除。",
             okText: "恢复默认",
             cancelText: "取消",
@@ -260,7 +399,7 @@ export default function AppearanceSettingsPage() {
                     Object.values(inputRefs).forEach((ref) => {
                         if (ref.current) ref.current.value = "";
                     });
-                    message.success("已恢复影策默认品牌标识");
+                    message.success("已恢复KIVAO默认品牌标识");
                 } catch (error) {
                     message.error(error instanceof Error ? error.message : "恢复默认外观失败");
                     throw error;
@@ -273,6 +412,11 @@ export default function AppearanceSettingsPage() {
 
     const save = async () => {
         if (!setting || saving || restoring || canvasUploading) return;
+        if (creationShortcuts.length > 10 || !creationShortcuts.every(validCreationShortcut)) {
+            setActiveTab("creation");
+            message.error("请检查创作入口：最多 10 个，分组和标题各 1–20 字，选择有效图标及站内页面链接。");
+            return;
+        }
         const updatesError = validateUpdateAnnouncement(updates);
         if (updatesError) {
             setActiveTab("updates");
@@ -365,6 +509,7 @@ export default function AppearanceSettingsPage() {
                 ids[slot] = resource.id;
             }
             const updated = await updateAdminAppearance({
+                creationShortcuts,
                 canvas,
                 updates,
                 brandName: nextBrandName,
@@ -449,7 +594,7 @@ export default function AppearanceSettingsPage() {
     };
 
     return (
-        <AdminPageFrame title="站点及外观" description="统一管理品牌身份、登录页、搜索信息、备案展示与全站皮肤主题" scroll>
+        <AdminPageFrame title="站点及外观" description="统一管理品牌身份、创作入口、登录页、搜索信息、备案展示与全站皮肤主题" scroll>
             {loading ? (
                 <AppearanceSkeleton />
             ) : loadError || !setting ? (
@@ -476,7 +621,7 @@ export default function AppearanceSettingsPage() {
                                     <strong>{dirty ? "站点配置有调整待保存" : "站点及外观已与服务端同步"}</strong>
                                     <AdminStatusBadge label={dirty ? "尚未生效" : "服务端当前值"} tone={dirty ? "warning" : "neutral"} />
                                 </div>
-                                <p>{dirty ? "切换分类保留草稿；保存修改会一次应用品牌、登录页、更新公告、SEO、备案和皮肤调整。" : "按分类管理站点配置；欢迎页开关独立即时保存，其余修改统一保存。"}</p>
+                                <p>{dirty ? "切换分类保留草稿；保存修改会一次应用品牌、创作入口、登录页、更新公告、SEO、备案和皮肤调整。" : "按分类管理站点配置；欢迎页开关独立即时保存，其余修改统一保存。"}</p>
                             </div>
                         </div>
                         <div className="admin-appearance-command-actions">
@@ -486,7 +631,7 @@ export default function AppearanceSettingsPage() {
                                 </Button>
                             ) : null}
                             <Button icon={<RotateCcw className="size-4" />} loading={restoring} disabled={!setting.configured || saving || refreshing || canvasUploading} onClick={restoreBuiltInAppearance}>
-                                恢复影策默认
+                                恢复KIVAO默认
                             </Button>
                             <Button icon={<RefreshCw className="size-4" />} loading={refreshing} disabled={saving || restoring || canvasUploading} onClick={requestRefresh}>
                                 刷新状态
@@ -502,6 +647,15 @@ export default function AppearanceSettingsPage() {
                         activeKey={activeTab}
                         onChange={setActiveTab}
                         items={[
+                            {
+                                key: "creation",
+                                label: "创作入口",
+                                children: (
+                                    <SettingsSectionCard title="创作入口" description="设置首页输入框下方的分组快捷入口，点击只跳转页面，不自动生成或创建画布。">
+                                        <CreationShortcutsEditor value={creationShortcuts} onChange={setCreationShortcuts} disabled={saving || refreshing || restoring || canvasUploading} />
+                                    </SettingsSectionCard>
+                                ),
+                            },
                             {
                                 key: "brand",
                                 label: "品牌识别",
@@ -679,6 +833,11 @@ export default function AppearanceSettingsPage() {
                                         </div>
                                     </SettingsSectionCard>
                                 ),
+                            },
+                            {
+                                key: "turnstile",
+                                label: "机器人保护",
+                                children: <TurnstileProtectionPanel />,
                             },
                             {
                                 key: "welcome",

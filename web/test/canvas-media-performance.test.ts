@@ -81,7 +81,7 @@ describe("large canvas media rendering", () => {
         expect(inactivePreviewSource).toContain("<VideoPreviewPlayButton");
         expect(canvasNodeContentSource).toContain("useVideoPlaybackUrl(node, mediaActive)");
         expect(canvasNodeContentSource).toContain("onMediaPlayRequest?.(node.id)");
-        expect(canvasNodeContentSource).toMatch(/autoPlay\s+preload="metadata"/);
+        expect(canvasNodeContentSource).toContain("autoPlay={pausedMediaRef.current !== playerKey}");
         expect(canvasNodeContentSource).toContain("resolveVideoMediaUrl(storageKey, fallback)");
         expect(canvasNodeContentSource).toContain("refreshResource(resourceId)");
         expect(canvasNodeContentSource).toContain('getResourceAccess(storageKey, "display", "playback", "", { forceRefresh: true })');
@@ -124,8 +124,8 @@ describe("large canvas media rendering", () => {
     });
 
     test("reuses a cached full video Blob for poster capture before requesting playback access", () => {
-        expect(canvasVideoPreviewSource).toContain("peekCachedResourceObjectUrl(storageKey)");
-        expect(canvasVideoPreviewSource).toContain("getCachedResourceObjectUrl(storageKey)");
+        expect(canvasVideoPreviewSource).toContain("loadCachedResourceObjectUrl(storageKey)");
+        expect(canvasVideoPreviewSource).toContain("lease?.release()");
     });
 
     test("shows a captured first frame before its OSS poster upload finishes and allows later retries", () => {
@@ -201,7 +201,7 @@ describe("video canvas controls", () => {
         expect(playerCSS).toContain("height: var(--canvas-video-control-size);");
         expect(playerCSS).toContain("min-height: var(--canvas-video-control-size);");
         expect(playerCSS).toContain("padding: 0 0 0 calc(var(--canvas-video-control-size)");
-        expect(playerCSS).toContain(".vds-controls-group:has(.vds-volume) > :not(.vds-volume)");
+        expect(playerCSS).toContain(".vds-controls-group:has(.vds-volume) > :is(.vds-button, .vds-controls-spacer)");
         expect(playerCSS).toContain("bottom: max(12px, env(safe-area-inset-bottom))");
         expect(playerCSS).toContain("play, time, progress, volume, fullscreen");
         expect(playerCSS).toContain("pointer-events: auto;");
@@ -231,7 +231,7 @@ describe("video canvas controls", () => {
         expect(videoPlayerSource).not.toContain("onPointerDownCapture={stopCanvasControlInteraction}");
         expect(videoPlayerSource).not.toContain("onMouseDownCapture={stopCanvasControlInteraction}");
         expect(videoPlayerSource).not.toContain("onClickCapture={stopCanvasControlClick}");
-        expect(canvasNodeContentSource).toMatch(/hasAudio=\{inferVideoHasAudio\(node.metadata\)\}\s+autoPlay\s+preload="metadata"/);
+        expect(canvasNodeContentSource).toMatch(/hasAudio=\{inferVideoHasAudio\(node.metadata\)\}\s+autoPlay=\{pausedMediaRef.current !== playerKey\}\s+preload="metadata"/);
         expect(canvasNodeContentSource).toContain('if (["false", "0", "off", "no", "disabled"].includes(value || "")) return false;');
     });
 

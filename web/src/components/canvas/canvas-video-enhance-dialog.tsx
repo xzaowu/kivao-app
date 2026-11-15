@@ -1,18 +1,10 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { InputNumber } from "antd";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Button, InputNumber } from "antd";
 import { ChevronDown } from "lucide-react";
 
 import { AppModal } from "@/components/ui/product/app-modal";
 import { SegmentedControl } from "@/components/ui/base/segmented-control";
-import {
-    listVideoEnhanceModels,
-    videoEnhanceProfile,
-    videoEnhanceQuoteRequest,
-    videoEnhanceResolutionShortEdge,
-    videoEnhanceSourceError,
-    type VideoEnhanceBitrateLevel,
-    type VideoEnhanceParams,
-} from "@/lib/canvas/canvas-video-enhance";
+import { listVideoEnhanceModels, videoEnhanceProfile, videoEnhanceQuoteRequest, videoEnhanceResolutionShortEdge, videoEnhanceSourceError, type VideoEnhanceBitrateLevel, type VideoEnhanceParams } from "@/lib/canvas/canvas-video-enhance";
 import { modelQuoteDescription } from "@/lib/model-pricing";
 import { quoteModel, type LogicalModelQuote } from "@/services/api/logical-models";
 import { modelDisplayName, type AiConfig } from "@/stores/use-config-store";
@@ -58,7 +50,11 @@ function EnhanceEditor({ node, config, onClose, onConfirm }: Props) {
     const [bitrateLevel, setBitrateLevel] = useState<VideoEnhanceBitrateLevel>("medium");
     const [advancedOpen, setAdvancedOpen] = useState(false);
     const [bitrate, setBitrate] = useState<number | null>(null);
-    const [quote, setQuote] = useState<LogicalModelQuote | null>(null);
+    const [quoted, setQuoted] = useState<{ key: string; quote: LogicalModelQuote } | null>(null);
+    const [failedQuoteKey, setFailedQuoteKey] = useState<string | null>(null);
+    const [quoteAttempt, setQuoteAttempt] = useState(0);
+    const submitted = useRef(false);
+    const [submitting, setSubmitting] = useState(false);
 
     useEffect(() => {
         setResolution(defaultResolution);
@@ -74,26 +70,31 @@ function EnhanceEditor({ node, config, onClose, onConfirm }: Props) {
         ...(userSelectFps && fps ? { fps } : {}),
         ...(bitrate ? { bitrate } : { bitrateLevel }),
     };
-    const ready = Boolean(model && resolution && !sourceError && (!userSelectFps || fps));
-    const quoteRequest = ready ? videoEnhanceQuoteRequest(config, params, node.metadata?.durationMs) : undefined;
-    const quoteKey = JSON.stringify(quoteRequest || null);
+    const validOptions = Boolean(models.includes(model) && resolutionOptions.some((item) => item.value === resolution && !item.disabled) && !sourceError && (!userSelectFps || (fps && fpsOptions.includes(fps))));
+    const quoteRequest = validOptions ? videoEnhanceQuoteRequest(config, params, node.metadata?.durationMs) : undefined;
+    const quoteKey = JSON.stringify([quoteRequest || null, node.id, node.metadata?.storageKey || node.metadata?.content, node.metadata?.durationMs]);
+    const quote = quoted?.key === quoteKey ? quoted.quote : null;
+    const quoteFailed = failedQuoteKey === quoteKey;
+    const ready = validOptions && !submitting && (!creditsEnabled || Boolean(quote));
 
     useEffect(() => {
+        setQuoted(null);
+        setFailedQuoteKey(null);
         if (!creditsEnabled || !quoteRequest) {
-            setQuote(null);
             return;
         }
         const controller = new AbortController();
-        setQuote(null);
         quoteModel(quoteRequest, controller.signal)
-            .then(({ quote: next }) => setQuote(next))
+            .then(({ quote: next }) => {
+                if (!controller.signal.aborted) setQuoted({ key: quoteKey, quote: next });
+            })
             .catch(() => {
-                if (!controller.signal.aborted) setQuote(null);
+                if (!controller.signal.aborted) setFailedQuoteKey(quoteKey);
             });
         return () => controller.abort();
         // quoteKey 是请求的完整序列化，避免对象引用变化重复报价。
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [creditsEnabled, quoteKey]);
+    }, [creditsEnabled, quoteKey, quoteAttempt]);
 
     const seconds = node.metadata?.durationMs ? Math.ceil(node.metadata.durationMs / 1000) : 0;
     const width = node.metadata?.naturalWidth;
@@ -108,13 +109,31 @@ function EnhanceEditor({ node, config, onClose, onConfirm }: Props) {
             width={520}
             onCancel={onClose}
             okText="开始增强"
-            okButtonProps={{ disabled: !ready }}
-            onOk={() => ready && onConfirm(params)}
+            okButtonProps={{ disabled: !ready, loading: submitting }}
+            onOk={() => {
+                if (!ready || submitted.current) return;
+                submitted.current = true;
+                setSubmitting(true);
+                try {
+                    onConfirm(params);
+                } catch (error) {
+                    submitted.current = false;
+                    setSubmitting(false);
+                    throw error;
+                }
+            }}
             footer={(_, { OkBtn, CancelBtn }) => (
-                <div className="flex items-center justify-between gap-3">
-                    <span className="min-w-0 text-left text-xs text-muted-foreground" title={quote?.billingMode === "per_second" ? "按源视频时长预扣，完成后按实际输出时长结算，多退少补" : undefined}>
-                        {quoteText || (creditsEnabled && ready ? "正在计算积分…" : "")}
-                    </span>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="min-w-0 text-left text-xs text-muted-foreground">
+                        <span role={quoteFailed ? "status" : undefined} title={quote?.billingMode === "per_second" ? "按源视频时长预扣，完成后按实际输出时长结算，多退少补" : undefined}>
+                            {creditsEnabled && validOptions ? (quoteFailed ? "积分报价暂不可用" : quoteText || "正在计算积分…") : ""}
+                        </span>
+                        {creditsEnabled && validOptions && quoteFailed ? (
+                            <Button size="small" className="ml-2" onClick={() => setQuoteAttempt((attempt) => attempt + 1)}>
+                                重试报价
+                            </Button>
+                        ) : null}
+                    </div>
                     <div className="flex shrink-0 gap-2">
                         <CancelBtn />
                         <OkBtn />
@@ -131,12 +150,19 @@ function EnhanceEditor({ node, config, onClose, onConfirm }: Props) {
             </div>
 
             {!models.length ? (
-                <p role="alert" className="text-sm text-destructive">管理员尚未配置可用的画质增强模型。</p>
+                <p role="alert" className="text-sm text-destructive">
+                    管理员尚未配置可用的画质增强模型。
+                </p>
             ) : (
                 <div className="flex flex-col gap-4">
-                    {models.length > 1 ? (
+                    {!models.includes(model) ? (
+                        <p role="status" className="text-sm text-destructive">
+                            原模型已不可用，请重新选择增强模型。
+                        </p>
+                    ) : null}
+                    {models.length > 1 || !models.includes(model) ? (
                         <OptionRow label="增强模型">
-                            <SegmentedControl ariaLabel="增强模型" value={model} onChange={setModel} options={models.map((value) => ({ value, label: modelDisplayName(config, value) }))} />
+                            <SegmentedControl disabled={submitting} ariaLabel="增强模型" value={model} onChange={setModel} options={models.map((value) => ({ value, label: modelDisplayName(config, value) }))} />
                         </OptionRow>
                     ) : null}
                     <OptionRow label="目标分辨率">
@@ -180,7 +206,9 @@ function EnhanceEditor({ node, config, onClose, onConfirm }: Props) {
             )}
 
             {sourceError ? (
-                <p role="alert" className="mt-4 text-sm text-destructive">{sourceError}</p>
+                <p role="alert" className="mt-4 text-sm text-destructive">
+                    {sourceError}
+                </p>
             ) : null}
         </AppModal>
     );

@@ -3,7 +3,7 @@ import { Switch } from "@/pages/admin/ui/controls";
 import { AlipayCircleFilled, WechatFilled } from "@ant-design/icons";
 import { ZHIFUFM_LOGO_SRC } from "@/components/payment-brand-icons";
 import type { ColumnsType } from "antd/es/table";
-import { CloudUpload, PlugZap, RefreshCw, Search, Trash2, UsersRound } from "lucide-react";
+import { CloudUpload, FileText, PlugZap, RefreshCw, Search, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { PaginationBar } from "@/pages/admin/components/admin-ui";
@@ -12,21 +12,16 @@ import { EAGLE_PLUGIN_ID } from "@/lib/plugins/builtin/eagle";
 import { RUNNINGHUB_PLUGIN_ID } from "@/lib/plugins/builtin/workflows";
 import { isOfficialApplicationPluginId } from "@/lib/plugins/official-applications";
 import { listRegisteredPlugins } from "@/lib/plugins/plugin-registry";
-import type { PluginManifest, PluginManifestV2 } from "@/lib/plugins/plugin-types";
 import { fetchAdminPlugins, setPluginPlatformAvailability, uninstallPlugin, uploadPlugin, type AdminPluginState, type BackendPlugin, type PluginManagement } from "@/services/api/plugins";
 import { UploadPluginModal } from "@/pages/plugins/plugin-documentation-modals";
 
 import { AdminPageFrame } from "../components/admin-shell";
 import { AdminDataTable, AdminStatusBadge, AdminTableEmpty } from "../components/admin-ui";
 import { Select } from "@/components/ui/base/select";
+import { appQueryClient } from "@/lib/query-client";
+import { AdminPluginDetailModal, type AdminPluginDetail } from "./plugin-detail-modal";
 
-type AdminPluginItem = {
-    manifest: PluginManifest | PluginManifestV2;
-    source: string;
-    management: PluginManagement;
-    status?: string;
-    error?: string;
-};
+type AdminPluginItem = AdminPluginDetail;
 
 export default function AdminPluginsPage() {
     const { message, modal } = App.useApp();
@@ -40,6 +35,7 @@ export default function AdminPluginsPage() {
     const [availability, setAvailability] = useState<"all" | "available" | "unavailable">("all");
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(20);
+    const [detailId, setDetailId] = useState("");
 
     const reload = async () => {
         setLoading(true);
@@ -59,6 +55,8 @@ export default function AdminPluginsPage() {
     }, []);
 
     const items = useMemo(() => mergePlugins(plugins), [plugins]);
+    // 按 ID 取当前数据：刷新或切换开关后详情跟着更新，卸载后自动关闭。
+    const detailItem = useMemo(() => items.find((item) => item.manifest.id === detailId) || null, [detailId, items]);
     const filtered = useMemo(() => {
         const keyword = search.trim().toLocaleLowerCase();
         return items.filter((item) => {
@@ -81,6 +79,7 @@ export default function AdminPluginsPage() {
         try {
             const state = await setPluginPlatformAvailability(item.manifest.id, available);
             setStates((current) => ({ ...current, [item.manifest.id]: state }));
+            void appQueryClient.invalidateQueries({ queryKey: ["plugin-runtime"] });
             message.success(`${item.manifest.name}${available ? "已开放" : "已停用"}`);
         } catch (error) {
             message.error(error instanceof Error ? error.message : "更新插件可用状态失败");
@@ -137,7 +136,14 @@ export default function AdminPluginsPage() {
                     <PluginBrandIcon pluginId={item.manifest.id} />
                     <div className="min-w-0">
                         <div className="flex min-w-0 items-baseline gap-2">
-                            <span className="truncate font-medium text-foreground">{item.manifest.name}</span>
+                            <button
+                                type="button"
+                                className="min-w-0 truncate rounded-sm text-left font-medium text-foreground underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--control-focus-ring)]"
+                                title={`查看 ${item.manifest.name} 详情`}
+                                onClick={() => setDetailId(item.manifest.id)}
+                            >
+                                {item.manifest.name}
+                            </button>
                             <span className="shrink-0 text-xs text-foreground/42">v{item.manifest.version}</span>
                         </div>
                         <div className="mt-1 flex min-w-0 items-center gap-2 text-xs">
@@ -176,21 +182,12 @@ export default function AdminPluginsPage() {
             key: "scope",
             width: 180,
             align: "center",
-            render: (_, item) =>
-                item.management.activationScope === "user" ? (
-                    <div>
-                        <div className="font-medium text-foreground/78">用户自主启用</div>
-                        <div className="mt-1 inline-flex items-center gap-1 text-xs text-foreground/48">
-                            <UsersRound className="size-3.5" aria-hidden="true" />
-                            {states[item.manifest.id]?.enabledUserCount || 0} 位已启用
-                        </div>
-                    </div>
-                ) : (
-                    <div>
-                        <div className="font-medium text-foreground/78">全局生效</div>
-                        <div className="mt-1 text-xs text-foreground/48">管理员统一控制</div>
-                    </div>
-                ),
+            render: () => (
+                <div>
+                    <div className="font-medium text-foreground/78">全局生效</div>
+                    <div className="mt-1 text-xs text-foreground/48">管理员统一控制</div>
+                </div>
+            ),
         },
         {
             title: "平台状态",
@@ -214,25 +211,31 @@ export default function AdminPluginsPage() {
             },
         },
         {
-            title: "卸载",
+            title: "操作",
             key: "actions",
-            width: 72,
+            width: 128,
             align: "center",
-            render: (_, item) =>
-                item.management.origin === "uploaded" ? (
-                    <Button danger type="text" size="small" aria-label={`卸载 ${item.manifest.name}`} icon={<Trash2 className="size-3.5" aria-hidden="true" />} onClick={() => remove(item)} />
-                ) : (
-                    <span title="内置插件不可卸载">
-                        <Button type="text" size="small" disabled aria-label={`${item.manifest.name}为内置插件，不可卸载`} icon={<Trash2 className="size-3.5" aria-hidden="true" />} />
-                    </span>
-                ),
+            render: (_, item) => (
+                <div className="flex items-center justify-center gap-1">
+                    <Button type="text" size="small" aria-label={`查看 ${item.manifest.name} 详情`} icon={<FileText className="size-3.5" aria-hidden="true" />} onClick={() => setDetailId(item.manifest.id)}>
+                        详情
+                    </Button>
+                    {item.management.origin === "uploaded" ? (
+                        <Button danger type="text" size="small" aria-label={`卸载 ${item.manifest.name}`} icon={<Trash2 className="size-3.5" aria-hidden="true" />} onClick={() => remove(item)} />
+                    ) : (
+                        <span title="内置插件不可卸载">
+                            <Button type="text" size="small" disabled aria-label={`${item.manifest.name}为内置插件，不可卸载`} icon={<Trash2 className="size-3.5" aria-hidden="true" />} />
+                        </span>
+                    )}
+                </div>
+            ),
         },
     ];
 
     return (
         <AdminPageFrame
             title="插件管理"
-            description="管理平台级可用性、自定义插件安装与用户启用范围"
+            description="管理全站插件启停、自定义插件安装与配置范围"
             actions={
                 <>
                     <Button icon={<RefreshCw className="size-4" />} loading={loading} onClick={() => void reload()}>
@@ -324,6 +327,13 @@ export default function AdminPluginsPage() {
                 }
             />
             <UploadPluginModal open={uploadOpen} onClose={() => setUploadOpen(false)} onUpload={upload} />
+            <AdminPluginDetailModal
+                plugin={detailItem}
+                state={detailItem ? states[detailItem.manifest.id] : undefined}
+                typeLabel={detailItem ? managementLabel(detailItem.management) : ""}
+                icon={detailItem ? <PluginBrandIcon pluginId={detailItem.manifest.id} /> : null}
+                onClose={() => setDetailId("")}
+            />
         </AdminPageFrame>
     );
 }
@@ -376,7 +386,7 @@ function mergePlugins(remote: BackendPlugin[]): AdminPluginItem[] {
             management: {
                 origin: "official",
                 kind: application ? "application" : "protocol",
-                activationScope: application ? "user" : "system",
+                activationScope: "system",
                 configurationScope: application ? (plugin.manifest.id === EAGLE_PLUGIN_ID || plugin.manifest.id === RUNNINGHUB_PLUGIN_ID ? "user" : "none") : "system",
             },
         });

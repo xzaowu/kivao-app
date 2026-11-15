@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { zhCN as accountZh } from "../src/i18n/messages/areas/account/zh-CN";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -12,10 +13,11 @@ describe("sidebar checkin offer", () => {
         expect(shouldShowSidebarCheckin({ creditsEnabled: true, checkinBonusMicrocredits: 100_000_000, checkedInToday: true })).toBe(false);
     });
 
-    test("uses the configured brand name instead of Buddy", () => {
+    test("uses the configured brand name and falls back to KIVAO for blank values", () => {
         expect(sidebarCheckinTitle("影策")).toBe("影策加油站");
         expect(sidebarCheckinTitle(" 本地工作室 ")).toBe("本地工作室加油站");
-        expect(sidebarCheckinTitle("")).toBe("影策加油站");
+        expect(sidebarCheckinTitle("")).toBe("KIVAO加油站");
+        expect(sidebarCheckinTitle("   ")).toBe("KIVAO加油站");
     });
 });
 
@@ -45,8 +47,10 @@ describe("workspace sidebar checkin card", () => {
 
         expect(checkinIndex).toBeGreaterThan(-1);
         expect(storageIndex).toBeGreaterThan(checkinIndex);
-        expect(card).toContain("立即领取");
-        expect(card).toContain("今日<em>{amount}</em>积分");
+        expect(card).toContain('t("account.layout.checkin.claim")');
+        expect(accountZh.layout.checkin.claim).toBe("立即领取");
+        expect(card).toContain('{t("account.layout.checkin.offerBefore")}\n                    <em>{amount}</em>\n                    {t("account.layout.checkin.offerAfter")}');
+        expect(accountZh.layout.checkin).toMatchObject({ offerBefore: "今日", offerAfter: "积分" });
         expect(card).toContain("checkinCredits()");
         expect(block).toContain("background: #fff;");
         expect(block).toContain("background: #171717;");

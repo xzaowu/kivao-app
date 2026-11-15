@@ -16,8 +16,12 @@ test("welcome entry loads configured appearance", async () => {
         window: { location: { pathname: "/welcome" } },
         installChunkRecovery() {},
         isIsolatedDirectorRepro: () => false,
-        bootstrapAppearance: async () => { calls++; },
-        loadModule: async (name) => { imports.push(name); },
+        bootstrapAppearance: async () => {
+            calls++;
+        },
+        loadModule: async (name) => {
+            imports.push(name);
+        },
     });
     await Promise.resolve();
     assert.equal(calls, 1, "welcome entry must bootstrap appearance");
@@ -31,14 +35,36 @@ test("welcome effects preserve configured SEO title", () => {
     assert.ok(effects.length > 0);
     for (const title of ["Custom SEO Title", "Custom Site Name"]) {
         const document = { title };
+        const cleanups = [];
+        let dialogOpened = 0;
+        let dialogClosed = 0;
+        const dialogRef = {
+            current: {
+                showModal() {
+                    dialogOpened++;
+                },
+                close() {
+                    dialogClosed++;
+                },
+            },
+        };
         for (const [, body] of effects) {
-            vm.runInNewContext(`(() => {${body}\n})()`, {
+            const cleanup = vm.runInNewContext(`(() => {${body}\n})()`, {
                 document,
+                dialogRef,
                 window: { matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }), addEventListener() {}, removeEventListener() {} },
-                storyRef: { current: null }, restorePickerFocus: { current: false },
-                setReduced() {}, setLook() {}, getWelcomeLook() {},
+                storyRef: { current: null },
+                restorePickerFocus: { current: false },
+                setReduced() {},
+                setLook() {},
+                getWelcomeLook() {},
             });
+            if (typeof cleanup === "function") cleanups.push(cleanup);
+            assert.equal(document.title, title, "welcome must preserve appearance metadata title");
         }
-        assert.equal(document.title, title, "welcome must preserve appearance metadata title");
+        assert.equal(dialogOpened, 1, "film dialog mount effect must be exercised");
+        for (const cleanup of cleanups.reverse()) cleanup();
+        assert.equal(dialogClosed, 1, "film dialog cleanup must be exercised");
+        assert.equal(document.title, title, "welcome cleanup must preserve appearance metadata title");
     }
 });

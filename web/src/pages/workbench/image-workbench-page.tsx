@@ -1,6 +1,6 @@
 import { App, Button } from "antd";
 import { Clapperboard, Image as ImageIcon, RotateCcw } from "lucide-react";
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent, type SetStateAction } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 
 import { CanvasResourceMentionTextarea } from "@/components/canvas/canvas-resource-mention-textarea";
@@ -10,11 +10,15 @@ import { ModelPicker } from "@/components/model-picker";
 import { SegmentedControl } from "@/components/ui/base/segmented-control/segmented-control";
 import { AntTooltip as Tooltip } from "@/components/ui/base/tooltip/ant-tooltip";
 import { AppModal } from "@/components/ui/product/app-modal/app-modal";
-import { normalizeCanvasNodeMentionTokens, type CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
+import { canvasNodeMentionToken, normalizeCanvasNodeMentionTokens, type CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
+import { audioUploadTitleFromFileName } from "@/lib/audio-upload-title";
 import { createClientUUID } from "@/lib/client-id";
+import { togglePromptPhrase } from "@/lib/prompt-phrases";
 import { imageQualityLabel } from "@/lib/image-quality";
 import { imageResolutionUsesQuality } from "@/lib/image-size-presets";
-import { modelCapabilityConfigFor, normalizeImageValue, normalizeVideoValue } from "@/lib/model-capabilities";
+import { modelCapabilityConfigFor } from "@/lib/model-capabilities";
+import { preserveImageSettings as normalizeImageValue, preserveVideoSettings as normalizeVideoValue, mediaSettingIssues } from "@/lib/media-settings";
+import { MediaSettingsNotice } from "@/components/media-settings-notice";
 import { modelQuoteRequest, requestCreditCost } from "@/lib/model-pricing";
 import { creationVideoConfig } from "@/pages/create/creation-generation-config";
 import { resolveBrowserMediaDownloadHref, startBrowserDownload } from "@/services/browser-download";
@@ -24,8 +28,10 @@ import { resourceStorageKey, uploadResourceFile } from "@/services/api/resources
 import { cancelGenerationTask, createGenerationTask, queryGenerationTask, retryGenerationTask, type GenerationTask } from "@/services/api/task-center";
 import { capabilitySupportedModes, createWorkbenchTask, listWorkbenchTasks, listWorkbenchTools, resolveWorkbenchResourceURL, type WorkbenchKind, type WorkbenchPromptPreset, type WorkbenchReferenceSlot, type WorkbenchTool } from "@/services/api/workbench";
 import { useCreationPreferencesStore } from "@/stores/use-creation-preferences-store";
-import { logicalModelIDForConfig, modelDisplayName, modelOptionName, resolveModelChannel, selectableModelsByCapability, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
+import { logicalModelIDForConfig, modelDisplayName, modelOptionName, resolveModelChannel, resolveModelRequestConfig, selectableModelsByCapability, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
+import { useModelCatalogStore } from "@/stores/use-model-catalog-store";
+import { refreshSystemChannels } from "@/lib/user-session";
 
 import {
     aspectRatioOf,
@@ -40,12 +46,13 @@ import {
     type WorkbenchOutput,
     type WorkbenchTaskGroup,
 } from "./workbench-batches";
-import { ChoiceChips, ComposerFooter, ComposerSection, CountStepper, PromptSection, ReferenceSection, SceneSection, SwitchRow, videoRatioOptions, type WorkbenchReference } from "./workbench-composer";
+import { ChoiceChips, ComposerFooter, ComposerSection, CountStepper, ParameterDisclosure, PromptSection, ReferenceSection, SceneSection, SwitchRow, videoRatioOptions, type WorkbenchReference } from "./workbench-composer";
 import { WorkbenchGallery, type GalleryActions, type GalleryBatch, type GalleryFilter, type GalleryTile } from "./workbench-gallery";
-import { missingWorkbenchInput, workbenchPromptRequired, workbenchVideoOperation } from "./workbench-input";
-import { isModelIdLike, togglePromptPhrase, WORKBENCH_INSPIRATIONS, WORKBENCH_SPEC_TIPS, workbenchQuickTools, workbenchRatioUsage } from "./workbench-presets";
+import { missingWorkbenchInput, reconcileWorkbenchReferenceSlots, workbenchPromptRequired, workbenchReferenceIssue, workbenchVideoOperation } from "./workbench-input";
+import { isModelIdLike, WORKBENCH_INSPIRATIONS, WORKBENCH_SPEC_TIPS, workbenchQuickTools, workbenchRatioUsage } from "./workbench-presets";
 import { SceneLibraryModal } from "./workbench-scene-library";
 import { WorkbenchViewer } from "./workbench-viewer";
+import { hasMissingWorkbenchMentions, useWorkbenchDraft, withoutRemovedWorkbenchMentions } from "./workbench-draft";
 import "./workbench.css";
 
 export { filterWorkbenchTools } from "./workbench-presets";
@@ -146,9 +153,15 @@ function mergeTaskUpdate(previous: GenerationTask | undefined, next: GenerationT
 }
 
 export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
+    const userId = useUserStore((state) => state.user?.id || "guest");
+    return <WorkbenchWorkspace key={`${userId}:${kind}`} kind={kind} />;
+}
+
+function WorkbenchWorkspace({ kind }: { kind: WorkbenchKind }) {
     const { message, modal } = App.useApp();
     const navigate = useNavigate();
     const config = useEffectiveConfig();
+    const modelCatalogStatus = useModelCatalogStore((state) => state.status);
     const updateConfig = useConfigStore((state) => state.updateConfig);
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
     const features = useUserStore((state) => state.features);
@@ -160,18 +173,33 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
     const [directoryLoading, setDirectoryLoading] = useState(true);
     const [directoryError, setDirectoryError] = useState("");
     const [libraryOpen, setLibraryOpen] = useState(false);
-    const [tool, setTool] = useState<WorkbenchTool | null>(null);
-    const [preset, setPreset] = useState<WorkbenchPromptPreset | null>(null);
-    const [presetPending, setPresetPending] = useState<WorkbenchPromptPreset | null>(null);
-    const [prompt, setPrompt] = useState("");
-    const [references, setReferencesState] = useState<WorkbenchReference[]>([]);
-    const referencesRef = useRef<WorkbenchReference[]>([]);
-    const setReferences = useCallback((update: WorkbenchReference[] | ((current: WorkbenchReference[]) => WorkbenchReference[])) => {
-        const next = typeof update === "function" ? update(referencesRef.current) : update;
-        referencesRef.current = next;
-        setReferencesState(next);
-    }, []);
-    useEffect(() => () => referencesRef.current.forEach(revokeReferencePreview), []);
+    const { draft, store: draftStore, setField } = useWorkbenchDraft(kind);
+    const { tool, preset, prompt, references, settingsReady, ratio, quality, imageResolution, count, seconds, videoQuality } = draft;
+    const { setTool, setPreset, setPrompt, setSettingsReady, setRatio, setQuality, setImageResolution, setCount, setSeconds, setVideoQuality } = useMemo(
+        () => ({
+            setTool: (value: SetStateAction<WorkbenchTool | null>) => setField("tool", value),
+            setPreset: (value: SetStateAction<WorkbenchPromptPreset | null>) => setField("preset", value),
+            setPrompt: (value: SetStateAction<string>) => setField("prompt", value),
+            setSettingsReady: (value: SetStateAction<boolean>) => setField("settingsReady", value),
+            setRatio: (value: SetStateAction<string>) => setField("ratio", value),
+            setQuality: (value: SetStateAction<string>) => setField("quality", value),
+            setImageResolution: (value: SetStateAction<string>) => setField("imageResolution", value),
+            setCount: (value: SetStateAction<number>) => setField("count", value),
+            setSeconds: (value: SetStateAction<string>) => setField("seconds", value),
+            setVideoQuality: (value: SetStateAction<string>) => setField("videoQuality", value),
+        }),
+        [setField],
+    );
+    const [presetPending, setPresetPending] = useState<{ preset: WorkbenchPromptPreset; tool?: WorkbenchTool | null; fromURL?: boolean } | null>(null);
+    const referencesRef = useRef(references);
+    referencesRef.current = references;
+    const setReferences = useCallback(
+        (update: WorkbenchReference[] | ((current: WorkbenchReference[]) => WorkbenchReference[])) => {
+            setField("references", update);
+            referencesRef.current = draftStore.getState().references;
+        },
+        [draftStore, setField],
+    );
     const fileRef = useRef<HTMLInputElement>(null);
     const [uploadSlotKey, setUploadSlotKey] = useState<string | undefined>();
     const [assetPicker, setAssetPicker] = useState<{ slotKey?: string } | null>(null);
@@ -179,13 +207,6 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
     const preferencesHydrated = useCreationPreferencesStore((state) => state.hydrated);
     const rememberImageSettings = useCreationPreferencesStore((state) => state.rememberImageSettings);
     const rememberVideoSettings = useCreationPreferencesStore((state) => state.rememberVideoSettings);
-    const [settingsReady, setSettingsReady] = useState(false);
-    const [ratio, setRatio] = useState(kind === "image" ? "1:1" : "16:9");
-    const [quality, setQuality] = useState("auto");
-    const [imageResolution, setImageResolution] = useState("auto");
-    const [count, setCount] = useState(1);
-    const [seconds, setSeconds] = useState("6");
-    const [videoQuality, setVideoQuality] = useState("720");
 
     const [tasks, setTasks] = useState<GenerationTask[]>([]);
     const [tasksLoading, setTasksLoading] = useState(true);
@@ -210,7 +231,7 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
     const [filter, setFilter] = useState<GalleryFilter>("all");
     const [query, setQuery] = useState("");
     const [mobileTab, setMobileTab] = useState<"compose" | "gallery">("compose");
-    const [estimate, setEstimate] = useState<{ credits: number | null; estimated: boolean; tone: "quote" | "local" | "usage" | "loading" | "unavailable" }>({ credits: null, estimated: false, tone: "unavailable" });
+    const [estimateState, setEstimateState] = useState<{ key?: string; credits: number | null; estimated: boolean; tone: "quote" | "local" | "usage" | "loading" | "unavailable" }>({ credits: null, estimated: false, tone: "unavailable" });
 
     const capability = kind;
     const configuredModel = kind === "image" ? config.imageModel || config.model : config.videoModel || config.model;
@@ -239,6 +260,7 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                 kind: reference.kind,
                 label: reference.name,
                 title: reference.name,
+                mentionToken: canvasNodeMentionToken(reference.id),
                 previewUrl: reference.previewUrl,
                 ...(reference.resourceId ? { storageKey: resourceStorageKey(reference.resourceId) } : {}),
                 active: true,
@@ -260,7 +282,18 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
             listWorkbenchTools(kind, signal, false)
                 .then((directory) => {
                     if (signal?.aborted) return;
-                    setTools(directory.tools.filter((item) => item.kind === kind && item.enabled !== false && (!capabilitySupportedModes(item).length || capabilitySupportedModes(item).includes(kind))).sort((a, b) => a.sortOrder - b.sortOrder));
+                    const available = directory.tools.filter((item) => item.kind === kind && item.enabled !== false && (!capabilitySupportedModes(item).length || capabilitySupportedModes(item).includes(kind))).sort((a, b) => a.sortOrder - b.sortOrder);
+                    setTools(available);
+                    const current = draftStore.getState();
+                    if (current.tool) {
+                        const refreshed = available.find((item) => item.id === current.tool!.id) || null;
+                        setTool(refreshed);
+                        setPreset(refreshed?.presets.find((item) => item.id === current.preset?.id) || null);
+                        setReferences((items) => reconcileWorkbenchReferenceSlots(refreshed, items));
+                        if (!refreshed) {
+                            message.info("原场景已不可用，已保留描述和素材，可重新选择场景");
+                        }
+                    }
                 })
                 .catch((error) => {
                     if (!signal?.aborted) setDirectoryError(errorMessage(error, "场景目录加载失败"));
@@ -269,7 +302,7 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                     if (!signal?.aborted) setDirectoryLoading(false);
                 });
         },
-        [kind],
+        [draftStore, kind, message, setPreset, setReferences, setTool],
     );
     useEffect(() => {
         const controller = new AbortController();
@@ -277,28 +310,36 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
         return () => controller.abort();
     }, [loadDirectory]);
 
-    // ---------- 设置恢复：模型能力变化时把参数收敛到新模型支持的值 ----------
+    // ---------- 设置恢复：保留兼容值，按所选模型自动适配 ----------
     useEffect(() => {
         if (!preferencesHydrated || settingsReady || !imageProfile || !videoProfile) return;
         const saved = useCreationPreferencesStore.getState().preferences;
         if (kind === "image") {
-            const normalized = normalizeImageValue(imageProfile, {
-                size: saved.image?.ratio || imageProfile.size.default,
-                quality: saved.image?.quality || imageProfile.quality.default,
-                imageResolution: saved.image?.imageResolution || imageProfile.resolution.default,
-                count: "1",
-            });
+            const normalized = normalizeImageValue(
+                imageProfile,
+                {
+                    size: saved.image?.ratio || imageProfile.size.default,
+                    quality: saved.image?.quality || imageProfile.quality.default,
+                    imageResolution: saved.image?.imageResolution,
+                    count: "1",
+                },
+                resolveModelRequestConfig(config, selectedModel).interfaceType,
+            );
             setRatio(normalized.size);
             setQuality(normalized.quality);
             setImageResolution(normalized.imageResolution || imageProfile.resolution.default || "auto");
             // 批量数量可以超过模型单次张数（会拆成多个任务），不能用单任务上限收敛。
             setCount(Math.max(1, Math.floor(Number(saved.image?.count)) || 1));
         } else {
-            const normalized = normalizeVideoValue(videoProfile, {
-                seconds: saved.video?.seconds || String(videoProfile.duration.default),
-                ratio: saved.video?.ratio || videoProfile.defaultRatio,
-                resolution: saved.video?.videoQuality || videoProfile.defaultResolution,
-            });
+            const normalized = normalizeVideoValue(
+                videoProfile,
+                {
+                    seconds: saved.video?.seconds || String(videoProfile.duration.default),
+                    ratio: saved.video?.ratio || videoProfile.defaultRatio,
+                    resolution: saved.video?.videoQuality || videoProfile.defaultResolution,
+                },
+                resolveModelRequestConfig(config, selectedModel).interfaceType,
+            );
             setSeconds(normalized.seconds);
             setRatio(normalized.ratio);
             setVideoQuality(normalized.resolution.replace(/p$/i, ""));
@@ -308,13 +349,17 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
 
     useEffect(() => {
         if (!settingsReady || kind !== "image" || !imageProfile) return;
-        const saved = useCreationPreferencesStore.getState().preferences.image;
-        const normalized = normalizeImageValue(imageProfile, {
-            size: saved?.ratio || imageProfile.size.default,
-            quality: saved?.quality || imageProfile.quality.default,
-            imageResolution: saved?.imageResolution || imageProfile.resolution.default,
-            count: "1",
-        });
+        const saved = draftStore.getState();
+        const normalized = normalizeImageValue(
+            imageProfile,
+            {
+                size: saved.ratio || imageProfile.size.default,
+                quality: saved.quality || imageProfile.quality.default,
+                imageResolution: saved.imageResolution,
+                count: "1",
+            },
+            resolveModelRequestConfig(config, selectedModel).interfaceType,
+        );
         setRatio(normalized.size);
         setQuality(normalized.quality);
         setImageResolution(normalized.imageResolution || imageProfile.resolution.default || "auto");
@@ -323,12 +368,16 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
 
     useEffect(() => {
         if (!settingsReady || kind !== "video" || !videoProfile) return;
-        const saved = useCreationPreferencesStore.getState().preferences.video;
-        const normalized = normalizeVideoValue(videoProfile, {
-            seconds: saved?.seconds || String(videoProfile.duration.default),
-            ratio: saved?.ratio || videoProfile.defaultRatio,
-            resolution: saved?.videoQuality || videoProfile.defaultResolution,
-        });
+        const saved = draftStore.getState();
+        const normalized = normalizeVideoValue(
+            videoProfile,
+            {
+                seconds: saved.seconds || String(videoProfile.duration.default),
+                ratio: saved.ratio || videoProfile.defaultRatio,
+                resolution: saved.videoQuality || videoProfile.defaultResolution,
+            },
+            resolveModelRequestConfig(config, selectedModel).interfaceType,
+        );
         setSeconds(normalized.seconds);
         setRatio(normalized.ratio);
         setVideoQuality(normalized.resolution.replace(/p$/i, ""));
@@ -353,9 +402,12 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
         [capability, imageProfile, imageResolution, kind, prompt, quality, ratio, references, seconds, videoQuality],
     );
     const pickerRequirements = useMemo(() => quoteRequirementsFor(plan[0] || 1), [plan, quoteRequirementsFor]);
+    const estimateKey = JSON.stringify([composerConfig.model, pickerRequirements, plan, composerConfig.videoGenerateAudio, composerConfig.videoWatermark, composerConfig.imageParameters, config.channels]);
+    const estimate = estimateState.key === estimateKey ? estimateState : { credits: null, estimated: false, tone: "loading" as const };
 
     useEffect(() => {
-        if (!creditsEnabled || !selectedModel) {
+        const setEstimate = (value: Omit<typeof estimateState, "key">) => setEstimateState({ ...value, key: estimateKey });
+        if (!creditsEnabled || !selectedModel || mediaSettingIssues(composerConfig, kind, selectedModel).length) {
             setEstimate({ credits: null, estimated: false, tone: "unavailable" });
             return;
         }
@@ -383,6 +435,7 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
         setEstimate(localTotal === null ? { credits: null, estimated: false, tone: "loading" } : { credits: localTotal, estimated: false, tone: "local" });
         Promise.all(requests.map(async (item) => ({ outputs: item.outputs, quote: (await quoteModel(item.request!, controller.signal)).quote })))
             .then((quotes) => {
+                if (controller.signal.aborted) return;
                 const byOutputs = new Map(quotes.map((item) => [item.outputs, item.quote]));
                 const total = plan.reduce((sum, outputs) => sum + (byOutputs.get(outputs)?.amountMicrocredits || 0), 0) / 1_000_000;
                 setEstimate({ credits: total, estimated: quotes.some((item) => item.quote.estimated === true), tone: "quote" });
@@ -392,7 +445,7 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                 setEstimate({ credits: localTotal, estimated: false, tone: localTotal === null ? "unavailable" : "local" });
             });
         return () => controller.abort();
-    }, [capability, composerConfig, config, creditsEnabled, kind, plan, quoteRequirementsFor, seconds, selectedModel]);
+    }, [capability, composerConfig, config, creditsEnabled, kind, plan, quoteRequirementsFor, seconds, selectedModel, estimateKey]);
 
     // ---------- 任务列表轮询 ----------
     const loadFailedRef = useRef(false);
@@ -620,26 +673,6 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
     // 提示词为空，或仍是当前预设原文（用户没改过），切换时可以直接替换；改过的内容先确认再动。
     const promptReplaceable = () => !prompt.trim() || (preset !== null && prompt.trim() === preset.promptTemplate.trim());
 
-    // 切换场景后提示词必须跟着新场景走：未改动的模板直接换成新场景的预设（新场景没有预设则清空），
-    // 用户改过的内容弹出“替换 / 追加 / 返回”确认，不能静默保留上一个场景的模板。
-    const switchToolPrompt = (next: WorkbenchTool | null, preferredPresetId?: string | null) => {
-        const replaceable = promptReplaceable();
-        const nextPreset = next?.presets.find((item) => item.id === preferredPresetId) || next?.presets[0] || null;
-        setPresetPending(null);
-        if (!nextPreset) {
-            setPreset(null);
-            if (replaceable) setPrompt("");
-            return;
-        }
-        if (replaceable) {
-            setPrompt(nextPreset.promptTemplate);
-            setPreset(nextPreset);
-            return;
-        }
-        setPreset(null);
-        setPresetPending(nextPreset);
-    };
-
     const referenceLimitFor = useCallback(
         (mediaKind: MediaKind) => {
             if (kind === "image") return mediaKind === "image" ? imageProfile?.references.maxImages || 0 : 0;
@@ -673,50 +706,91 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
             kept.push({ ...reference, slotKey: slot.key });
         }
         dropped.forEach(revokeReferencePreview);
+        if (dropped.length) setPrompt((current) => withoutRemovedWorkbenchMentions(current, dropped));
         setReferences(kept);
         if (dropped.length) message.info(`${dropped.length} 个素材不适用于${next ? `“${next.name}”` : "自由创作"}，已移除`);
     };
 
-    const chooseTool = (next: WorkbenchTool | null) => {
-        reassignReferences(next);
-        setUploadSlotKey(undefined);
-        setTool(next);
-        setLibraryOpen(false);
+    const updateToolURL = (next: WorkbenchTool | null, nextPreset?: WorkbenchPromptPreset | null) => {
         const params = new URLSearchParams(searchParams);
         if (next) params.set("tool", next.id);
         else params.delete("tool");
-        params.delete("preset");
+        if (nextPreset) params.set("preset", nextPreset.id);
+        else params.delete("preset");
         setSearchParams(params, { replace: true });
-        switchToolPrompt(next);
+    };
+
+    const commitTool = (next: WorkbenchTool | null, nextPreset: WorkbenchPromptPreset | null, mode: "replace" | "append" | "preserve") => {
+        reassignReferences(next);
+        setUploadSlotKey(undefined);
+        setTool(next);
+        setPreset(nextPreset);
+        if (mode !== "preserve") setPrompt((current) => (mode === "append" && nextPreset ? `${current.trimEnd()}\n${nextPreset.promptTemplate}` : nextPreset?.promptTemplate || ""));
+        updateToolURL(next, nextPreset);
+        setPresetPending(null);
         setMobileTab("compose");
     };
 
-    useEffect(() => {
-        const toolId = searchParams.get("tool");
-        if (!toolId || !tools.length) return;
-        const next = tools.find((item) => item.id === toolId);
-        // 页内选择和任务恢复会先更新 tool 再改地址，这里只处理从外部链接切换过来的场景。
-        if (!next || next.id === tool?.id) return;
-        reassignReferences(next);
-        setTool(next);
-        switchToolPrompt(next, searchParams.get("preset"));
-        // 只随地址和目录变化触发；tool 变化不能触发，否则任务恢复在改地址前会被旧地址拉回。
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [searchParams, tools]);
+    const chooseTool = (next: WorkbenchTool | null, preferredPresetId?: string | null, fromURL = false) => {
+        const nextPreset = next?.presets.find((item) => item.id === preferredPresetId) || next?.presets[0] || null;
+        setLibraryOpen(false);
+        if (nextPreset && !promptReplaceable()) {
+            // 确认之前不改变场景、素材或地址；返回和关闭都能完整保留原草稿。
+            setPresetPending({ preset: nextPreset, tool: next, fromURL });
+            return;
+        }
+        commitTool(next, nextPreset, promptReplaceable() ? "replace" : "preserve");
+    };
 
-    const choosePreset = (next: WorkbenchPromptPreset) => {
+    useEffect(() => {
+        if (directoryLoading || directoryError) return;
+        const toolId = searchParams.get("tool");
+        if (!toolId) {
+            if (tool) updateToolURL(tool, preset);
+            return;
+        }
+        const next = tools.find((item) => item.id === toolId);
+        if (!next) {
+            updateToolURL(tool, preset);
+            return;
+        }
+        if (next.id === tool?.id) {
+            const presetId = searchParams.get("preset");
+            if (!presetId || presetId === preset?.id) return;
+            const nextPreset = next.presets.find((item) => item.id === presetId);
+            if (nextPreset) choosePreset(nextPreset, true);
+            else updateToolURL(tool, preset);
+            return;
+        }
+        chooseTool(next, searchParams.get("preset"), true);
+        // tool/preset 提交后会同步地址；不能因草稿变化再次应用旧地址。
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [directoryLoading, directoryError, searchParams, tools]);
+
+    const choosePreset = (next: WorkbenchPromptPreset, fromURL = false) => {
         if (promptReplaceable()) {
             setPrompt(next.promptTemplate);
             setPreset(next);
+            updateToolURL(tool, next);
             return;
         }
-        setPresetPending(next);
+        setPresetPending({ preset: next, fromURL });
     };
 
     const applyPreset = (mode: "replace" | "append") => {
         if (!presetPending) return;
-        setPrompt((current) => (mode === "append" ? `${current.trimEnd()}\n${presetPending.promptTemplate}` : presetPending.promptTemplate));
-        setPreset(presetPending);
+        if (presetPending.tool !== undefined) {
+            commitTool(presetPending.tool, presetPending.preset, mode);
+            return;
+        }
+        setPrompt((current) => (mode === "append" ? `${current.trimEnd()}\n${presetPending.preset.promptTemplate}` : presetPending.preset.promptTemplate));
+        setPreset(presetPending.preset);
+        updateToolURL(tool, presetPending.preset);
+        setPresetPending(null);
+    };
+
+    const cancelPreset = () => {
+        if (presetPending?.fromURL) updateToolURL(tool, preset);
         setPresetPending(null);
     };
 
@@ -790,7 +864,7 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
         });
         if (typed.length < list.length) message.warning(kind === "image" ? "只能上传图片" : "只能上传图片、视频或音频");
         const accepted = appendReferences(
-            typed.map(({ file, mediaKind }) => ({ kind: mediaKind, name: file.name, previewUrl: URL.createObjectURL(file), file })),
+            typed.map(({ file, mediaKind }) => ({ kind: mediaKind, name: mediaKind === "audio" ? audioUploadTitleFromFileName(file.name) : file.name, previewUrl: URL.createObjectURL(file), file })),
             preferredSlotKey,
         );
         await Promise.all(
@@ -817,11 +891,14 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
     };
 
     const removeReference = (reference: WorkbenchReference) => {
+        const kept = referencesRef.current.filter((item) => item.id !== reference.id);
+        setPrompt((current) => withoutRemovedWorkbenchMentions(current, [reference]));
         revokeReferencePreview(reference);
-        setReferences((current) => current.filter((item) => item.id !== reference.id));
+        setReferences(kept);
     };
 
     const clearReferences = () => {
+        setPrompt((current) => withoutRemovedWorkbenchMentions(current, referencesRef.current));
         referencesRef.current.forEach(revokeReferencePreview);
         setReferences([]);
     };
@@ -896,19 +973,30 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
     };
 
     // ---------- 提交 ----------
-    const disabledReason = !selectedModel
-        ? `先选择${kindLabel}模型`
-        : missingInput
-          ? `请上传“${missingInput.name || "必填素材"}”`
-          : references.some((reference) => reference.uploading)
-            ? "素材上传中，请稍候"
-            : references.some((reference) => reference.error)
-              ? "请移除上传失败的素材"
-              : promptRequired && !prompt.trim()
-                ? "请填写画面描述"
-                : undefined;
+    const settingsError = mediaSettingIssues(composerConfig, kind, selectedModel)
+        .map((item) => item.message)
+        .join("；");
+    const referenceError = workbenchReferenceIssue(tool, references, selectedModel ? { image: referenceLimitFor("image"), video: referenceLimitFor("video"), audio: referenceLimitFor("audio") } : undefined);
+    const disabledReason = settingsError
+        ? settingsError
+        : !selectedModel
+          ? `先选择${kindLabel}模型`
+          : referenceError
+            ? referenceError
+            : missingInput
+              ? `请上传“${missingInput.name || "必填素材"}”`
+              : references.some((reference) => reference.uploading)
+                ? "素材上传中，请稍候"
+                : references.some((reference) => reference.error)
+                  ? "请移除上传失败的素材"
+                  : promptRequired && !prompt.trim()
+                    ? "请填写画面描述"
+                    : undefined;
 
     const buildBatchRequest = (): BatchRequest | string => {
+        if (settingsError) return settingsError;
+        if (referenceError) return referenceError;
+        if (hasMissingWorkbenchMentions(prompt, references)) return "描述中有已失效的素材引用，请删除或重新选择素材";
         const submittedPrompt = normalizeCanvasNodeMentionTokens(prompt.trim(), promptReferences);
         if (promptRequired && !submittedPrompt) return "请填写画面描述";
         const missing = missingWorkbenchInput(tool, references);
@@ -919,16 +1007,27 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
         if (submittedPrompt.length > promptMaxChars) return "描述超过当前模型支持的长度";
         const logicalModelId = logicalModelIDForConfig({ ...composerConfig, model: selectedModel });
         const channel = resolveModelChannel(config, selectedModel);
-        const imageRequest = kind === "image" && imageProfile ? normalizeImageValue(imageProfile, { size: ratio, quality, imageResolution, imageParameters: config.imageParameters, count: "1", transparentBackground: config.transparentBackground }) : null;
-        const videoRequest = kind === "video" && videoProfile ? normalizeVideoValue(videoProfile, { seconds, ratio, resolution: videoQuality }) : null;
+        const imageRequest =
+            kind === "image" && imageProfile
+                ? normalizeImageValue(
+                      imageProfile,
+                      { size: ratio, quality, imageResolution, imageParameters: config.imageParameters, count: "1", transparentBackground: config.transparentBackground },
+                      resolveModelRequestConfig(config, selectedModel).interfaceType,
+                  )
+                : null;
+        const videoRequest = kind === "video" && videoProfile ? normalizeVideoValue(videoProfile, { seconds, ratio, resolution: videoQuality }, resolveModelRequestConfig(config, selectedModel).interfaceType) : null;
         const parameters: Record<string, unknown> = imageRequest
-            ? { size: imageRequest.size, quality: imageRequest.quality, ...(imageRequest.imageResolution ? { imageResolution: imageRequest.imageResolution } : {}) }
+            ? {
+                  ...(imageProfile?.size.parameter !== "none" ? { size: imageRequest.size } : {}),
+                  ...(imageRequest.quality && !["auto", "any"].includes(imageRequest.quality.toLowerCase()) ? { quality: imageRequest.quality } : {}),
+                  ...(imageRequest.imageResolution && !["auto", "any"].includes(imageRequest.imageResolution.toLowerCase()) ? { imageResolution: imageRequest.imageResolution } : {}),
+              }
             : {
-                  seconds: Number(videoRequest?.seconds || seconds),
-                  ratio: videoRequest?.ratio || ratio,
-                  resolution: videoRequest?.resolution || videoQuality,
-                  generateAudio: composerConfig.videoGenerateAudio === "true",
-                  watermark: composerConfig.videoWatermark === "true",
+                  ...(videoProfile?.durationSupported !== false ? { seconds: Number(videoRequest?.seconds || seconds) } : {}),
+                  ...(videoProfile?.ratios.length ? { ratio: videoRequest?.ratio || ratio } : {}),
+                  ...(videoProfile?.resolutions.length ? { resolution: videoRequest?.resolution || videoQuality } : {}),
+                  ...(videoProfile?.generateAudio.supported ? { generateAudio: composerConfig.videoGenerateAudio === "true" } : {}),
+                  ...(videoProfile?.watermark.supported ? { watermark: composerConfig.videoWatermark === "true" } : {}),
               };
         const generationConfig = {
             ...composerConfig,
@@ -1354,11 +1453,25 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
         : [];
     const bothKinds = features.imageWorkbenchEnabled && features.videoWorkbenchEnabled;
     const galleryCount = galleryBatches.reduce((sum, batch) => sum + batch.outputs.length, 0);
+    const parameterSummary = selectedModel
+        ? workbenchParameterSummary(
+              kind,
+              kind === "image"
+                  ? { size: ratio, quality, imageResolution }
+                  : {
+                        ...(videoProfile?.durationSupported !== false ? { seconds } : {}),
+                        ...(videoProfile?.ratios.length ? { ratio } : {}),
+                        ...(videoProfile?.resolutions.length ? { resolution: videoQuality } : {}),
+                        generateAudio: videoProfile?.generateAudio.supported && config.videoGenerateAudio === "true",
+                    },
+              requestedCount,
+          ).join(" · ")
+        : `选择模型后设置规格 · ${requestedCount} ${kind === "image" ? "张" : "条"}`;
 
     const specControls =
         kind === "image" && imageProfile ? (
             <>
-                <ImageSizePicker profile={imageProfile} size={ratio} quality={quality} imageResolution={imageResolution} ratioHint={(value) => workbenchRatioUsage("image", value)} onChange={updateImageSettings} />
+                <ImageSizePicker profile={imageProfile} size={ratio} quality={quality} imageResolution={imageResolution} declaredSizeOptions ratioHint={(value) => workbenchRatioUsage("image", value)} onChange={updateImageSettings} />
                 {imageProfile.quality.supported && !imageResolutionUsesQuality(imageProfile) && imageProfile.quality.values.length > 1 ? (
                     <ChoiceChips
                         label="画质"
@@ -1459,11 +1572,12 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                         </Tooltip>
                     </header>
                     <div className="wb-composer-scroll">
-                        <SceneSection kind={kind} tool={tool} quickTools={quickTools} loading={directoryLoading} error={directoryError} onOpenLibrary={() => setLibraryOpen(true)} onChoose={chooseTool} onRetry={() => loadDirectory()} />
+                        <SceneSection kind={kind} tool={tool} loading={directoryLoading} error={directoryError} onOpenLibrary={() => setLibraryOpen(true)} onRetry={() => loadDirectory()} />
                         <ReferenceSection
                             kind={kind}
                             tool={tool}
                             references={references}
+                            error={referenceError}
                             unslottedLimit={unslottedLimit}
                             onPick={(slotKey) => {
                                 setUploadSlotKey(slotKey);
@@ -1487,6 +1601,7 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                             onClear={() => {
                                 setPrompt("");
                                 setPreset(null);
+                                updateToolURL(tool, null);
                             }}
                             editor={
                                 <CanvasResourceMentionTextarea
@@ -1504,7 +1619,7 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                                 />
                             }
                         />
-                        <ComposerSection title="模型与规格" hint="可选参数随模型变化">
+                        <ComposerSection title="模型与参数">
                             {models.length ? (
                                 <ModelPicker
                                     config={config}
@@ -1522,19 +1637,57 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                                     }}
                                     placeholder={`选择${kindLabel}模型`}
                                 />
-                            ) : (
+                            ) : modelCatalogStatus === "loading" ? (
+                                <p className="wb-muted-note" aria-busy="true">
+                                    正在加载模型…
+                                </p>
+                            ) : modelCatalogStatus === "ready" ? (
                                 <div className="wb-inline-error">
                                     <span>暂无可用的{kindLabel}模型</span>
                                     <a href="/settings?section=models" target="_blank" rel="noreferrer">
                                         去模型设置
                                     </a>
                                 </div>
-                            )}
-                            {selectedModel ? specControls : null}
-                            {selectedModel ? <p className="wb-muted-note">{WORKBENCH_SPEC_TIPS[kind]}</p> : null}
-                        </ComposerSection>
-                        <ComposerSection title="生成数量" hint={limitHint ? `${countHint} · ${limitHint}` : countHint}>
-                            <CountStepper kind={kind} value={requestedCount} max={batchLimit} onChange={changeCount} />
+                            ) : null}
+                            {modelCatalogStatus === "error" || (modelCatalogStatus === "idle" && !models.length) ? (
+                                <div className="wb-inline-error">
+                                    <span role="status">{modelCatalogStatus === "idle" ? "模型列表尚未加载，请重试。" : models.length ? "模型列表刷新失败，已保留本地模型。" : "模型列表加载失败，请重试。"}</span>
+                                    <Button size="small" onClick={() => void refreshSystemChannels().catch(() => {})}>
+                                        重试加载模型
+                                    </Button>
+                                </div>
+                            ) : null}
+                            {selectedModel ? (
+                                <MediaSettingsNotice
+                                    config={composerConfig}
+                                    capability={kind}
+                                    onChange={(field, value) => {
+                                        if (field === "size") {
+                                            setRatio(value);
+                                            kind === "image" ? rememberImageSettings({ ratio: value }) : rememberVideoSettings({ ratio: value });
+                                        } else if (field === "quality") {
+                                            setQuality(value);
+                                            rememberImageSettings({ quality: value });
+                                        } else if (field === "imageResolution") {
+                                            setImageResolution(value);
+                                            rememberImageSettings({ imageResolution: value });
+                                        } else if (field === "videoSeconds") {
+                                            setSeconds(value);
+                                            rememberVideoSettings({ seconds: value });
+                                        } else if (field === "vquality") {
+                                            setVideoQuality(value);
+                                            rememberVideoSettings({ videoQuality: value });
+                                        } else updateConfig(field as keyof typeof config, value);
+                                    }}
+                                />
+                            ) : null}
+                            <ParameterDisclosure summary={parameterSummary} error={settingsError}>
+                                {selectedModel ? specControls : null}
+                                <ComposerSection title="生成数量" hint={limitHint ? `${countHint} · ${limitHint}` : countHint}>
+                                    <CountStepper kind={kind} value={requestedCount} max={batchLimit} onChange={changeCount} />
+                                </ComposerSection>
+                                {selectedModel ? <p className="wb-muted-note">{WORKBENCH_SPEC_TIPS[kind]}</p> : null}
+                            </ParameterDisclosure>
                         </ComposerSection>
                     </div>
                     <ComposerFooter kind={kind} count={requestedCount} taskCount={plan.length} estimate={estimateLabel} busy={busy} disabledReason={disabledReason} onSubmit={() => void submit()} />
@@ -1631,9 +1784,9 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
             <AppModal
                 title="描述里已有内容"
                 open={Boolean(presetPending)}
-                onCancel={() => setPresetPending(null)}
+                onCancel={cancelPreset}
                 footer={[
-                    <Button key="cancel" onClick={() => setPresetPending(null)}>
+                    <Button key="cancel" onClick={cancelPreset}>
                         返回
                     </Button>,
                     <Button key="append" onClick={() => applyPreset("append")}>
@@ -1644,7 +1797,7 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                     </Button>,
                 ]}
             >
-                {presetPending ? <p className="wb-modal-copy">将应用“{presetPending.name}”模板。可以替换当前描述，也可以追加到末尾。</p> : null}
+                {presetPending ? <p className="wb-modal-copy">将应用“{presetPending.preset.name}”模板。可以替换当前描述，也可以追加到末尾。</p> : null}
             </AppModal>
         </WorkspacePage>
     );

@@ -3,6 +3,7 @@ export type AgentLauncherViewport = { width: number; height: number };
 export type AgentLauncherGesture = { x: number; y: number; start: AgentLauncherPosition; dragged: boolean };
 
 export const AGENT_LAUNCHER_POSITION_KEY = "canvas:agent-launcher-position:v1";
+export const AGENT_MOBILE_LAUNCHER_POSITION_KEY = "canvas:agent-mobile-launcher-position:v1";
 export const AGENT_LAUNCHER_SIZE = 76;
 const MARGIN = 20; // Includes the label below the orb.
 /** 画布编辑器以外的页面和窄屏上，大形象会压住页面右下角的按钮，高度封顶到这个值。 */

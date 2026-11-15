@@ -22,6 +22,8 @@ export type ViewportTransform = {
     k: number;
 };
 
+export type CanvasFrameColor = "blue" | "green" | "violet" | "amber" | "rose" | "teal" | "slate";
+
 export enum CanvasNodeType {
     Image = "image",
     Text = "text",
@@ -32,12 +34,7 @@ export enum CanvasNodeType {
     Video = "video",
     Audio = "audio",
     Frame = "frame",
-    Markdown = "markdown",
-    Svg = "svg",
-    Html = "html",
     Panorama = "panorama",
-    Compare = "compare",
-    Chart = "chart",
     ColorGrade = "colorgrade",
     MediaConversion = "media-conversion",
     BatchTable = "batch-table",
@@ -65,7 +62,8 @@ export type CanvasGenerationBatchStatus = "queued" | "running" | "partial_failed
 export type CanvasGenerationBatchItemStatus = "waiting" | "submitting" | "queued" | "running" | "succeeded" | "failed" | "cancelled";
 export type CanvasImageGenerationType = "generation" | "edit";
 export type CanvasWorkflowKind = "free" | "script" | "story_input" | "character" | "scene" | "storyboard" | "shot" | "final" | "styleboard" | "reference_set" | "reference_video" | "action_board";
-export type CanvasVideoEditOperation = "text_to_video" | "image_to_video" | "reference_to_video" | "extend" | "inpaint" | "replace_element" | "camera_motion" | "style_transfer" | "audio_to_video" | "compare_versions" | "concat" | "enhance";
+export type CanvasVideoEditOperation =
+    "text_to_video" | "image_to_video" | "reference_to_video" | "extend" | "inpaint" | "replace_element" | "camera_motion" | "style_transfer" | "audio_to_video" | "compare_versions" | "concat" | "enhance" | "depth_capture";
 export type CanvasSkillCategory = "writing" | "storyboard" | "image" | "video" | "utility";
 export type CanvasSkillOutputMode = "text" | "json" | "image_prompt" | "workflow";
 export type StoryboardColumn =
@@ -327,6 +325,7 @@ export type CanvasNodeMetadata = {
         mimeType?: string;
     };
     richText?: Record<string, unknown>;
+    textFormat?: "plain" | "markdown";
     composerContent?: string;
     prompt?: string;
     /** 文本节点是否处于列表模式；用于触发多模态分析并创建多维表格。 */
@@ -337,6 +336,8 @@ export type CanvasNodeMetadata = {
     /** 浏览器文件上传，与模型生成任务状态独立。 */
     fileUpload?: "uploading" | "error";
     fileUploadProgress?: number;
+    /** Original local filename, including its extension; never a physical storage key. */
+    originalFileName?: string;
     locked?: boolean;
     errorDetails?: string;
     generationErrorCode?: string;
@@ -541,6 +542,7 @@ export type CanvasNodeMetadata = {
         bitrateLevel?: "low" | "medium" | "high";
         bitrate?: number;
     };
+    videoDepthCapture?: { sourceNodeId: string; model: string };
     videoEditOperation?: CanvasVideoEditOperation;
     arkPrivateAssetUpload?: string;
     videoCameraMoveId?: string;
@@ -573,13 +575,13 @@ export type CanvasNodeMetadata = {
     skillId?: string;
     skillVersion?: number;
     skillSnapshot?: CanvasSkillSnapshot;
-    /** 图表节点的图形类型，缺省柱状图。落盘字段——新增扩展节点的自有字段都要在这里声明。 */
-    chartKind?: "bar" | "line";
     /** 调色节点的参数；缺省视为未调色。 */
     colorGrade?: CanvasColorGrade;
     mediaConversion?: MediaConversionNodeState;
     /** 用户手动拉伸过尺寸；图片按真实比例自动适配时避让它。 */
     manualSize?: boolean;
+    /** 用户手动改过节点名称；原位重新生成时保留，不再换成提示词摘要。 */
+    manualTitle?: boolean;
     storyboard?: StoryboardData;
     storyboardShotDuration?: StoryboardShotDuration;
     storyboardShotCount?: StoryboardShotCount;
@@ -599,6 +601,8 @@ export type CanvasNodeMetadata = {
         collapsed: boolean;
         expandedWidth: number;
         expandedHeight: number;
+        /** 语义色名（如 Agent 搭看板时按幕着色），具体颜色由主题样式映射。 */
+        color?: CanvasFrameColor;
     };
     folder?: {
         style: CanvasFolderStyle;

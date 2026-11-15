@@ -193,6 +193,8 @@ func DefaultModelCapabilityConfigForModel(protocol string, modelName string) *Mo
 		}
 	case model.ChannelInterfaceNewAPIVideo, model.ChannelInterfaceXAIVideo:
 		video.GenerateAudio = VideoBooleanConfig{Supported: false, Default: false}
+	case model.ChannelInterfaceType("dashscope-wan3-video"):
+		video.GenerateAudio = VideoBooleanConfig{Supported: true, Default: true}
 	case model.ChannelInterfaceNovitaVideo:
 		video.References.MaxImages, video.References.MaxImageBytes = 1, 10*1024*1024
 		video.Duration = VideoDurationConfig{Selection: "enum", Values: []int{5, 10}, Default: 5}
@@ -217,6 +219,14 @@ func DefaultModelCapabilityConfigForModel(protocol string, modelName string) *Mo
 		video.Watermark = VideoBooleanConfig{Supported: true, Default: false}
 	case model.ChannelInterfaceAgnesVideo:
 		video = applyModelSpecificVideoCapability(video, protocol, modelName)
+	case model.ChannelInterfaceType(VolcengineMediaKitVideoDepthProtocol):
+		video.References = VideoReferenceConfig{PromptMaxChars: DefaultVideoPromptMaxChars, MaxVideos: 1, MaxVideoDuration: MaxVideoDepthCaptureSeconds}
+		video.Duration = VideoDurationConfig{Selection: "range", Min: 1, Max: MaxVideoDepthCaptureSeconds, Step: 1, Default: 5}
+		video.Ratios, video.Resolutions = []string{}, []string{}
+		video.DefaultRatio, video.DefaultResolution = "", ""
+		video.GenerateAudio, video.Watermark = VideoBooleanConfig{}, VideoBooleanConfig{}
+		video.Operations, video.DefaultOperation = []string{VideoProcessingOperationDepthCapture}, VideoProcessingOperationDepthCapture
+		video.Processing = &VideoProcessingConfig{FPSPolicy: VideoProcessingFPSKeepSource, MaxSourceSeconds: DefaultVideoDepthCaptureMaxSeconds}
 	case model.ChannelInterfaceType(VolcengineMediaKitEnhanceVideoProtocol):
 		// 画质增强：只接收一个源视频，时长由服务端按源资源测得，帧率默认保持原片。
 		video.References = VideoReferenceConfig{PromptMaxChars: DefaultVideoPromptMaxChars, MaxVideos: 1, MaxVideoDuration: DefaultVideoProcessingMaxSourceSeconds}

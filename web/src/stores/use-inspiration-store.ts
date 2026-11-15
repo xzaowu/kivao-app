@@ -10,8 +10,14 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
 import { catalogIdOf, type CreationInspiration, type InspirationSourceId } from "@/lib/inspirations/catalog";
-import { CUSTOM_ID_PREFIX, isCustomInspiration, type InspirationOverride } from "@/lib/inspirations/resolve";
+import { CUSTOM_ID_PREFIX, isCustomInspiration, normalizeInspirationOverride, type InspirationOverride } from "@/lib/inspirations/resolve";
 import { localForageStorageForScope } from "@/lib/localforage-storage";
+import { useUserStore } from "./use-user-store";
+
+function requireInspirationAdmin() {
+    const { hydrated, user } = useUserStore.getState();
+    if (!hydrated || user?.role !== "admin" || user.status !== "active") throw new Error("只有管理员可以管理灵感");
+}
 
 export const INSPIRATION_STORE_KEY = "open_ai_canvas:inspirations";
 /** 导入导出文件的格式版本，字段变化时递增并在这里做迁移。 */
@@ -71,11 +77,10 @@ function nonEmpty(value: unknown, field: string): string {
 
 function asStringArray(value: unknown): string[] | undefined {
     if (!Array.isArray(value)) return undefined;
-    const items = value.filter((item): item is string => typeof item === "string" && Boolean(item.trim())).map((item) => item.trim());
-    return items.length ? items : undefined;
+    return value.filter((item): item is string => typeof item === "string" && Boolean(item.trim())).map((item) => item.trim());
 }
 
-/** 编辑器传来的草稿先按同一套规则收敛，不做「空字符串也写进去」的兜底。 */
+/** 必填字段不可为空；保留可选字段的清空意图，避免编辑时重新出现旧值。 */
 export function normalizeDraft(input: unknown): InspirationDraft {
     if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("灵感内容格式不正确");
     const raw = input as Record<string, unknown>;
@@ -86,10 +91,10 @@ export function normalizeDraft(input: unknown): InspirationDraft {
         image: nonEmpty(raw.image, "封面地址"),
         mode: raw.mode,
         prompt: nonEmpty(raw.prompt, "提示词正文"),
-        ...(typeof raw.promptZh === "string" && raw.promptZh.trim() ? { promptZh: raw.promptZh.trim() } : {}),
-        ...(typeof raw.category === "string" && raw.category.trim() ? { category: raw.category.trim() } : {}),
+        ...(typeof raw.promptZh === "string" ? { promptZh: raw.promptZh.trim() } : {}),
+        ...(typeof raw.category === "string" ? { category: raw.category.trim() } : {}),
         ...(asStringArray(raw.tags) ? { tags: asStringArray(raw.tags) } : {}),
-        ...(typeof raw.ratio === "string" && raw.ratio.trim() ? { ratio: raw.ratio.trim() } : {}),
+        ...(typeof raw.ratio === "string" ? { ratio: raw.ratio.trim() } : {}),
     };
 }
 
@@ -121,6 +126,7 @@ export const useInspirationStore = create<InspirationStore>()(
             favorites: [],
 
             createEntry: (draft) => {
+                requireInspirationAdmin();
                 const id = `${CUSTOM_ID_PREFIX}${createClientUUID()}`;
                 const entry: CreationInspiration = { ...normalizeDraft(draft), id, sourceId: "original" };
                 set((state) => ({ custom: [entry, ...state.custom] }));
@@ -128,8 +134,9 @@ export const useInspirationStore = create<InspirationStore>()(
             },
 
             updateEntry: (id, patch) => {
+                requireInspirationAdmin();
                 if (!id) throw new Error("缺少要修改的灵感 ID");
-                const sanitized = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined && value !== ""));
+                const sanitized = normalizeInspirationOverride(patch);
                 if (!Object.keys(sanitized).length) return;
                 if (isCustomInspiration(id)) {
                     set((state) => ({ custom: state.custom.map((item) => (catalogIdOf(item) === id ? { ...item, ...sanitized } : item)) }));
@@ -139,6 +146,7 @@ export const useInspirationStore = create<InspirationStore>()(
             },
 
             removeEntry: (id) => {
+                requireInspirationAdmin();
                 if (!id) throw new Error("缺少要删除的灵感 ID");
                 if (isCustomInspiration(id)) {
                     set((state) => ({
@@ -154,7 +162,10 @@ export const useInspirationStore = create<InspirationStore>()(
                 }));
             },
 
-            restoreEntry: (id) => set((state) => ({ hidden: state.hidden.filter((item) => item !== id) })),
+            restoreEntry: (id) => {
+                requireInspirationAdmin();
+                set((state) => ({ hidden: state.hidden.filter((item) => item !== id) }));
+            },
 
             toggleFavorite: (id) => {
                 if (!id) throw new Error("缺少要收藏的灵感 ID");
@@ -162,6 +173,7 @@ export const useInspirationStore = create<InspirationStore>()(
             },
 
             exportPayload: () => {
+                requireInspirationAdmin();
                 const state = get();
                 const payload: InspirationPayload = {
                     version: INSPIRATION_PAYLOAD_VERSION,
@@ -175,6 +187,7 @@ export const useInspirationStore = create<InspirationStore>()(
             },
 
             importPayload: (text) => {
+                requireInspirationAdmin();
                 let parsed: unknown;
                 try {
                     parsed = JSON.parse(text);
@@ -197,7 +210,7 @@ export const useInspirationStore = create<InspirationStore>()(
                     else created += 1;
                 }
 
-                const overrides = raw.overrides && typeof raw.overrides === "object" && !Array.isArray(raw.overrides) ? (raw.overrides as Record<string, InspirationOverride>) : {};
+                const overrides = raw.overrides && typeof raw.overrides === "object" && !Array.isArray(raw.overrides) ? Object.fromEntries(Object.entries(raw.overrides).map(([id, patch]) => [id, normalizeInspirationOverride(patch)])) : {};
                 const hidden = Array.isArray(raw.hidden) ? raw.hidden.filter((item): item is string => typeof item === "string" && Boolean(item.trim())) : [];
                 const favorites = Array.isArray(raw.favorites) ? raw.favorites.filter((item): item is string => typeof item === "string" && Boolean(item.trim())) : [];
 

@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { defaultModelCapabilityConfig } from "../src/lib/model-capabilities";
+import { defaultModelCapabilityConfig, VOLCENGINE_MEDIAKIT_VIDEO_DEPTH_PROTOCOL } from "../src/lib/model-capabilities";
 import type { ModelProtocolDefinition } from "../src/lib/model-protocols";
 import {
     changeChannelModelCapability,
+    changeChannelModelProtocol,
     duplicateChannelModelValues,
     editorSectionForField,
     initialChannelModelValues,
@@ -10,11 +11,144 @@ import {
     validateChannelModelPrices,
     validateChannelModelProtocol,
 } from "../src/pages/admin/components/channel-model-editor-form";
-import { defaultPriceTier } from "../src/pages/admin/components/channel-model-price-tier-form";
+import { defaultPriceTier, skuSelectorFromForm } from "../src/pages/admin/components/channel-model-price-tier-form";
 import type { ChannelModel, ChannelModelPriceTier } from "../src/services/api/wallet";
+import { projectImageParameters, resolveImageParameters, type ImageParameter } from "../src/lib/image-parameters";
 
 const definition = (value: string, capability: ModelProtocolDefinition["capability"], enabled = true): ModelProtocolDefinition => ({ value, capability, enabled, label: value, create: "POST /test", contentType: "application/json", media: "url" });
+
+for (const shape of ["nil", "empty", "missing-size", "missing-encoding"] as const) {
+    for (const pixelsToRatio of [true, false]) {
+        test(`${shape} 参数声明，${pixelsToRatio ? "像素转比例" : "比例转像素"} 按目标端点编码并保留能力和价格`, () => {
+            const size = pixelsToRatio ? "2560x1440" : "16:9";
+            const encoding = pixelsToRatio ? "ratio" : "pixels";
+            const fields: ImageParameter[] = [
+                { name: "size", label: "尺寸", type: "string", encoding: pixelsToRatio ? "pixels" : "ratio", values: [size], default: size, pricing: true },
+                { name: "imageResolution", label: "分辨率", type: "string", values: ["2k"], default: "2k", pricing: true },
+            ];
+            const profile = defaultModelCapabilityConfig("openai-image", "fixture");
+            profile.image = projectImageParameters(profile.image!, fields);
+            profile.image.size.presets = [{ tier: "2k", ratio: "16:9", size: "2560x1440", width: 2560, height: 1440 }];
+            profile.image.references.maxImageBytes = 10 * 1024 * 1024;
+            const target = {
+                ...definition("opaque-target", "image"),
+                create: pixelsToRatio ? "POST /v1beta/models/{model}:generateContent" : "POST /v1/images/generations",
+                imageParameters: shape === "nil" ? undefined : shape === "empty" ? [] : shape === "missing-encoding" ? [{ ...fields[0], encoding: undefined }, fields[1]] : [fields[1]],
+            };
+            const values = {
+                ...initialChannelModelValues(null, []),
+                capability: "image" as const,
+                protocol: "source",
+                modelKey: "fixture",
+                capabilityConfig: profile,
+                priceTiers: [{ ...defaultPriceTier("advanced"), unitPrice: 12, imageSelector: { size, imageResolution: "2k" } }],
+            };
+            const next = changeChannelModelProtocol(values, target.value, [target]);
+            expect(next.capabilityConfig!.image!.parameters!.find((p) => p.name === "size")!.encoding).toBe(encoding);
+            expect(next.capabilityConfig!.image!.size.values).toEqual([size]);
+            expect(next.capabilityConfig!.image!.size.default).toBe(size);
+            expect(next.capabilityConfig!.image!.size.presets).toEqual(profile.image.size.presets);
+            expect(next.capabilityConfig!.image!.references.maxImageBytes).toBe(10 * 1024 * 1024);
+            expect(next.priceTiers).toEqual(values.priceTiers);
+            expect(skuSelectorFromForm("image", next.priceTiers[0], next.capabilityConfig)).toEqual(values.priceTiers[0].imageSelector);
+            // Repeated component projection must retain the resolved wire encoding.
+            expect(resolveImageParameters(next.capabilityConfig!.image!, target.imageParameters || [], "fixture", target.value).parameters!.find((p) => p.name === "size")!.encoding).toBe(encoding);
+            const legacy = structuredClone(values);
+            delete legacy.capabilityConfig.image!.parameters;
+            expect(changeChannelModelProtocol(legacy, target.value, [target]).capabilityConfig!.image!.parameters!.find((p) => p.name === "size")!.encoding).toBe(encoding);
+        });
+    }
+}
+
+test("切换兼容图片协议保留能力、引用限制与价格选择器", async () => {
+    const profile = defaultModelCapabilityConfig("openai-image", "fixture-model");
+    profile.image = projectImageParameters(profile.image!, [
+        { name: "size", label: "尺寸", type: "string", encoding: "pixels", values: ["16:9"], default: "16:9", pricing: true },
+        { name: "imageResolution", label: "分辨率", type: "string", values: ["2k"], default: "2k", pricing: true },
+        { name: "quality", label: "质量", type: "string", values: ["xhigh"], default: "xhigh", pricing: true },
+        { name: "count", label: "张数", type: "integer", min: 1, max: 4, default: 1 },
+        { name: "responseFormat", label: "响应格式", type: "string", values: ["url"], default: "url", enabled: false },
+    ]);
+    profile.image.size.presets = [{ tier: "2k", ratio: "16:9", size: "2752x1536", width: 2752, height: 1536 }];
+    const manifest = await Bun.file(new URL("../../plugin-packages/openai-images/manifest.json", import.meta.url)).json();
+    profile.image.references.maxImageBytes = 10 * 1024 * 1024;
+    profile.image.maxOutputs = 4;
+    const values = {
+        ...initialChannelModelValues(null, []),
+        capability: "image" as const,
+        protocol: "custom-source-image",
+        modelKey: "fixture-model",
+        providerModelKey: "fixture-upstream-model",
+        capabilityConfig: profile,
+        priceTiers: [{ ...defaultPriceTier("advanced"), unitPrice: 12, imageSelector: { imageResolution: "2k", quality: "xhigh", size: "16:9" } }],
+    };
+    const next = changeChannelModelProtocol(values, "custom-target-image", [{ ...definition("custom-target-image", "image"), create: "POST /v1/images/generations", imageParameters: manifest.contributes.providers[0].imageParameters }]);
+    expect(next.capabilityConfig!.image!.references.maxImageBytes).toBe(10 * 1024 * 1024);
+    expect(next.capabilityConfig!.image!.maxOutputs).toBe(4);
+    expect(next.capabilityConfig!.image!.size.presets).toEqual(profile.image.size.presets);
+    expect(next.capabilityConfig!.image!.parameters!.find((p) => p.name === "quality")!.values).toContain("xhigh");
+    expect(next.capabilityConfig!.image!.parameters!.find((p) => p.name === "responseFormat")!.enabled).toBe(false);
+    expect(next.priceTiers).toEqual(values.priceTiers);
+    expect(skuSelectorFromForm("image", next.priceTiers[0], next.capabilityConfig)).toEqual(values.priceTiers[0].imageSelector);
+    const legacy = structuredClone(values);
+    delete legacy.capabilityConfig.image!.parameters;
+    legacy.priceTiers = [{ ...defaultPriceTier("advanced"), unitPrice: 12, imageResolution: "2k", quality: "xhigh", size: "16:9" }];
+    const migrated = changeChannelModelProtocol(legacy, "custom-target-image", [{ ...definition("custom-target-image", "image"), create: "POST /v1/images/generations", imageParameters: manifest.contributes.providers[0].imageParameters }]);
+    expect(skuSelectorFromForm("image", migrated.priceTiers[0], migrated.capabilityConfig)).toEqual({ imageResolution: "2k", quality: "xhigh", size: "16:9" });
+    const pixel = structuredClone(values);
+    Object.assign(
+        pixel.capabilityConfig.image!.parameters!.find((p: { name: string }) => p.name === "size")!,
+        { values: ["2752x1536"], default: "2752x1536" },
+    );
+    pixel.priceTiers[0].imageSelector.size = "2752x1536";
+    const gemini = await Bun.file(new URL("../../plugin-packages/google-gemini-image/manifest.json", import.meta.url)).json();
+    const ratio = changeChannelModelProtocol(pixel, "gemini-image", [{ ...definition("gemini-image", "image"), imageParameters: gemini.contributes.providers[0].imageParameters }]);
+    expect(ratio.capabilityConfig!.image!.size.parameter).toBe("size");
+    expect(ratio.capabilityConfig!.image!.size.values).toEqual(["2752x1536"]);
+    expect(ratio.capabilityConfig!.image!.size.presets).toContainEqual(profile.image.size.presets.find((p: { size: string }) => p.size === "2752x1536"));
+    expect(ratio.priceTiers).toEqual(pixel.priceTiers);
+    expect(ratio.capabilityConfig!.image!.maxOutputs).toBe(4);
+});
+
+test("仅切换视频协议保留显式能力和已有价格", () => {
+    const config = defaultModelCapabilityConfig("agnes-video", "agnes-video-2.5");
+    config.video!.references.maxImages = 1;
+    config.video!.duration.default = 8;
+    const values = { ...initialChannelModelValues(null, []), capability: "video" as const, capabilityConfig: config, protocol: "agnes-video" };
+    const next = changeChannelModelProtocol(values, "newapi", [definition("newapi", "video")]);
+    expect(next.capabilityConfig).toEqual(config);
+    expect(next.priceTiers).toEqual(values.priceTiers);
+});
 const protocols = [definition("disabled-text", "text", false), definition("text", "text"), definition("image", "image"), definition("video", "video")];
+
+test("选择深度动作捕捉协议自动替换旧视频模式，保留身份、媒体传输和价格", () => {
+    const capabilityConfig = { ...defaultModelCapabilityConfig("newapi", "standard"), mediaTransport: { video: "url" as const } };
+    const values = { ...initialChannelModelValues(null, protocols), capability: "video" as const, protocol: "newapi", modelKey: "standard", displayName: "动作参考", capabilityConfig };
+    const snapshot = structuredClone(values);
+    const next = changeChannelModelProtocol(values, VOLCENGINE_MEDIAKIT_VIDEO_DEPTH_PROTOCOL);
+    expect(next.capabilityConfig?.video).toEqual(defaultModelCapabilityConfig(VOLCENGINE_MEDIAKIT_VIDEO_DEPTH_PROTOCOL, "standard").video);
+    expect(next.capabilityConfig?.mediaTransport).toEqual(capabilityConfig.mediaTransport);
+    expect(next.priceTiers).toBe(values.priceTiers);
+    expect(next.modelKey).toBe("standard");
+    expect(next.displayName).toBe("动作参考");
+    expect(values).toEqual(snapshot);
+});
+
+test("已有深度捕捉配置更换模型 ID 保留自定义限制，切回生成协议不保留处理模式", () => {
+    const capabilityConfig = defaultModelCapabilityConfig(VOLCENGINE_MEDIAKIT_VIDEO_DEPTH_PROTOCOL, "standard");
+    capabilityConfig.video!.processing!.maxSourceSeconds = 120;
+    capabilityConfig.video!.references.maxVideoBytes = 20 * 1024 * 1024;
+    const values = { ...initialChannelModelValues(null, protocols), capability: "video" as const, protocol: VOLCENGINE_MEDIAKIT_VIDEO_DEPTH_PROTOCOL, modelKey: "standard", capabilityConfig };
+    expect(updateChannelModelUpstreamCapabilities(values)).toBe(values);
+    const next = changeChannelModelProtocol(values, "newapi");
+    expect(next.capabilityConfig?.video).toEqual(defaultModelCapabilityConfig("newapi", "standard").video);
+    expect(next.priceTiers).toBe(values.priceTiers);
+});
+
+test("重新打开携带普通视频配置的深度捕捉草稿时修正模式", () => {
+    const values = { ...initialChannelModelValues(null, protocols), capability: "video" as const, protocol: VOLCENGINE_MEDIAKIT_VIDEO_DEPTH_PROTOCOL, modelKey: "standard", capabilityConfig: defaultModelCapabilityConfig("newapi") };
+    expect(updateChannelModelUpstreamCapabilities(values).capabilityConfig?.video?.defaultOperation).toBe("depth_capture");
+});
 const protocolsWithAudio = [...protocols, definition("audio", "audio")];
 
 describe("channel model editor drafts", () => {
@@ -229,6 +363,25 @@ describe("pricing write validation", () => {
         }
         expect(() => validateChannelModelPrices({ ...draft, capability: "video", protocol: "volcengine-ark-video", priceTiers: [{ ...defaultPriceTier("advanced"), operation: "image_to_video" }] })).not.toThrow();
         expect(() => validateChannelModelPrices({ ...draft, capability: "video", protocol: "volcengine-ark-video", priceTiers: [{ ...defaultPriceTier("advanced"), resolution: "1080p" }] })).not.toThrow();
+    });
+    test("requires reference video prices only when reference video billing is enabled", () => {
+        const video = { ...draft, capability: "video" as const, protocol: "volcengine-ark-video" };
+        const perSecond = [{ ...defaultPriceTier(), billingMode: "per_second" as const, unitPrice: 1 }];
+        const token = [{ ...defaultPriceTier(), billingMode: "token" as const, outputTokenPrice: 16 }];
+        expect(draft.referenceVideoBilling).toBe(false);
+        expect(() => validateChannelModelPrices({ ...video, priceTiers: perSecond })).not.toThrow();
+        expect(() => validateChannelModelPrices({ ...video, referenceVideoBilling: true, priceTiers: perSecond })).toThrow("带参考视频");
+        expect(() => validateChannelModelPrices({ ...video, referenceVideoBilling: true, priceTiers: token })).toThrow("带参考视频");
+        expect(() => validateChannelModelPrices({ ...video, referenceVideoBilling: true, priceTiers: [{ ...perSecond[0], referenceVideoUnitPrice: 2 }] })).not.toThrow();
+        expect(() => validateChannelModelPrices({ ...video, referenceVideoBilling: true, priceTiers: [{ ...token[0], referenceVideoOutputTokenPrice: 32 }] })).not.toThrow();
+        // 配置了成本价的档也要填写带参考视频成本价；未配置成本时不要求。
+        const pricedPerSecond = { ...perSecond[0], referenceVideoUnitPrice: 2, costConfigured: true, costUnitPrice: 0.5 };
+        expect(() => validateChannelModelPrices({ ...video, referenceVideoBilling: true, priceTiers: [pricedPerSecond] })).toThrow("带参考视频的成本价");
+        expect(() => validateChannelModelPrices({ ...video, referenceVideoBilling: true, priceTiers: [{ ...pricedPerSecond, costReferenceVideoUnitPrice: 0.8 }] })).not.toThrow();
+        expect(() => validateChannelModelPrices({ ...video, referenceVideoBilling: false, priceTiers: [pricedPerSecond] })).not.toThrow();
+        // 免费档和非视频模型不要求带参考视频价格。
+        expect(() => validateChannelModelPrices({ ...video, referenceVideoBilling: true, priceTiers: [{ ...defaultPriceTier(), billingMode: "per_second" as const }] })).not.toThrow();
+        expect(() => validateChannelModelPrices({ ...draft, capability: "audio", referenceVideoBilling: true, priceTiers: perSecond })).not.toThrow();
     });
 });
 

@@ -25,8 +25,20 @@ export function isCustomInspiration(id: string): boolean {
     return id.startsWith(CUSTOM_ID_PREFIX);
 }
 
-function withoutUndefined<T extends object>(value: T): T {
-    return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined && item !== "")) as T;
+/** 未传字段保持原值；可选字段的空字符串 / 空数组表示明确清空。 */
+export function normalizeInspirationOverride(value: unknown): InspirationOverride {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+    const raw = value as Record<string, unknown>;
+    const patch: InspirationOverride = {};
+    for (const key of ["title", "image", "prompt"] as const) {
+        if (typeof raw[key] === "string" && raw[key].trim()) patch[key] = raw[key].trim();
+    }
+    for (const key of ["description", "promptZh", "category", "ratio"] as const) {
+        if (typeof raw[key] === "string") patch[key] = raw[key].trim();
+    }
+    if (raw.mode === "text" || raw.mode === "image" || raw.mode === "video") patch.mode = raw.mode;
+    if (Array.isArray(raw.tags)) patch.tags = raw.tags.filter((item): item is string => typeof item === "string" && Boolean(item.trim())).map((item) => item.trim());
+    return patch;
 }
 
 /**
@@ -39,7 +51,7 @@ export function resolveInspirations(builtIn: CreationInspiration[], overlay: Ins
         const id = catalogIdOf(item);
         if (hidden.has(id)) return [];
         const override = overlay.overrides[id];
-        return [override ? { ...item, ...withoutUndefined(override) } : item];
+        return [override ? { ...item, ...normalizeInspirationOverride(override) } : item];
     });
     return [...overlay.custom, ...resolved];
 }

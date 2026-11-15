@@ -34,17 +34,18 @@ const (
 )
 
 const (
-	appearanceSchemaVersion        = 11
-	appearanceLogoMaxBytes   int64 = 5 << 20
-	appearancePosterMaxBytes int64 = 10 << 20
-	appearanceVideoMaxBytes  int64 = 256 << 20
+	appearanceThemePackLibraryVersion       = 12
+	appearanceSchemaVersion                 = appearanceThemePackLibraryVersion
+	appearanceLogoMaxBytes            int64 = 5 << 20
+	appearancePosterMaxBytes          int64 = 10 << 20
+	appearanceVideoMaxBytes           int64 = 256 << 20
 )
 
 const (
-	defaultAppearanceBrandName = "影策"
-	defaultAppearanceBrandSlug = "open-ai-canvas"
+	defaultAppearanceBrandName = "KIVAO"
+	defaultAppearanceBrandSlug = "kivao"
 	defaultAppearanceSkinID    = "classic"
-	defaultAppearanceLogoURL   = "/logo.svg"
+	defaultAppearanceLogoURL   = "/kivao-mark.png"
 	defaultAppearanceVideoURL  = "https://boss-shjd.biliapi.net/updream/aniforge/video/video_bbcb00bd-650d-4249-9346-5cd21fd2484c_m1hc-u0-1pu13x-3v1s.mp4"
 	defaultAppearancePosterURL = "https://i0.hdslb.com/bfs/aitool/aniforge/image/02933f26-5f1b-49ff-a811-b7f95ee5e5b8_m1hc-u0-sau.jpg"
 	defaultAppearanceHeroTitle = "让一个故事，\n从文字走向银幕。"
@@ -52,6 +53,7 @@ const (
 )
 
 type AppearanceSetting struct {
+	CreationShortcuts         []CreationShortcut    `json:"creationShortcuts"`
 	Updates                   UpdateAnnouncement    `json:"updates"`
 	Canvas                    CanvasAppearance      `json:"canvas"`
 	SchemaVersion             int                   `json:"schemaVersion"`
@@ -77,6 +79,7 @@ type AppearanceSetting struct {
 }
 
 type PublicAppearanceSetting struct {
+	CreationShortcuts         []CreationShortcut  `json:"creationShortcuts"`
 	Updates                   UpdateAnnouncement  `json:"updates"`
 	Canvas                    CanvasAppearance    `json:"canvas"`
 	SchemaVersion             int                 `json:"schemaVersion"`
@@ -119,6 +122,7 @@ type AdminAppearanceSetting struct {
 
 func defaultAppearanceSetting() AppearanceSetting {
 	return AppearanceSetting{
+		CreationShortcuts: defaultCreationShortcuts(),
 		Canvas:            defaultCanvasAppearance(),
 		SchemaVersion:     appearanceSchemaVersion,
 		BrandName:         defaultAppearanceBrandName,
@@ -230,6 +234,13 @@ func (s *Service) UpdateAppearance(actor *model.User, value AppearanceSetting) (
 	if err != nil {
 		return nil, err
 	}
+	if value.CreationShortcuts == nil {
+		value.CreationShortcuts = before.CreationShortcuts
+	}
+	value.CreationShortcuts, err = normalizeCreationShortcuts(value.CreationShortcuts)
+	if err != nil {
+		return nil, err
+	}
 	if value.Canvas.Live2DResourceID != "" {
 		entry, err := s.validateLive2DResource(actor, value.Canvas.Live2DResourceID, before.Canvas.Live2DResourceID)
 		if err != nil {
@@ -297,7 +308,7 @@ func (s *Service) ResetAppearance(actor *model.User) (*AdminAppearanceSetting, e
 		return nil, err
 	}
 	after := defaultAppearanceSetting()
-	if err := s.appendAdminAudit(actor, "appearance.reset", "system_setting", appearanceSettingKey, "恢复影策默认品牌标识", map[string]any{"before": before, "after": after}); err != nil {
+	if err := s.appendAdminAudit(actor, "appearance.reset", "system_setting", appearanceSettingKey, "恢复KIVAO默认品牌标识", map[string]any{"before": before, "after": after}); err != nil {
 		return nil, err
 	}
 	return s.AdminAppearance(actor)
@@ -440,9 +451,12 @@ func (s *Service) readAppearance() (*model.SystemSetting, AppearanceSetting, err
 	// Decode stored themes without reusing built-in slice entries: omitted
 	// fields must be migrated according to each stored theme's identity.
 	value.SkinThemes = nil
+	// An omitted version in an old record must still trigger the upgrade.
+	value.SchemaVersion = 0
 	if strings.TrimSpace(setting.ValueJSON) == "" || json.Unmarshal([]byte(setting.ValueJSON), &value) != nil {
 		return nil, AppearanceSetting{}, errors.New("外观配置格式无效")
 	}
+	storedSchemaVersion := value.SchemaVersion
 	value.SchemaVersion = appearanceSchemaVersion
 	value.BrandName = strings.TrimSpace(value.BrandName)
 	if value.BrandName == "" {
@@ -465,6 +479,9 @@ func (s *Service) readAppearance() (*model.SystemSetting, AppearanceSetting, err
 		value.SkinThemes = defaultAppearanceSkinThemes()
 	}
 	value.SkinThemes = normalizeAppearanceSkinThemes(value.SkinThemes)
+	if storedSchemaVersion < appearanceThemePackLibraryVersion {
+		value.SkinThemes = appendMissingAppearanceThemePackSkins(value.SkinThemes)
+	}
 	value.SEOTitle = normalizeAppearanceSingleLine(value.SEOTitle)
 	value.SEODescription = normalizeAppearanceCopy(value.SEODescription)
 	value.SEOKeywords = normalizeAppearanceSingleLine(value.SEOKeywords)
@@ -723,6 +740,7 @@ func publicAppearanceSetting(setting *model.SystemSetting, value AppearanceSetti
 		revision = strconv.FormatInt(setting.UpdatedAt.UTC().UnixNano(), 36)
 	}
 	result := &PublicAppearanceSetting{
+		CreationShortcuts:   value.CreationShortcuts,
 		Updates:             publicUpdateAnnouncement(value.Updates, revision),
 		Canvas:              value.Canvas,
 		SchemaVersion:       appearanceSchemaVersion,

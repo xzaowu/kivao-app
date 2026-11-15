@@ -253,8 +253,17 @@ func (s *Service) materializeTaskMedia(ctx context.Context, task *model.Task, co
 			}
 		}
 		item.ResourceID = resource.ID
+		stagedName := item.TempName
+		// The durable resource is now the recovery source. Persist that fact
+		// before deleting the staging copy so a crash cannot lose the only path.
+		item.TempName = ""
 		if err := s.saveMediaCheckpoint(task, checkpoint, "register"); err != nil {
 			return nil, err
+		}
+		if path := s.mediaTempPath(stagedName); path != "" {
+			if removeErr := os.Remove(path); removeErr != nil && !os.IsNotExist(removeErr) {
+				_ = s.log(task.UserID, task.ID, "warn", "清理作品暂存文件失败", "")
+			}
 		}
 		url := resourceFileURL(resource.ID)
 		items = append(items, map[string]interface{}{"dataUrl": url, "url": url, "resourceId": resource.ID, "storageKey": "resource:" + resource.ID, "mimeType": resource.MimeType, "bytes": resource.Size, "width": resource.Width, "height": resource.Height, "durationMs": resource.DurationMs})
@@ -275,7 +284,12 @@ func (s *Service) materializeTaskMedia(ctx context.Context, task *model.Task, co
 var errMediaRecoveryBusy = errors.New("作品保存并发已满")
 
 func retryableMediaRecovery(err error) bool {
-	if retryableProtocolMediaDownload(err) || errors.Is(err, context.DeadlineExceeded) {
+	if errors.Is(err, errMediaStagingFull) {
+		return true
+	}
+	// 作品暂停、租约轮换等会取消 worker context；上游已出图时必须重试下载，不能当成不可恢复失败。
+	// 用户主动取消时任务状态已是 cancelled，handleMediaRecoveryFailure 会因状态冲突退出，不会误重试。
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || retryableProtocolMediaDownload(err) {
 		return true
 	}
 	// 对象存储的 503 / 限流 / 超时由各家 SDK 的错误类型表达，不是 providerHTTPError。

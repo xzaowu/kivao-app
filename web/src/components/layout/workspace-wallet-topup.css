@@ -54,6 +54,7 @@
 /* 分组不再套边框盒子：一行标题 + 网格，把高度留给商品列表。 */
 .wallet-topup-groups {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     flex: 1;
     min-height: 0;
     align-content: start;
@@ -389,8 +390,23 @@
     font-size: 12px;
 }
 
+/* 跨币种实付预估：售价下方的小字，与售价右对齐。 */
+.wallet-topup-checkout-summary b.wallet-topup-checkout-price {
+    display: grid;
+    justify-items: end;
+}
+
+.wallet-topup-checkout-summary b.wallet-topup-checkout-price small {
+    font-weight: 400;
+}
+
 .wallet-topup-checkout .workspace-wallet-providers {
     flex: 0 1 auto;
+}
+
+.wallet-topup-checkout .workspace-wallet-providers button:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
 }
 
 /* 头部：积分余额与存储容量两张摘要卡。 */
@@ -447,18 +463,99 @@
     outline-offset: 2px;
 }
 
-@media (max-width: 720px) {
+@media (max-width: 700px), (max-width: 900px) and (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
     .workspace-wallet-stats {
         width: 100%;
     }
 
-    .workspace-wallet-stats > * {
+    .workspace-wallet-stats .workspace-wallet-balance {
         flex: 1;
         min-width: 0;
+        padding: var(--space-2) var(--space-3);
+        overflow-wrap: anywhere;
+    }
+
+    .workspace-wallet-balance .wallet-topup-storage-track {
+        display: none;
+    }
+
+    .wallet-topup-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .wallet-topup-card {
+        min-height: 112px;
+        padding: var(--space-3);
+    }
+
+    .wallet-topup-card-head .wallet-topup-kind-icon {
+        display: none;
+    }
+
+    .wallet-topup-card-name {
+        overflow-wrap: anywhere;
+        white-space: normal;
+    }
+
+    .wallet-topup-card-value {
+        overflow-wrap: anywhere;
+    }
+
+    .wallet-topup-card-foot {
+        flex-wrap: wrap;
+        row-gap: var(--space-1);
+    }
+
+    .wallet-topup-checkout {
+        gap: var(--space-2);
+    }
+
+    .wallet-topup-checkout-summary {
+        min-width: 0;
+        flex-basis: 100%;
     }
 
     .wallet-topup-checkout .ant-btn {
         width: 100%;
+        min-height: 44px;
+    }
+
+    .wallet-topup-checkout .workspace-wallet-providers button {
+        min-height: 44px;
+    }
+}
+
+@media (max-width: 900px) and (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+    .workspace-wallet-stats {
+        width: auto;
+    }
+
+    .workspace-wallet-stats .workspace-wallet-balance {
+        min-width: 140px;
+        flex: 0 1 168px;
+        line-height: 1.25;
+    }
+
+    .wallet-topup-grid {
+        grid-template-columns: repeat(auto-fill, minmax(152px, 1fr));
+    }
+
+    .wallet-topup-card {
+        min-height: 88px;
+        gap: 6px;
+        padding: var(--space-2) var(--space-3);
+    }
+
+    .wallet-topup-checkout-summary {
+        flex-basis: 160px;
+    }
+
+    .wallet-topup-checkout-summary .wallet-topup-kind-icon {
+        display: none;
+    }
+
+    .wallet-topup-checkout .ant-btn {
+        width: auto;
     }
 }
 

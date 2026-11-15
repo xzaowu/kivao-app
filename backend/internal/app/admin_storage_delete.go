@@ -94,7 +94,7 @@ func (s *Service) DeleteAdminResources(actor *model.User, req AdminResourceDelet
 		blocked.References = appendUniqueAdminResourceReference(blocked.References, AdminResourceReferenceView{Kind: reference.Kind, ID: reference.ID, Title: reference.Title})
 		blockedByID[reference.ResourceID] = blocked
 	}
-	for resourceID, references := range s.appearanceResourceReferences(resourceIDs) {
+	for resourceID, references := range s.siteResourceReferences(resourceIDs) {
 		for _, reference := range references {
 			blocked := blockedByID[resourceID]
 			blocked.ID = resourceID
@@ -258,7 +258,7 @@ func appendUniqueAdminResourceReference(references []AdminResourceReferenceView,
 
 func supportedResourceDeleteProvider(provider string) bool {
 	provider = normalizedResourceProvider(provider)
-	return oneOf(provider, "local", aliyunOSSProvider, tencentCOSProvider, qiniuKodoProvider, s3Provider)
+	return provider == "local" || supportedOSSProvider(provider)
 }
 
 func resourceDeletionJobsForResources(physicalObjects map[string]*model.Resource) []model.ResourceDeletionJob {

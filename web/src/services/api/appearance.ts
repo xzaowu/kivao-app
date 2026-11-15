@@ -3,8 +3,10 @@ import type { SkinDefinition } from "@/lib/skin-themes";
 import type { AgentAvatarBundleManifest, CanvasAppearance } from "@/lib/canvas/agent-appearance";
 import { apiBaseURL } from "@/services/api/request";
 import type { UpdateAnnouncement } from "@/lib/update-announcement";
+import type { CreationShortcut } from "@/lib/creation-shortcuts";
 
 export type PublicAppearance = {
+    creationShortcuts?: CreationShortcut[];
     updates?: UpdateAnnouncement;
     canvas?: CanvasAppearance;
     schemaVersion: number;
@@ -37,6 +39,7 @@ export type PublicAppearance = {
 };
 
 export type AdminAppearance = {
+    creationShortcuts?: CreationShortcut[];
     updates?: UpdateAnnouncement;
     canvas?: CanvasAppearance;
     schemaVersion: number;
@@ -92,12 +95,33 @@ export async function getAdminAppearance(signal?: AbortSignal) {
     return result.setting;
 }
 
+export type AdminTurnstileSetting = {
+    enabled: boolean;
+    siteKey: string;
+    hasSecretKey: boolean;
+    updatedBy?: string;
+    createdAt?: string;
+    updatedAt?: string;
+};
+
+export async function getAdminTurnstileSetting(signal?: AbortSignal) {
+    const result = await http.get<{ setting: AdminTurnstileSetting }>("/admin/settings/turnstile", { signal });
+    return result.setting;
+}
+
+/** An empty secret key intentionally preserves the encrypted server value. */
+export async function updateAdminTurnstileSetting(input: { enabled: boolean; siteKey: string; secretKey?: string }) {
+    const result = await http.patch<{ setting: AdminTurnstileSetting }>("/admin/settings/turnstile", input);
+    return result.setting;
+}
+
 export async function updateAdminAppearance(
     input: Pick<
         AdminAppearance,
         | "brandName"
         | "canvas"
         | "updates"
+        | "creationShortcuts"
         | "brandSlug"
         | "authHeroTitle"
         | "authHeroDescription"

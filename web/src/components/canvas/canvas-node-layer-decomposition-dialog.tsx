@@ -9,7 +9,6 @@ import { defaultImageParamsForModel } from "@/lib/model-selection";
 import { imageLayerOutputSize, imageLayerPlannerError, type ImageLayerPlan } from "@/lib/canvas/canvas-image-layer-plan";
 import { supportsExperimentalLayerExtraction, supportsLayerDecomposition } from "@/lib/canvas/canvas-image-layers";
 import type { ImageLayerExtraction } from "@/lib/canvas/canvas-image-layer-strategy";
-import { navigateToSettings } from "@/lib/settings-navigation";
 
 export type CanvasImageLayerDecompositionPayload = {
     prompt: string;
@@ -154,17 +153,7 @@ export function CanvasNodeLayerDecompositionDialog({
                     <Input.TextArea aria-label="拆层要求" rows={5} value={prompt} placeholder="描述需要拆分的内容" onChange={(event) => setPrompt(event.target.value)} />
                     <div className="space-y-2">
                         <div className="text-sm font-medium opacity-75">视觉规划模型</div>
-                        <ModelPicker
-                            config={config}
-                            value={plannerModel}
-                            capability="text"
-                            fullWidth
-                            showSelectedPrice
-                            placeholder="选择视觉规划模型"
-                            modelFilter={(model) => !imageLayerPlannerError(config, model)}
-                            onMissingConfig={() => navigateToSettings({ continueCreation: true })}
-                            onChange={setPlannerModel}
-                        />
+                        <ModelPicker config={config} value={plannerModel} capability="text" fullWidth showSelectedPrice placeholder="选择视觉规划模型" modelFilter={(model) => !imageLayerPlannerError(config, model)} onChange={setPlannerModel} />
                         {plannerError ? (
                             <p role="alert" className="text-xs text-red-500">
                                 {plannerError}
@@ -181,7 +170,6 @@ export function CanvasNodeLayerDecompositionDialog({
                             showSelectedPrice
                             placeholder="选择图层拆分模型"
                             modelFilter={(model) => supportsLayerDecomposition(config, model) || supportsExperimentalLayerExtraction(config, model)}
-                            onMissingConfig={() => navigateToSettings({ continueCreation: true })}
                             onChange={(model) => setGenerationConfig((current) => ({ ...current, model, imageModel: model, ...defaultImageParamsForModel(current, model) }))}
                         />
                         {!supported ? (

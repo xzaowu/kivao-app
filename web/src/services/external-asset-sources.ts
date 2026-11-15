@@ -1,3 +1,4 @@
+import "@/lib/plugins/builtin/eagle";
 import { getRegisteredPlugin } from "@/lib/plugins/plugin-registry";
 import { pluginStorageFor } from "@/lib/plugins/plugin-storage";
 import type { Asset } from "@/stores/use-asset-store";
@@ -28,7 +29,7 @@ export type ExternalAssetSyncResult = {
 
 export function createHostedAssetSources(installations: PluginInstallation[]): HostedAssetSource[] {
     return installations.flatMap((installation) => {
-        if (!isPluginEffectivelyEnabled(installation.manifest.id, installation.enabled)) return [];
+        if (!isPluginEffectivelyEnabled(installation.manifest.id)) return [];
         const plugin = getRegisteredPlugin(installation.manifest.id);
         if (!plugin?.createAssetSource) return [];
         try {
@@ -52,15 +53,17 @@ export function createHostedAssetSources(installations: PluginInstallation[]): H
 
 export async function uploadGeneratedAssetToConfiguredSources(asset: Asset, signal?: AbortSignal): Promise<ExternalAssetSyncResult> {
     const installations = usePluginStore.getState().installations;
-    const autoUploadInstallations = installations.filter((installation) => isPluginEffectivelyEnabled(installation.manifest.id, installation.enabled) && isAutoUploadEnabled(installation.config.autoUploadGenerated));
+    const autoUploadInstallations = installations.filter((installation) => isPluginEffectivelyEnabled(installation.manifest.id) && isAutoUploadEnabled(installation.config.autoUploadGenerated));
     if (!autoUploadInstallations.length) return { records: readSyncRecords(asset), uploaded: [], failures: [] };
 
-    const sources = createHostedAssetSources(installations);
+    const sources = createHostedAssetSources(autoUploadInstallations);
     const records = readSyncRecords(asset);
     const uploaded: ExternalAssetItem[] = [];
     const failures: ExternalAssetSyncResult["failures"] = [];
     for (const installation of autoUploadInstallations) {
         if (signal?.aborted) throw new DOMException("请求已取消", "AbortError");
+        const current = usePluginStore.getState().installations.find((item) => item.manifest.id === installation.manifest.id);
+        if (!isPluginEffectivelyEnabled(installation.manifest.id) || !isAutoUploadEnabled(current?.config.autoUploadGenerated)) continue;
         const source = sources.find((candidate) => candidate.id === installation.manifest.id);
         const folderId = stringConfig(installation.config.generatedFolderId);
         const existing = records.find((record) => record.sourceId === installation.manifest.id);
@@ -98,7 +101,7 @@ export function externalAssetSyncFailures(asset: Asset) {
 }
 
 function isAutoUploadEnabled(value: unknown) {
-    return value !== false && value !== "false";
+    return value === true || value === "true";
 }
 
 function stringConfig(value: unknown) {
