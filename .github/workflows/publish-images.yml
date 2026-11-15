@@ -1,5 +1,7 @@
 name: Publish container images
 
+# KIVAO 保留上游发布流程用于对照；本仓库的 main、v* 和手动触发均不能用它发布。
+# quality.yml 的独立 PR 检查继续运行，自有镜像发布另按已批准版本准备。
 on:
   push:
     branches:
@@ -21,6 +23,7 @@ jobs:
   # 这个提交的质量检查已通过，tag 一轮不再重跑。查不到或查询失败都按未通过处理，照常跑检查。
   reuse:
     name: Reuse verified main checks
+    if: ${{ github.repository == 'ddcat-ai/open-ai-canvas' }}
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -44,11 +47,12 @@ jobs:
   checks:
     name: Quality checks
     needs: reuse
-    if: ${{ needs.reuse.outputs.verified != 'true' }}
+    if: ${{ github.repository == 'ddcat-ai/open-ai-canvas' && needs.reuse.outputs.verified != 'true' }}
     uses: ./.github/workflows/quality.yml
 
   prepare:
     name: Resolve build version
+    if: ${{ github.repository == 'ddcat-ai/open-ai-canvas' }}
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.info.outputs.version }}
@@ -79,6 +83,7 @@ jobs:
   # 这样发布总耗时约为 max(检查, 构建) 而不是两者相加。
   build:
     name: Build ${{ matrix.image }} (${{ matrix.arch }})
+    if: ${{ github.repository == 'ddcat-ai/open-ai-canvas' }}
     needs: [prepare]
     permissions:
       contents: read
@@ -166,7 +171,7 @@ jobs:
     name: Publish ${{ matrix.image }} manifest
     needs: [reuse, checks, prepare, build]
     # 检查只有两种放行方式：本轮跑过并通过，或本轮跳过且 reuse 确认同 SHA 的 main 一轮已成功。
-    if: ${{ !cancelled() && needs.prepare.result == 'success' && needs.build.result == 'success' && (needs.checks.result == 'success' || (needs.checks.result == 'skipped' && needs.reuse.outputs.verified == 'true')) }}
+    if: ${{ github.repository == 'ddcat-ai/open-ai-canvas' && !cancelled() && needs.prepare.result == 'success' && needs.build.result == 'success' && (needs.checks.result == 'success' || (needs.checks.result == 'skipped' && needs.reuse.outputs.verified == 'true')) }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -204,7 +209,7 @@ jobs:
   release:
     name: Publish release assets
     # 上游 checks 可能被跳过，默认的 success() 会因此连带跳过本任务，所以显式只看 publish 结果。
-    if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/v') && needs.publish.result == 'success' }}
+    if: ${{ github.repository == 'ddcat-ai/open-ai-canvas' && !cancelled() && startsWith(github.ref, 'refs/tags/v') && needs.publish.result == 'success' }}
     needs: publish
     runs-on: ubuntu-latest
     permissions:
