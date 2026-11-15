@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type TurnstileWidget = {
     render: (container: HTMLElement, options: Record<string, unknown>) => string | number;
@@ -14,6 +14,7 @@ declare global {
 
 const TURNSTILE_SCRIPT_ID = "cloudflare-turnstile-api";
 const TURNSTILE_SCRIPT_SRC = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+const TURNSTILE_LOAD_TIMEOUT_MS = 10000;
 
 let scriptPromise: Promise<TurnstileWidget> | null = null;
 
@@ -25,11 +26,24 @@ function loadTurnstile(): Promise<TurnstileWidget> {
     scriptPromise = new Promise<TurnstileWidget>((resolve, reject) => {
         const existing = document.getElementById(TURNSTILE_SCRIPT_ID) as HTMLScriptElement | null;
         const script = existing || document.createElement("script");
-        const onLoad = () => {
-            if (window.turnstile) resolve(window.turnstile);
-            else reject(new Error("Turnstile 脚本未提供验证组件"));
+        let settled = false;
+        const finish = (error?: Error) => {
+            if (settled) return;
+            settled = true;
+            window.clearTimeout(timeout);
+            script.removeEventListener("load", onLoad);
+            script.removeEventListener("error", onError);
+            if (error) {
+                // A failed script cannot emit another load event when reused.
+                script.remove();
+                reject(error);
+            } else resolve(window.turnstile!);
         };
-        const onError = () => reject(new Error("Turnstile 脚本加载失败，请检查网络后重试"));
+        const onLoad = () => {
+            finish(window.turnstile ? undefined : new Error("安全验证加载失败，请重试"));
+        };
+        const onError = () => finish(new Error("安全验证加载失败，请检查网络后重试"));
+        const timeout = window.setTimeout(() => finish(new Error("安全验证加载超时，请检查网络后重试")), TURNSTILE_LOAD_TIMEOUT_MS);
         script.addEventListener("load", onLoad, { once: true });
         script.addEventListener("error", onError, { once: true });
         if (!existing) {
@@ -39,9 +53,8 @@ function loadTurnstile(): Promise<TurnstileWidget> {
             script.defer = true;
             document.head.appendChild(script);
         }
-    }).catch((error) => {
+    }).finally(() => {
         scriptPromise = null;
-        throw error;
     });
     return scriptPromise;
 }
@@ -50,6 +63,8 @@ export function TurnstileWidget({ siteKey, onToken, resetKey = 0 }: { siteKey: s
     const containerRef = useRef<HTMLDivElement>(null);
     const widgetIDRef = useRef<string | number | undefined>(undefined);
     const onTokenRef = useRef(onToken);
+    const [error, setError] = useState("");
+    const [retryKey, setRetryKey] = useState(0);
     onTokenRef.current = onToken;
 
     useEffect(() => {
@@ -58,19 +73,29 @@ export function TurnstileWidget({ siteKey, onToken, resetKey = 0 }: { siteKey: s
         const container = containerRef.current;
         container.replaceChildren();
         onTokenRef.current("");
+        setError("");
+        const fail = (message: string) => {
+            if (disposed) return;
+            onTokenRef.current("");
+            setError(message);
+        };
         void loadTurnstile()
             .then((turnstile) => {
                 if (disposed || !containerRef.current) return;
                 widgetIDRef.current = turnstile.render(container, {
                     sitekey: siteKey,
-                    callback: (token: string) => onTokenRef.current(token),
-                    "expired-callback": () => onTokenRef.current(""),
-                    "error-callback": () => onTokenRef.current(""),
+                    size: container.clientWidth < 300 ? "compact" : "flexible",
+                    callback: (token: string) => {
+                        if (disposed) return;
+                        setError("");
+                        onTokenRef.current(token);
+                    },
+                    "expired-callback": () => fail("安全验证已过期，请重新验证"),
+                    "error-callback": () => fail("安全验证失败，请重试"),
+                    "timeout-callback": () => fail("安全验证超时，请重试"),
                 });
             })
-            .catch(() => {
-                if (!disposed) onTokenRef.current("");
-            });
+            .catch((cause) => fail(cause instanceof Error ? cause.message : "安全验证加载失败，请重试"));
         return () => {
             disposed = true;
             if (widgetIDRef.current !== undefined) {
@@ -79,8 +104,20 @@ export function TurnstileWidget({ siteKey, onToken, resetKey = 0 }: { siteKey: s
             }
             container.replaceChildren();
         };
-    }, [siteKey, resetKey]);
+    }, [siteKey, resetKey, retryKey]);
 
     if (!siteKey) return null;
-    return <div ref={containerRef} className="auth-turnstile" aria-label="Cloudflare Turnstile 人机验证" />;
+    return (
+        <div className="auth-turnstile-status">
+            <div ref={containerRef} className="auth-turnstile" aria-label="Cloudflare Turnstile 人机验证" />
+            {error ? (
+                <div role="status">
+                    {error}{" "}
+                    <button type="button" className="auth-form-link" onClick={() => setRetryKey((value) => value + 1)}>
+                        重新加载验证
+                    </button>
+                </div>
+            ) : null}
+        </div>
+    );
 }

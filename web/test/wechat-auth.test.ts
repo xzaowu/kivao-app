@@ -25,11 +25,11 @@ describe("WeChat authentication request contract", () => {
             await getAdminWechatSetting();
             await updateAdminWechatSetting({ enabled: true, appId: "wx-app", appSecret: "private-secret", redirectUrl: "https://canvas.example.com/api/auth/wechat/callback" });
             await getWechatRegistration(signal);
-            await completeWechatRegistration({ email: "creator@example.com", ticket: "verification-ticket", emailCode: "123456", acceptedTerms: true });
+            await completeWechatRegistration({ email: "creator@example.com", ticket: "verification-ticket", emailCode: "123456", acceptedTerms: true, turnstileToken: "test-turnstile-token" });
             await cancelWechatRegistration();
             expect(requests[1]).toMatchObject({ url: "/admin/settings/wechat", method: "patch", data: { appSecret: "private-secret" } });
             expect(requests[2]).toMatchObject({ url: "/auth/wechat/registration", method: "get", signal });
-            expect(requests[3]).toMatchObject({ url: "/auth/wechat/registration", method: "post", data: { ticket: "verification-ticket", emailCode: "123456" } });
+            expect(requests[3]).toMatchObject({ url: "/auth/wechat/registration", method: "post", data: { ticket: "verification-ticket", emailCode: "123456", turnstileToken: "test-turnstile-token" } });
             expect(requests[4]).toMatchObject({ url: "/auth/wechat/registration", method: "delete" });
             expect(requests.every((request) => !String(request.url).includes("?") && request.params === undefined)).toBe(true);
         } finally {

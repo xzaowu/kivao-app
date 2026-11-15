@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeEach, expect, mock, spyOn, test } from "bun:
 import { Window } from "happy-dom";
 import type { AuthSessionPayload, AuthSettings, LocalUser } from "../../src/services/api/auth";
 
-const dom = new Window({ url: "http://localhost/" });
+const dom = new Window({ url: "http://localhost/", settings: { disableJavaScriptFileLoading: true, disableCSSFileLoading: true } });
 const originals = new Map<string, PropertyDescriptor | undefined>();
 for (const [key, value] of Object.entries({
     window: dom,
@@ -67,11 +67,21 @@ let authenticated = 0;
 let loginExisting = false;
 let registerResponse: () => Promise<{ user: LocalUser }>;
 let sessionResponse: () => Promise<AuthSessionPayload>;
+let challenges: Array<Record<string, unknown>> = [];
 
 beforeEach(async () => {
     registrations = logins = sessions = authenticated = 0;
     loginExisting = false;
     notifications.length = applied.length = 0;
+    challenges = [];
+    window.turnstile = {
+        render: (_container, options) => {
+            challenges.push(options);
+            return challenges.length;
+        },
+        reset: () => {},
+        remove: () => {},
+    };
     invalidateAuthSessionCache();
     registerResponse = async () => ({ user });
     sessionResponse = async () => ({ user });
@@ -118,7 +128,7 @@ async function input(label: string, value: string) {
 async function submit() {
     await act(async () => document.querySelector("form")!.dispatchEvent(new dom.Event("submit", { bubbles: true, cancelable: true })));
 }
-async function beginRegistration(overrides: Partial<AuthSettings> = {}) {
+async function showLogin(overrides: Partial<AuthSettings> = {}) {
     const host = document.createElement("div");
     document.body.append(host);
     root = createRoot(host);
@@ -132,6 +142,15 @@ async function beginRegistration(overrides: Partial<AuthSettings> = {}) {
     await input("用户名 / 邮箱", "new-user");
     await input("密码", "local-test-only-password");
     await act(async () => document.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
+}
+async function completeChallenge(token: string) {
+    const callback = challenges.at(-1)?.callback as (token: string) => void;
+    expect(callback).toBeFunction();
+    await act(async () => callback(token));
+}
+async function beginRegistration(overrides: Partial<AuthSettings> = {}) {
+    await showLogin(overrides);
+    if (overrides.turnstileEnabled) await completeChallenge("test-login-token");
     await submit();
     expect(document.body.textContent).toContain("该账号尚未注册");
     await input("确认密码", "local-test-only-password");
@@ -228,5 +247,67 @@ test("同一轮快速提交和恢复中重复提交不会重复发请求", async
     expect(sessions).toBe(1);
     expect(registrations).toBe(1);
     await act(async () => resolveSession({ user }));
+    expect(authenticated).toBe(1);
+});
+
+test("Turnstile 未完成不登录，普通登录失败后必须取得新令牌", async () => {
+    const tokens: unknown[] = [];
+    post.mockImplementation(async (path, body) => {
+        expect(path).toBe("/auth/login");
+        logins++;
+        tokens.push((body as { turnstileToken?: string }).turnstileToken);
+        if (logins === 1) throw new ApiError("密码错误", { status: 401 });
+        return { user };
+    });
+    await showLogin({ turnstileEnabled: true, turnstileSiteKey: "test-site" });
+    await submit();
+    expect(logins).toBe(0);
+    await completeChallenge("first-token");
+    const oldCallback = challenges.at(-1)!.callback as (token: string) => void;
+    await submit();
+    expect(logins).toBe(1);
+    await act(async () => oldCallback("stale-token"));
+    await submit();
+    expect(logins).toBe(1);
+    expect(document.querySelector<HTMLInputElement>('input[aria-label="用户名 / 邮箱"]')!.value).toBe("new-user");
+    await completeChallenge("second-token");
+    await submit();
+    expect(tokens).toEqual(["first-token", "second-token"]);
+    expect(authenticated).toBe(1);
+});
+
+test("Turnstile 登录转注册重新验证，注册失败可重试，已创建后仅恢复会话", async () => {
+    const tokens: unknown[] = [];
+    post.mockImplementation(async (path, body) => {
+        tokens.push((body as { turnstileToken?: string }).turnstileToken);
+        if (path === "/auth/login") {
+            logins++;
+            throw new ApiError("尚未注册", { status: 404, reason: "account_not_registered", details: { accountKind: "username" } });
+        }
+        expect(path).toBe("/auth/register");
+        registrations++;
+        if (registrations === 1) throw new Error("暂时离线");
+        return { user };
+    });
+    sessionResponse = async () => {
+        if (sessions === 1) throw new Error("会话暂时离线");
+        return { user };
+    };
+    await beginRegistration({ turnstileEnabled: true, turnstileSiteKey: "test-site" });
+    await submit();
+    expect(registrations).toBe(0);
+    await completeChallenge("registration-token-1");
+    await submit();
+    expect(registrations).toBe(1);
+    await submit();
+    expect(registrations).toBe(1);
+    await completeChallenge("registration-token-2");
+    await submit();
+    expect(document.body.textContent).toContain("账号已创建");
+    expect(document.querySelector(".auth-turnstile")).toBeNull();
+    await submit();
+    expect(tokens).toEqual(["test-login-token", "registration-token-1", "registration-token-2"]);
+    expect(registrations).toBe(2);
+    expect(sessions).toBe(2);
     expect(authenticated).toBe(1);
 });
