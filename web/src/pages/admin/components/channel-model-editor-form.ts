@@ -1,6 +1,6 @@
 import type { ModelCapabilityChoice } from "@/components/model-protocol-picker";
 import type { FormInstance } from "antd";
-import { defaultModelCapabilityConfig, normalizeLegacyImageResolutionConfig, normalizeModelCapabilityConfig, type ModelCapabilityConfig } from "@/lib/model-capabilities";
+import { defaultModelCapabilityConfig, normalizeLegacyImageResolutionConfig, normalizeModelCapabilityConfig, VOLCENGINE_MEDIAKIT_VIDEO_DEPTH_PROTOCOL, type ModelCapabilityConfig } from "@/lib/model-capabilities";
 import { imagePresetForRatio, imageSizePresets } from "@/lib/image-size-presets";
 import { modelProtocolSupportsTokenBilling, type ModelProtocolDefinition } from "@/lib/model-protocols";
 import type { ChannelModel } from "@/services/api/wallet";
@@ -139,6 +139,16 @@ export function changeChannelModelProtocol(values: ChannelModelFormValues, proto
 }
 
 export function updateChannelModelUpstreamCapabilities(values: ChannelModelFormValues, protocols: ModelProtocolDefinition[] = []): ChannelModelFormValues {
+    if (values.capability === "video") {
+        const video = values.capabilityConfig?.video;
+        const depthProtocol = values.protocol === VOLCENGINE_MEDIAKIT_VIDEO_DEPTH_PROTOCOL;
+        const depthProfile = video?.defaultOperation === "depth_capture";
+        // 普通视频协议保留显式能力；深度捕捉的固定处理合同不能沿用文生视频配置。
+        if ((depthProtocol && (!depthProfile || !video?.processing)) || (values.protocol && !depthProtocol && depthProfile)) {
+            const defaults = defaultModelCapabilityConfig(values.protocol, values.providerModelKey?.trim() || values.modelKey.trim());
+            return { ...values, capabilityConfig: { ...(values.capabilityConfig || defaults), video: defaults.video } };
+        }
+    }
     const workflows = protocols.find((p) => p.value === values.protocol)?.workflows;
     if (values.capability === "video" && workflows?.length) {
         // 工作流协议的画面规格必须写回表单；只在界面上投影会让保存提交旧协议的分辨率。

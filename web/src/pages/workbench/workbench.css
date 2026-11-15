@@ -2,7 +2,7 @@
    页面只组合全站 token：表面与文字来自 --user-*，选中态来自 --control-selected-*，分类色来自 --product-accent-*。
    规范见 docs/ui-design-system.md：卡片默认无边、hover 只换表面、按钮不加渐变与发光、左侧不画竖条。 */
 
-:is(.wb-shell, .wb-library-modal, .wb-viewer-modal) {
+:is(.wb-shell, .wb-library-modal, .wb-viewer-modal, .wb-parameters-drawer) {
     --wb-page: var(--user-page-bg);
     --wb-panel: var(--user-surface);
     --wb-muted: var(--user-surface-muted);
@@ -29,7 +29,7 @@
     --wb-media-scrim: linear-gradient(to top, rgba(8, 8, 10, 0.55), rgba(8, 8, 10, 0) 46%);
     --wb-motion: var(--motion-dur-base) var(--motion-ease-out);
 }
-.dark :is(.wb-shell, .wb-library-modal, .wb-viewer-modal) {
+.dark :is(.wb-shell, .wb-library-modal, .wb-viewer-modal, .wb-parameters-drawer) {
     --wb-thumb: color-mix(in srgb, var(--user-ink) 12%, var(--user-surface-muted));
 }
 
@@ -239,7 +239,7 @@
         background-position: -130% 0;
     }
 }
-:is(.wb-shell, .wb-library, .wb-viewer) :is(button, [role="button"], a):focus-visible {
+:is(.wb-shell, .wb-library, .wb-viewer, .wb-parameters-drawer) :is(button, summary, [role="button"], a):focus-visible {
     outline: var(--focus-ring-width, 2px) solid var(--ring);
     outline-offset: 2px;
 }
@@ -360,6 +360,9 @@
 }
 
 /* 场景 */
+.wb-scene-section {
+    padding-block: var(--space-2);
+}
 .wb-scene-glyph {
     --wb-tone: var(--wb-ink-2);
     display: grid;
@@ -424,6 +427,7 @@
     gap: var(--space-3);
     width: 100%;
     min-width: 0;
+    min-height: 44px;
     padding: var(--space-2) var(--space-3) var(--space-2) var(--space-2);
     border: 0;
     border-radius: var(--r-lg);
@@ -442,35 +446,100 @@
     min-width: 0;
 }
 .wb-scene-current-copy strong {
-    overflow: hidden;
     color: var(--wb-ink);
     font-size: var(--fs-body);
     font-weight: 600;
     line-height: var(--lh-heading);
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
 }
-.wb-scene-current-copy small {
-    display: -webkit-box;
-    overflow: hidden;
-    color: var(--wb-ink-3);
-    font-size: var(--fs-caption);
-    line-height: 1.5;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
+.wb-scene-chevron {
+    width: 16px;
+    height: 16px;
+    color: var(--wb-ink-2);
 }
-.wb-scene-current-switch {
-    padding: 4px var(--space-3);
-    border-radius: var(--r-full);
-    background: var(--wb-panel);
+
+/* 低频辅助与参数按需展开，不影响主输入与底部生成入口。 */
+.wb-disclosure > summary,
+.wb-parameters-trigger {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+    min-height: 36px;
     color: var(--wb-ink-2);
     font-size: var(--fs-caption);
-    white-space: nowrap;
+    cursor: pointer;
 }
-.wb-scene-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-2);
+.wb-disclosure > summary {
+    list-style: none;
+}
+.wb-disclosure > summary::-webkit-details-marker {
+    display: none;
+}
+.wb-disclosure > summary svg,
+.wb-parameters-trigger svg {
+    flex: 0 0 auto;
+    width: 16px;
+    height: 16px;
+}
+.wb-disclosure:not([open]) > summary svg {
+    transform: rotate(-90deg);
+}
+.wb-disclosure > summary small {
+    margin-left: auto;
+    font-size: var(--fs-label);
+    text-align: right;
+}
+.wb-disclosure > :not(summary) {
+    margin-top: var(--space-3);
+}
+.wb-parameters-trigger {
+    width: 100%;
+    padding: var(--space-2) var(--space-3);
+    border: 0;
+    border-radius: var(--r-md);
+    background: var(--wb-muted);
+    text-align: left;
+}
+.wb-parameters-trigger:hover {
+    background: var(--wb-hover);
+}
+.wb-parameters-trigger span {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+.wb-parameters-trigger[aria-expanded="true"] > svg:last-child {
+    transform: rotate(180deg);
+}
+.wb-parameter-content {
+    display: grid;
+    gap: var(--space-4);
+    min-width: 0;
+    padding-top: var(--space-4);
+    color: var(--wb-ink);
+}
+.wb-parameter-content[hidden] {
+    display: none;
+}
+.wb-parameter-content > .wb-section {
+    padding-block: 0;
+}
+.wb-parameters-drawer .ant-drawer-section {
+    background: var(--wb-panel);
+    color: var(--wb-ink);
+}
+.wb-parameters-drawer .ant-drawer-body {
+    padding: 0 var(--space-4) max(var(--space-4), env(safe-area-inset-bottom, 0px));
+    overscroll-behavior-y: contain;
+}
+.wb-parameters-drawer .ant-drawer-header {
+    padding: var(--space-2) var(--space-3);
+}
+.wb-parameters-drawer .ant-drawer-close,
+.wb-parameters-drawer .ant-drawer-extra > button {
+    min-width: 44px;
+    min-height: 44px;
 }
 
 /* 素材 */
@@ -503,12 +572,19 @@
     font-size: var(--fs-label);
     font-variant-numeric: tabular-nums;
 }
+.wb-slot-requirement {
+    color: var(--wb-ink-2);
+    font-size: var(--fs-caption);
+}
 .wb-ref-row {
     display: flex;
-    flex-wrap: wrap;
     gap: var(--space-2);
     min-width: 0;
+    overflow-x: auto;
+    padding-bottom: var(--space-1);
     border-radius: var(--r-lg);
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--wb-ink) 18%, transparent) transparent;
     transition:
         background-color var(--wb-motion),
         box-shadow var(--wb-motion);
@@ -770,6 +846,9 @@
 }
 .wb-prompt-editor {
     height: 132px;
+}
+.wb-prompt.is-expanded .wb-prompt-editor {
+    height: clamp(200px, 50dvh, 420px);
 }
 .wb-prompt .wb-prompt-input {
     display: block;
@@ -1987,6 +2066,19 @@
     }
 }
 @media (max-width: 1023px) {
+    .wb-composer-scroll > .wb-section:not(.wb-scene-section) {
+        padding-block: var(--space-3);
+    }
+    .wb-disclosure > summary,
+    .wb-parameters-trigger,
+    .wb-prompt-expand {
+        min-width: 44px;
+        min-height: 44px;
+    }
+    .wb-parameters-drawer .wb-choice,
+    .wb-parameters-drawer .wb-count-cell {
+        min-height: 44px;
+    }
     .wb-shell {
         grid-template-columns: minmax(0, 1fr);
         grid-template-rows: auto minmax(0, 1fr);
@@ -2012,6 +2104,35 @@
         border-top: 1px solid var(--wb-line);
         border-left: 0;
     }
+    .wb-library-overlay .ant-modal-wrap {
+        overflow: hidden;
+    }
+    .wb-library-overlay .wb-library-modal {
+        top: 0;
+        width: 100% !important;
+        max-width: none;
+        height: 100vh;
+        height: 100dvh;
+        margin: 0;
+        padding: 0;
+    }
+    .wb-library-modal .ant-modal-container,
+    .wb-library-modal .ant-modal-body {
+        height: 100%;
+        border-radius: 0;
+    }
+    .wb-library {
+        box-sizing: border-box;
+        height: 100%;
+        padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+    }
+    .wb-library-head {
+        flex-shrink: 0;
+    }
+    .wb-library-head > .wb-icon-button {
+        width: 44px;
+        height: 44px;
+    }
     .wb-library-body {
         grid-template-columns: minmax(0, 1fr);
         grid-template-rows: auto minmax(0, 1fr);
@@ -2026,15 +2147,26 @@
     }
     .wb-rail-item {
         flex: 0 0 auto;
+        min-height: 44px;
+    }
+    .wb-library-main {
+        overscroll-behavior-y: contain;
     }
 }
 @media (max-width: 640px) {
     .wb-library-head {
-        flex-wrap: wrap;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 44px;
+        align-items: start;
         padding: var(--space-4);
     }
+    .wb-library-head > .wb-icon-button {
+        grid-column: 2;
+        grid-row: 1;
+    }
     .wb-library-search {
-        order: 3;
+        grid-column: 1 / -1;
+        grid-row: 2;
         width: 100%;
     }
     .wb-gallery-tools {

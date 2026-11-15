@@ -26,6 +26,7 @@ import {
     UserRound,
     Video,
     ImageUpscale,
+    ScanLine,
 } from "lucide-react";
 
 import { CONTENT_MODERATION_ERROR_CODE, isContentModerationError } from "@/lib/generation-error";
@@ -205,6 +206,19 @@ export const nodeHoverToolbarTools: ToolDefinition[] = [
         applicable: (ctx) => hasVideo(ctx) && !simpleMode(ctx),
         disabled: (ctx) => ctx.extractingAudio || ctx.trimmingVideo,
         run: (ctx) => ctx.handlers.onNodeTrimVideoSegments(ctx.node!),
+    },
+    {
+        id: "depthCaptureVideo",
+        toolbar: "node-hover",
+        category: "node-state",
+        label: "深度动作捕捉",
+        displayLabel: "深度动作捕捉",
+        icon: <ScanLine className="size-3.5" />,
+        defaultVisible: true,
+        defaultOrder: 44,
+        nodeToolbar: { group: "primary", order: 0 },
+        applicable: (ctx) => hasVideo(ctx) && Boolean(ctx.handlers.onNodeDepthCaptureVideo) && ctx.nodeMetadata?.status !== "loading",
+        run: (ctx) => ctx.handlers.onNodeDepthCaptureVideo?.(ctx.node!),
     },
     {
         id: "enhanceVideo",

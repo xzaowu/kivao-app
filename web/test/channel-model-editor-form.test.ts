@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { defaultModelCapabilityConfig } from "../src/lib/model-capabilities";
+import { defaultModelCapabilityConfig, VOLCENGINE_MEDIAKIT_VIDEO_DEPTH_PROTOCOL } from "../src/lib/model-capabilities";
 import type { ModelProtocolDefinition } from "../src/lib/model-protocols";
 import {
     changeChannelModelCapability,
@@ -120,6 +120,35 @@ test("仅切换视频协议保留显式能力和已有价格", () => {
     expect(next.priceTiers).toEqual(values.priceTiers);
 });
 const protocols = [definition("disabled-text", "text", false), definition("text", "text"), definition("image", "image"), definition("video", "video")];
+
+test("选择深度动作捕捉协议自动替换旧视频模式，保留身份、媒体传输和价格", () => {
+    const capabilityConfig = { ...defaultModelCapabilityConfig("newapi", "standard"), mediaTransport: { video: "url" as const } };
+    const values = { ...initialChannelModelValues(null, protocols), capability: "video" as const, protocol: "newapi", modelKey: "standard", displayName: "动作参考", capabilityConfig };
+    const snapshot = structuredClone(values);
+    const next = changeChannelModelProtocol(values, VOLCENGINE_MEDIAKIT_VIDEO_DEPTH_PROTOCOL);
+    expect(next.capabilityConfig?.video).toEqual(defaultModelCapabilityConfig(VOLCENGINE_MEDIAKIT_VIDEO_DEPTH_PROTOCOL, "standard").video);
+    expect(next.capabilityConfig?.mediaTransport).toEqual(capabilityConfig.mediaTransport);
+    expect(next.priceTiers).toBe(values.priceTiers);
+    expect(next.modelKey).toBe("standard");
+    expect(next.displayName).toBe("动作参考");
+    expect(values).toEqual(snapshot);
+});
+
+test("已有深度捕捉配置更换模型 ID 保留自定义限制，切回生成协议不保留处理模式", () => {
+    const capabilityConfig = defaultModelCapabilityConfig(VOLCENGINE_MEDIAKIT_VIDEO_DEPTH_PROTOCOL, "standard");
+    capabilityConfig.video!.processing!.maxSourceSeconds = 120;
+    capabilityConfig.video!.references.maxVideoBytes = 20 * 1024 * 1024;
+    const values = { ...initialChannelModelValues(null, protocols), capability: "video" as const, protocol: VOLCENGINE_MEDIAKIT_VIDEO_DEPTH_PROTOCOL, modelKey: "standard", capabilityConfig };
+    expect(updateChannelModelUpstreamCapabilities(values)).toBe(values);
+    const next = changeChannelModelProtocol(values, "newapi");
+    expect(next.capabilityConfig?.video).toEqual(defaultModelCapabilityConfig("newapi", "standard").video);
+    expect(next.priceTiers).toBe(values.priceTiers);
+});
+
+test("重新打开携带普通视频配置的深度捕捉草稿时修正模式", () => {
+    const values = { ...initialChannelModelValues(null, protocols), capability: "video" as const, protocol: VOLCENGINE_MEDIAKIT_VIDEO_DEPTH_PROTOCOL, modelKey: "standard", capabilityConfig: defaultModelCapabilityConfig("newapi") };
+    expect(updateChannelModelUpstreamCapabilities(values).capabilityConfig?.video?.defaultOperation).toBe("depth_capture");
+});
 const protocolsWithAudio = [...protocols, definition("audio", "audio")];
 
 describe("channel model editor drafts", () => {

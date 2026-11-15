@@ -38,7 +38,7 @@ const { App, ConfigProvider, Form } = await import("antd");
 const { CapabilityTemplatePanel, PricingTemplatePanel } = await import("../../src/pages/admin/components/channel-model-template-panels");
 const { PriceTierFields } = await import("../../src/pages/admin/components/channel-model-price-tier-fields");
 const { duplicateChannelModelValues, initialChannelModelValues, validateChannelModelPrices } = await import("../../src/pages/admin/components/channel-model-editor-form");
-const { defaultModelCapabilityConfig } = await import("../../src/lib/model-capabilities");
+const { defaultModelCapabilityConfig, VOLCENGINE_MEDIAKIT_VIDEO_DEPTH_PROTOCOL } = await import("../../src/lib/model-capabilities");
 const { defaultPriceTier, priceTierPayloadFromForm } = await import("../../src/pages/admin/components/channel-model-price-tier-form");
 const { readPricingTemplates, savePricingTemplate, pricingTemplatesKey } = await import("../../src/pages/admin/components/saved-pricing-templates");
 const { readCapabilityTemplates, saveCapabilityTemplate, capabilityTemplatesKey, templateCapabilityForModel } = await import("../../src/pages/admin/components/saved-capability-templates");
@@ -651,6 +651,47 @@ function savedModel(values = draft()): ChannelModel {
         })),
     };
 }
+
+test("完整模型编辑器：切换深度捕捉协议自动写入固定模式，重新打开旧草稿也能保存", async () => {
+    const catalog: ModelProtocolDefinition[] = [
+        { value: "newapi", label: "普通视频", capability: "video", create: "POST /videos", contentType: "application/json", media: "video" },
+        { value: VOLCENGINE_MEDIAKIT_VIDEO_DEPTH_PROTOCOL, label: "深度动作捕捉", capability: "video", create: "POST /video-depth", contentType: "application/json", media: "video" },
+    ];
+    const values: ChannelModelFormValues = {
+        ...draft(),
+        capability: "video",
+        protocol: "newapi",
+        modelKey: "standard",
+        providerModelKey: "standard",
+        capabilityConfig: defaultModelCapabilityConfig("newapi"),
+        priceTiers: [{ ...defaultPriceTier(), billingMode: "per_second", unitPrice: 2 }],
+    };
+    for (const reopen of [false, true]) {
+        const fixture = await mountEditor(null, catalog, reopen ? { ...values, protocol: VOLCENGINE_MEDIAKIT_VIDEO_DEPTH_PROTOCOL } : values);
+        try {
+            if (!reopen) await act(async () => document.querySelector<HTMLInputElement>(`input[type="radio"][value="${VOLCENGINE_MEDIAKIT_VIDEO_DEPTH_PROTOCOL}"]`)!.click());
+            await tab("能力与参数");
+            const mode = [...document.querySelectorAll("input")].find((input) => input.value === "深度动作捕捉（固定，自动设置）");
+            expect(mode?.readOnly).toBe(true);
+            expect(document.querySelectorAll(".admin-model-editor-references .admin-capability-number-field")).toHaveLength(2);
+            expect(document.querySelectorAll(".admin-model-editor-parameters .admin-capability-number-field")).toHaveLength(0);
+            await inputValue(".admin-model-editor-references .admin-capability-number-field:first-child input", "30");
+            await inputValue(".admin-model-editor-references .admin-capability-number-field:last-child input", "128");
+            expect(document.querySelector(".admin-model-editor-parameters")?.textContent).toContain("当前最长 30 秒，大小上限 128 MB");
+            expect(fixture.saves).toHaveLength(0);
+            await click("添加模型");
+            expect(fixture.saves).toHaveLength(1);
+            expect(fixture.saves[0]).toMatchObject({
+                modelKey: "standard",
+                protocol: VOLCENGINE_MEDIAKIT_VIDEO_DEPTH_PROTOCOL,
+                capabilityConfig: { video: { defaultOperation: "depth_capture", operations: ["depth_capture"], processing: { fpsPolicy: "keep_source", maxSourceSeconds: 30 }, references: { maxVideoBytes: 128 * 1024 * 1024 } } },
+            });
+            expect(fixture.saves[0].priceTiers[0]).toMatchObject({ billingMode: "per_second" });
+        } finally {
+            await fixture.close();
+        }
+    }
+});
 
 test("完整模型编辑器：模板实际金额与币种保存，能力及模型身份不变", async () => {
     const source = { ...draft(), priceCurrency: "CNY" as const };

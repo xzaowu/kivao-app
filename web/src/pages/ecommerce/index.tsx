@@ -250,6 +250,7 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
         if (!creativeDirections.length) setStylePickerOpen(false);
     }, [creativeDirections.length]);
     const [directionsStatus, setDirectionsStatus] = useState<"idle" | "loading" | "ready" | "degraded">("idle");
+    const [directionsQueryAttempt, setDirectionsQueryAttempt] = useState(0);
     const [directionsTask, setDirectionsTask] = useState<GenerationTask>();
     const directionsRecovered = useRef("");
     const directionsPending = Boolean(draft.directionsTaskId && !draft.creativeDirectionId && (!directionsTask || !terminal(directionsTask.status)));
@@ -854,11 +855,14 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
     useEffect(() => {
         if (!draft.directionsTaskId || draft.creativeDirectionId || restoring) return;
         let cancelled = false;
+        let received = false;
         const receive = (task: GenerationTask) => {
             if (cancelled || !isCurrent(session)) return;
+            received = true;
             setDirectionsTask(task);
             if (!terminal(task.status)) {
                 setDirectionsStatus("loading");
+                setStage((current) => (current.startsWith("暂时无法查询分析进度：") ? "正在分析商品并推荐风格，切换页面后任务会继续" : current));
                 return;
             }
             if (directionsRecovered.current === task.id) return;
@@ -910,9 +914,9 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
         void queryGenerationTask(draft.directionsTaskId)
             .then(receive)
             .catch((cause) => {
-                if (!cancelled && isCurrent(session)) {
+                if (!cancelled && !received && isCurrent(session)) {
                     setDirectionsStatus("idle");
-                    setStage(`暂时无法查询分析进度：${errorText(cause)}。任务回执已保留，请返回项目重试`);
+                    setStage(`暂时无法查询分析进度：${errorText(cause)}。任务回执已保留，可重试查询，无需重新提交`);
                 }
             });
         const unsubscribe = subscribeGenerationTasks([draft.directionsTaskId], receive);
@@ -920,7 +924,7 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
             cancelled = true;
             unsubscribe();
         };
-    }, [draft.directionsTaskId, draft.creativeDirectionId, session, restoring]);
+    }, [draft.directionsTaskId, draft.creativeDirectionId, session, restoring, directionsQueryAttempt]);
 
     useEffect(() => {
         if (!draft.imageModel) {
@@ -1930,14 +1934,21 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
     // Failed analysis used to render as plain grey text under the greeting; show
     // it as an error with a retry so the user knows what to do next.
     const failure = /^(商品分析未完成|分析结果读取失败|方向推荐提交或保存未完成|策划提交或保存未完成|暂时无法查询分析进度)[：:]\s*(.*)$/s.exec(stageMessage);
+    const directionsQueryFailed = failure?.[1] === "暂时无法查询分析进度";
     const failedStage = failure
         ? {
-              title: failure[1].startsWith("策划") ? "策划未完成" : "商品分析未完成",
+              title: directionsQueryFailed ? "分析进度暂时不可用" : failure[1].startsWith("策划") ? "策划未完成" : "商品分析未完成",
               detail: failure[2].replace(/；已提交的任务可在返回项目后恢复$/, ""),
               retry: failure[1].startsWith("策划")
                   ? undefined
                   : () => {
                         setStage("");
+                        if (directionsQueryFailed) {
+                            // 查询失败不代表任务失败；沿用原回执读取进度，不能再次提交收费分析。
+                            setDirectionsStatus("loading");
+                            setDirectionsQueryAttempt((attempt) => attempt + 1);
+                            return;
+                        }
                         void requestCreativeDirections();
                     },
           }
@@ -2230,7 +2241,7 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
                         </div>
                         {failedStage.retry ? (
                             <Button size="small" icon={<RotateCcw size={13} />} disabled={busy || uploading || restoring} onClick={failedStage.retry}>
-                                重试
+                                {directionsQueryFailed ? "重试查询" : "重试"}
                             </Button>
                         ) : null}
                     </div>
@@ -2608,7 +2619,6 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
                                 showSelectedPrice={false}
                                 showOptionPrices
                                 placeholder="选择图片模型"
-                                onMissingConfig={() => message.warning("当前没有可用于本次商品图片的模型")}
                                 onChange={(model) => {
                                     const profile = modelCapabilityConfigFor(config, model).image;
                                     setDraft((current) => ({

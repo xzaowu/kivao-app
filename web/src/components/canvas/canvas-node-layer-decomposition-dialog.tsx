@@ -9,7 +9,6 @@ import { defaultImageParamsForModel } from "@/lib/model-selection";
 import { imageLayerOutputSize, imageLayerPlannerError, type ImageLayerPlan } from "@/lib/canvas/canvas-image-layer-plan";
 import { supportsExperimentalLayerExtraction, supportsLayerDecomposition } from "@/lib/canvas/canvas-image-layers";
 import type { ImageLayerExtraction } from "@/lib/canvas/canvas-image-layer-strategy";
-import { navigateToSettings } from "@/lib/settings-navigation";
 
 export type CanvasImageLayerDecompositionPayload = {
     prompt: string;
@@ -162,7 +161,6 @@ export function CanvasNodeLayerDecompositionDialog({
                             showSelectedPrice
                             placeholder="选择视觉规划模型"
                             modelFilter={(model) => !imageLayerPlannerError(config, model)}
-                            onMissingConfig={() => navigateToSettings({ continueCreation: true })}
                             onChange={setPlannerModel}
                         />
                         {plannerError ? (
@@ -181,7 +179,6 @@ export function CanvasNodeLayerDecompositionDialog({
                             showSelectedPrice
                             placeholder="选择图层拆分模型"
                             modelFilter={(model) => supportsLayerDecomposition(config, model) || supportsExperimentalLayerExtraction(config, model)}
-                            onMissingConfig={() => navigateToSettings({ continueCreation: true })}
                             onChange={(model) => setGenerationConfig((current) => ({ ...current, model, imageModel: model, ...defaultImageParamsForModel(current, model) }))}
                         />
                         {!supported ? (

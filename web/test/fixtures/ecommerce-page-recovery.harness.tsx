@@ -133,6 +133,20 @@ function planImage(id: string, taskId: string): EcommercePlan["images"][number] 
 function runningTask(id: string): GenerationTask {
     return { id, projectId: "", type: "canvas_text", status: "running", prompt: "", attempts: 1, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
 }
+function completedDirectionsTask(id: string): GenerationTask {
+    return {
+        ...runningTask(id),
+        status: "succeeded",
+        inputJson: JSON.stringify({ metadata: { ecommerceDraft: draft } }),
+        resultJson: JSON.stringify({
+            text: JSON.stringify({
+                recommendationId: `rec-${id}`,
+                retrievalStatus: "ready",
+                directions: Array.from({ length: 4 }, (_, index) => ({ id: `${id}-${index}`, name: `查询恢复风格${index}`, summary: "真实商品的完整视觉风格", tags: [] })),
+            }),
+        }),
+    };
+}
 function Harness() {
     navigate = useNavigate();
     const location = useLocation();
@@ -1022,6 +1036,89 @@ describe("真实电商页面生命周期", () => {
         });
         expect(host.textContent).toContain("参数已修改");
         expect(host.textContent).not.toContain("不该显示的旧风格");
+        expect(paidSubmissions).toHaveLength(0);
+    });
+
+    test("分析进度查询连续失败后可重试原回执，成功恢复四套风格且不重新收费", async () => {
+        const task = completedDirectionsTask("query-retry-directions");
+        const saved = project({ ...draft, directionsTaskId: task.id });
+        projects.set(saved.id, saved);
+        tasks.set(task.id, task);
+        const queried: string[] = [];
+        spyOn(taskApi, "queryGenerationTask").mockImplementation(async (id) => {
+            queried.push(id);
+            if (queried.length < 3) throw new Error("连接暂时中断");
+            return structuredClone(task);
+        });
+        await render(`/ecommerce?project=${saved.id}`);
+        expect(host.textContent).toContain("分析进度暂时不可用");
+        expect(host.textContent).toContain("无需重新提交");
+        await press("重试查询");
+        expect(host.textContent).toContain("分析进度暂时不可用");
+        await press("重试查询");
+        expect(queried).toEqual([task.id, task.id, task.id]);
+        expect(host.textContent).toContain("查询恢复风格0");
+        expect(host.textContent).toContain("查询恢复风格3");
+        expect(host.textContent).not.toContain("分析进度暂时不可用");
+        expect(sessions.peekEcommerceWorkspace(scope)?.draft.directionsTaskId).toBe(task.id);
+        expect(JSON.parse(projects.get(saved.id)!.draftJson).directionsTaskId).toBe(task.id);
+        expect(paidSubmissions).toHaveLength(0);
+    });
+
+    test("重试查询后切换项目，迟到结果不会覆盖新项目或触发付费任务", async () => {
+        const task = completedDirectionsTask("late-query-directions");
+        const saved = project({ ...draft, directionsTaskId: task.id });
+        const next = project({ ...draft, productName: "另一个商品项目" });
+        projects.set(saved.id, saved);
+        projects.set(next.id, next);
+        let resolveQuery!: (task: GenerationTask) => void;
+        const query = spyOn(taskApi, "queryGenerationTask")
+            .mockRejectedValueOnce(new Error("连接暂时中断"))
+            .mockImplementationOnce(
+                () =>
+                    new Promise((resolve) => {
+                        resolveQuery = resolve;
+                    }),
+            );
+        await render(`/ecommerce?project=${saved.id}`);
+        await press("重试查询");
+        expect(query).toHaveBeenCalledTimes(2);
+        expect(query).toHaveBeenLastCalledWith(task.id);
+        expect(host.querySelector(".ecs-failure")).toBeNull();
+        await act(async () => {
+            navigate(`/ecommerce?project=${next.id}`);
+        });
+        await act(async () => {
+            resolveQuery(task);
+        });
+        expect(route).toContain(next.id);
+        expect(sessions.peekEcommerceWorkspace(scope)?.project?.id).toBe(next.id);
+        expect(host.textContent).not.toContain("查询恢复风格");
+        expect(paidSubmissions).toHaveLength(0);
+    });
+
+    test("订阅先恢复分析结果时，较晚返回的查询失败不覆盖成功状态", async () => {
+        const task = completedDirectionsTask("stream-first-directions");
+        const saved = project({ ...draft, directionsTaskId: task.id });
+        projects.set(saved.id, saved);
+        let rejectQuery!: (error: Error) => void;
+        spyOn(taskApi, "queryGenerationTask").mockImplementation(
+            () =>
+                new Promise((_, reject) => {
+                    rejectQuery = reject;
+                }),
+        );
+        await render(`/ecommerce?project=${saved.id}`);
+        await act(async () => {
+            for (const receive of observers.get(task.id) || []) receive(task);
+        });
+        expect(host.textContent).toContain("查询恢复风格0");
+        await act(async () => {
+            rejectQuery(new Error("查询请求超时"));
+        });
+        expect(host.textContent).toContain("查询恢复风格3");
+        expect(host.textContent).not.toContain("分析进度暂时不可用");
+        expect(host.querySelector(".ecs-failure")).toBeNull();
         expect(paidSubmissions).toHaveLength(0);
     });
 

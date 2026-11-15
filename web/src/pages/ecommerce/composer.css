@@ -207,14 +207,14 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: var(--space-3);
 }
-/* 文本框与选择器统一用 filled 变体：无描边、muted 底，聚焦时才出现描边。 */
-.ecs-composer .ant-input.ant-input-filled {
-    border-color: transparent;
-    background: var(--user-surface-muted);
+/* 普通输入框覆盖工作区通用的 important 表单规则，描述框仍由外壳承载底色。 */
+.ecs-composer input.ant-input.ant-input-filled {
+    border-color: transparent !important;
+    background: var(--user-surface-muted) !important;
 }
-.ecs-composer .ant-input.ant-input-filled:focus {
-    border-color: var(--user-border-strong);
-    background: var(--user-surface);
+.ecs-composer input.ant-input.ant-input-filled:focus {
+    border-color: var(--user-border-strong) !important;
+    background: var(--user-surface) !important;
 }
 
 /* 场景 */

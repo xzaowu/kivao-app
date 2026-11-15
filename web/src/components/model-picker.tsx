@@ -1,5 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
-import { Check, ChevronDown, Coins } from "lucide-react";
+import { Check, ChevronDown, ChevronLeft, Coins } from "lucide-react";
 import { Popover } from "antd";
 import { usePopoverAnchorAlign } from "@/hooks/use-popover-anchor-align";
 
@@ -13,6 +13,9 @@ import { cn } from "@/lib/utils";
 import { modelDisplayName, modelIcon, modelOptionName, resolveModelChannel, selectableModelsByCapability, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
 import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
 import { useUserStore } from "@/stores/use-user-store";
+import { useAuthDialogStore } from "@/stores/use-auth-dialog-store";
+import { useModelCatalogStore } from "@/stores/use-model-catalog-store";
+import { navigateToSettings } from "@/lib/settings-navigation";
 import { ModelLogo } from "@/components/model-logo";
 import { ModelTags } from "@/components/model-tags";
 import { referenceCapabilityTag } from "@/lib/model-tags";
@@ -27,13 +30,14 @@ type ModelPickerProps = {
     popoverClassName?: string;
     fullWidth?: boolean;
     placeholder?: string;
-    onMissingConfig?: () => void;
     showSelectedPrice?: boolean;
     showOptionPrices?: boolean;
     variant?: "default" | "creation";
     requirements?: ModelRequirements;
     showConfiguredModelName?: boolean;
     modelFilter?: (model: string) => boolean;
+    /** 独立编辑/预览配置不读取当前会话的系统目录状态；创作入口保持默认 session。 */
+    catalogSource?: "session" | "provided";
     /** 调用方额外的不可选原因（例如短剧只能用平台模型）；返回非空串时选项置灰并显示原因。 */
     modelDisabledReason?: (model: string) => string;
 };
@@ -47,16 +51,20 @@ export function ModelPicker({
     popoverClassName,
     fullWidth = false,
     placeholder = "选择模型",
-    onMissingConfig,
     showSelectedPrice = true,
     showOptionPrices = showSelectedPrice,
     variant = "creation",
     requirements,
     showConfiguredModelName = false,
     modelFilter,
+    catalogSource = "session",
     modelDisabledReason,
 }: ModelPickerProps) {
     const creditsEnabled = useUserStore((state) => state.features.creditsEnabled);
+    const user = useUserStore((state) => state.user);
+    const hydrated = useUserStore((state) => state.hydrated);
+    const customChannelsEnabled = useUserStore((state) => state.features.customChannelsEnabled);
+    const catalogStatus = useModelCatalogStore((state) => state.status);
     const pickerId = useId();
     // 双保险：即使 store merge 写出非法 theme，这里也兜底到 dark，避免 "reading 'node'" 崩溃
     const rawTheme = useActiveTheme();
@@ -72,7 +80,25 @@ export function ModelPicker({
     useLayoutEffect(() => {
         setInSpatialWorkspace(Boolean(triggerRef.current?.closest(".app-spatial-workspace")));
     }, []);
-    const options = useMemo(() => Array.from(new Set(selectableModelsByCapability(config, capability).filter((model) => Boolean(model) && (!modelFilter || modelFilter(model))))), [capability, config, modelFilter]);
+    const capabilityOptions = useMemo(
+        () => selectableModelsByCapability(config, capability).filter((model) => Boolean(model) && (catalogSource === "provided" || user || resolveModelChannel(config, model).scope !== "system")),
+        [capability, catalogSource, config, user],
+    );
+    const options = useMemo(() => Array.from(new Set(capabilityOptions.filter((model) => !modelFilter || modelFilter(model)))), [capabilityOptions, modelFilter]);
+    // 独立传入的个人渠道配置不受平台目录加载状态影响；已有模型始终可以继续选择。
+    const usesSystemCatalog = catalogSource === "session" && (!config.channels.length || config.channels.some((channel) => channel.scope === "system"));
+    const catalogRelevant = usesSystemCatalog && (!options.length || options.some((model) => resolveModelChannel(config, model).scope === "system"));
+    const guestEmpty = !user && usesSystemCatalog && !options.length;
+    const catalogPending = catalogRelevant && Boolean(user) && catalogStatus !== "ready";
+    const catalogMessage = catalogStatus === "loading" ? "正在加载模型…" : catalogStatus === "error" ? (options.length ? "模型列表刷新失败，仍可选择已加载模型。" : "模型列表加载失败，请重试。") : "模型列表尚未加载，请重试。";
+    const retryCatalog = () => {
+        // 按需加载，避免静态模型展示也初始化整个用户会话模块。
+        void import("@/lib/user-session").then(({ refreshSystemChannels }) => refreshSystemChannels()).catch(() => {});
+    };
+    const openLogin = () => {
+        setOpen(false);
+        useAuthDialogStore.getState().openDialog("login", null);
+    };
     const optionGroups = useMemo(() => groupModelsForPicker(config, options), [config, options]);
     const storedCurrent = value?.trim() || "";
     // 参数档位会在选中模型后由调用方归一到其能力配置，不能因为旧模型留下的参数而禁止切换。
@@ -139,7 +165,6 @@ export function ModelPicker({
     }, [open]);
 
     const setPickerOpen = (nextOpen: boolean) => {
-        if (nextOpen && !options.length) onMissingConfig?.();
         if (nextOpen) window.dispatchEvent(new CustomEvent("model-picker-open", { detail: pickerId }));
         if (nextOpen) {
             setActiveGroupKey(optionGroups.find((group) => group.models.some((item) => item.models.includes(current)))?.key ?? null);
@@ -152,6 +177,10 @@ export function ModelPicker({
             const target = last ? buttons?.item((buttons?.length || 1) - 1) : buttons?.item(0);
             focusPickerOption(target);
         });
+    };
+    const showAllGroups = () => {
+        setActiveGroupKey(null);
+        focusMenuOption();
     };
     const handleTriggerKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
         if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
@@ -168,8 +197,7 @@ export function ModelPicker({
         }
         if (event.key === "ArrowLeft" && activeGroupKey !== null) {
             event.preventDefault();
-            setActiveGroupKey(null);
-            focusMenuOption();
+            showAllGroups();
             return;
         }
         if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
@@ -192,6 +220,22 @@ export function ModelPicker({
             onMouseDown={(event) => event.stopPropagation()}
             onPointerDown={(event) => event.stopPropagation()}
         >
+            {options.length > 0 && catalogPending ? (
+                <div className="canvas-model-picker-status" role="status">
+                    <span>{catalogMessage}</span>
+                    {catalogStatus !== "loading" ? (
+                        <button type="button" onClick={retryCatalog}>
+                            重新加载
+                        </button>
+                    ) : null}
+                </div>
+            ) : null}
+            {activeGroupKey !== null && optionGroups.length > 0 ? (
+                <button type="button" className="canvas-model-picker-back" onClick={showAllGroups}>
+                    <ChevronLeft className="size-4" aria-hidden="true" />
+                    全部模型分组
+                </button>
+            ) : null}
             {optionGroups.length ? (
                 activeGroupKey === null ? (
                     <div className="canvas-model-picker-brands" aria-label="选择产品模型">
@@ -320,7 +364,35 @@ export function ModelPicker({
                 )
             ) : (
                 <div className="canvas-model-picker-empty" style={{ color: theme.node.muted }}>
-                    {emptyModelLabel(config, capability)}
+                    {!guestEmpty || !hydrated ? <p role="status">{guestEmpty ? "正在确认登录状态…" : catalogPending ? catalogMessage : emptyModelLabel(capability, Boolean(capabilityOptions.length && modelFilter))}</p> : null}
+                    {guestEmpty ? (
+                        hydrated ? (
+                            <button type="button" className="canvas-model-picker-recovery" onClick={openLogin}>
+                                登录后查看模型
+                            </button>
+                        ) : null
+                    ) : catalogPending ? (
+                        catalogStatus !== "loading" ? (
+                            <button type="button" className="canvas-model-picker-recovery" onClick={retryCatalog}>
+                                重新加载
+                            </button>
+                        ) : null
+                    ) : user ? (
+                        <div className="canvas-model-picker-empty-actions">
+                            {user.role === "admin" ? <a href="/admin/channels">管理平台模型</a> : !customChannelsEnabled ? <span>请联系管理员配置或开放模型。</span> : null}
+                            {customChannelsEnabled ? (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setOpen(false);
+                                        navigateToSettings({ section: "channels" });
+                                    }}
+                                >
+                                    配置个人渠道
+                                </button>
+                            ) : null}
+                        </div>
+                    ) : null}
                 </div>
             )}
         </div>
@@ -392,10 +464,9 @@ function focusPickerOption(target: HTMLButtonElement | null | undefined) {
     if (delta) pane.scrollTop += delta;
 }
 
-function emptyModelLabel(config: AiConfig, capability?: ModelCapability) {
+function emptyModelLabel(capability?: ModelCapability, filtered = false) {
     const label = capability === "image" ? "生图" : capability === "video" ? "视频" : capability === "text" ? "文本" : capability === "audio" ? "音频" : "";
-    if (capability && config.models.length) return `暂无支持当前输入的${label}模型`;
-    return config.models.length ? `暂无匹配的${label}模型` : "当前没有可用模型，请联系管理员或检查模型配置";
+    return filtered ? `暂无符合当前筛选条件的${label}模型` : `暂无可用的${label}模型`;
 }
 
 export function ModelLabel({

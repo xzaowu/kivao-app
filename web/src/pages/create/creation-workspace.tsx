@@ -412,7 +412,7 @@ export function CreationComposer(props: ComposerProps) {
                         containerClassName="creation-chat-mention-container"
                         className="creation-chat-mention-editor creation-scrollbar"
                         style={{ color: "var(--creation-text)" }}
-                        placeholder={props.placeholderOverride || (props.variant === "empty" ? emptyPlaceholder : placeholder)}
+                        placeholder={props.placeholderOverride || `${props.variant === "empty" ? emptyPlaceholder : placeholder}，输入@ 引用素材`}
                         aria-label="创作提示词，可使用 @ 引用当前参考内容或技能；回车发送，Shift+回车换行"
                         spellCheck
                         disabled={interactionBusy}

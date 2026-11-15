@@ -8,7 +8,7 @@ import { ModelIcon } from "@/components/model-picker";
 import { ModelProtocolBrowser } from "@/components/model-protocol-browser";
 import { MediaTransportFields } from "./media-transport-fields";
 import { ModelCapabilityEditor } from "@/components/model-capability-editor";
-import { defaultModelCapabilityConfig, normalizeModelCapabilityConfig, type ModelCapabilityConfig } from "@/lib/model-capabilities";
+import { defaultModelCapabilityConfig, normalizeModelCapabilityConfig, VOLCENGINE_MEDIAKIT_VIDEO_DEPTH_PROTOCOL, type ModelCapabilityConfig } from "@/lib/model-capabilities";
 import type { ModelProtocolDefinition } from "@/lib/model-protocols";
 import { createAdminChannelModel, getAdminChannelProtocolSuggestion, testAdminChannelModel, updateAdminChannelModel, type ChannelModel, type ChannelProtocolSuggestion } from "@/services/api/wallet";
 import type { ModelChannel } from "@/stores/use-config-store";
@@ -55,7 +55,10 @@ export function ChannelModelEditor({
 }) {
     const { message, modal } = App.useApp();
     const [form] = Form.useForm<FormValues>();
-    const [initialValues] = useState(() => draftValues ?? initialChannelModelValues(editing, protocols));
+    const [initialValues] = useState(() => {
+        const values = draftValues ?? initialChannelModelValues(editing, protocols);
+        return values.protocol === VOLCENGINE_MEDIAKIT_VIDEO_DEPTH_PROTOCOL ? updateChannelModelUpstreamCapabilities(values, protocols) : values;
+    });
     const [editVersion] = useState(() => (editing ? { expectedUpdatedAt: editing.updatedAt, expectedPriceVersion: editing.priceVersion } : {}));
     const previousUpstream = useRef(normalizeUpstreamModelKey(initialValues.providerModelKey || initialValues.modelKey));
     const [activeSection, setActiveSection] = useState<EditorSection>("identity");

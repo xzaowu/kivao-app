@@ -174,7 +174,7 @@ test("video capability tag omits zero limits while preserving editable model tag
 
 test("the selected model and request estimate still require an exact specification match", () => {
     const config = fixture();
-    const render = (value: ModelRequirements) => renderToStaticMarkup(<ModelPicker config={config} value={config.model} capability="video" requirements={value} onChange={() => {}} />);
+    const render = (value: ModelRequirements) => renderToStaticMarkup(<ModelPicker config={config} value={config.model} capability="video" requirements={value} catalogSource="provided" onChange={() => {}} />);
     expect(render(requirements)).toContain("当前规格无报价");
     const cost = (value: ModelRequirements) => requestCreditCost({ channelMode: "remote", modelCosts: config.channels[0].modelCosts, model: "h3-multi", capability: "video", config, requirements: value, seconds: "6" });
     expect(cost(requirements)).toBeNull();

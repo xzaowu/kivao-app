@@ -62,7 +62,7 @@ export function SceneLibraryModal({
     }, [open]);
 
     return (
-        <AppModal open={open} flush footer={null} closable={false} width="min(1120px, calc(100vw - 32px))" onCancel={onClose} className="wb-library-modal" title={null}>
+        <AppModal open={open} flush footer={null} closable={false} width="min(1120px, calc(100vw - 32px))" onCancel={onClose} className="wb-library-modal" rootClassName="wb-library-overlay" title={null}>
             <div className="wb-library">
                 <header className="wb-library-head">
                     <div className="wb-library-title">

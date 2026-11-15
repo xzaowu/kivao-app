@@ -92,6 +92,7 @@ import { CreationRecentCanvases } from "./creation-recent-canvases";
 import { CreationAgentEntry } from "./creation-agent-entry";
 import { CreationHistoryConflicts } from "./creation-history-conflicts";
 import { createCreationSubmitGate } from "./creation-submit-gate";
+import { takeCreationLoginDraft, watchCreationLoginDraft } from "./creation-login-draft";
 import { useCreationConversationRoute } from "./use-creation-conversation-route";
 import { creationVideoConfig, creationVideoSettings } from "./creation-generation-config";
 import { trackSiteTrafficAction } from "@/services/site-traffic";
@@ -236,6 +237,11 @@ export default function CreatePage() {
     const [composerPreferencesInitialized, setComposerPreferencesInitialized] = useState(false);
     promptRef.current = prompt;
     attachmentsRef.current = attachments;
+    const loginDraftRef = useRef({ prompt, mode });
+    loginDraftRef.current = { prompt, mode };
+    useEffect(() => {
+        if (!userId) return watchCreationLoginDraft(() => loginDraftRef.current);
+    }, [userId]);
 
     const activeConversation = useMemo(() => (conversationScope === activeConversationScope ? conversations.find((item) => item.id === activeId) || conversations[0] : undefined), [activeConversationScope, activeId, conversationScope, conversations]);
     const historyConversations = useMemo(
@@ -1318,6 +1324,14 @@ export default function CreatePage() {
         },
         onNew: startNewConversation,
     });
+    useEffect(() => {
+        if (!userId || !hydrated || !conversationStorageReady || !composerPreferencesInitialized) return;
+        const draft = takeCreationLoginDraft(userId);
+        if (!draft) return;
+        setPrompt(draft.prompt);
+        setMode(draft.mode);
+        rememberMode(draft.mode);
+    }, [userId, hydrated, conversationStorageReady, composerPreferencesInitialized, rememberMode]);
     const startNewConversationFromHistory = () => selectConversationRoute(startNewConversation());
     const selectConversationFromHistory = (conversation: CreationConversation) => {
         if (busy || openingCanvas || !conversationStorageReady) return;

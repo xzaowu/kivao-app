@@ -21,6 +21,9 @@ import {
 
 import {
     DEFAULT_VIDEO_PROCESSING_MAX_SOURCE_SECONDS,
+    DEFAULT_VIDEO_DEPTH_CAPTURE_MAX_SECONDS,
+    MAX_VIDEO_DEPTH_CAPTURE_SECONDS,
+    VOLCENGINE_MEDIAKIT_VIDEO_DEPTH_PROTOCOL,
     defaultImageCapabilityConfig,
     defaultModelCapabilityConfig,
     normalizeModelCapabilityConfig,
@@ -118,6 +121,41 @@ export function ModelCapabilityEditor({ value, onChange, protocol, capability = 
             />
         </div>
     ) : null;
+
+    if (protocol === VOLCENGINE_MEDIAKIT_VIDEO_DEPTH_PROTOCOL) {
+        return (
+            <div className="admin-capability-protocol-editor">
+                <ProtocolParameterCard step="01" title="深度动作捕捉" description="仅处理一个已上传的视频；不设置输出画幅、分辨率、音频或帧率。">
+                    {section !== "references" ? (
+                        <Field label="处理模式">
+                            <Input value="深度动作捕捉（固定，自动设置）" readOnly />
+                        </Field>
+                    ) : null}
+                    {section === "protocol" ? (
+                        <p className="text-xs leading-5 text-foreground/60">
+                            源视频时长和大小请在「引用与限制」中设置。当前最长 {processing?.maxSourceSeconds || DEFAULT_VIDEO_DEPTH_CAPTURE_MAX_SECONDS} 秒，大小上限{" "}
+                            {profile.references.maxVideoBytes ? `${bytesToMB(profile.references.maxVideoBytes)} MB` : "未设置"}。
+                        </p>
+                    ) : (
+                        <>
+                            <NumberField
+                                label={`源视频最长秒数（≤${MAX_VIDEO_DEPTH_CAPTURE_SECONDS}）`}
+                                min={1}
+                                max={MAX_VIDEO_DEPTH_CAPTURE_SECONDS}
+                                disabled={disabled}
+                                value={processing?.maxSourceSeconds || DEFAULT_VIDEO_DEPTH_CAPTURE_MAX_SECONDS}
+                                onChange={(value) => {
+                                    const seconds = value || DEFAULT_VIDEO_DEPTH_CAPTURE_MAX_SECONDS;
+                                    update({ processing: { fpsPolicy: "keep_source", maxSourceSeconds: seconds }, duration: { ...profile.duration, default: Math.min(profile.duration.default, seconds) } });
+                                }}
+                            />
+                            <NumberField label="源视频上限 MB（0 为未设置）" value={bytesToMB(profile.references.maxVideoBytes)} min={0} disabled={disabled} onChange={(value) => updateReferences({ maxVideoBytes: mbToBytes(value) })} />
+                        </>
+                    )}
+                </ProtocolParameterCard>
+            </div>
+        );
+    }
 
     if (section === "references") {
         return (

@@ -1,8 +1,9 @@
 import { Button, Dropdown, Progress, Select, Switch } from "antd";
-import { ArrowRight, ArrowUp, Check, ChevronDown, ChevronUp, Clapperboard, FolderOpen, ImagePlus, Images, LayoutGrid, Megaphone, Mic, Palette, PenLine, ScanSearch, ShoppingBag, UserRound, X } from "lucide-react";
-import { useEffect, useState, type DragEvent, type ReactNode } from "react";
+import { ArrowUp, Check, ChevronDown, ChevronUp, Clapperboard, FolderOpen, ImagePlus, Images, LayoutGrid, Maximize2, Megaphone, Mic, Minimize2, Palette, PenLine, ScanSearch, ShoppingBag, SlidersHorizontal, UserRound, X } from "lucide-react";
+import { useEffect, useId, useRef, useState, useSyncExternalStore, type DragEvent, type ReactNode } from "react";
 
 import { AntTooltip as Tooltip } from "@/components/ui/base/tooltip/ant-tooltip";
+import { AppDrawer } from "@/components/ui/product/app-drawer/app-drawer";
 import { promptHasPhrase } from "@/lib/prompt-phrases";
 import { cn } from "@/lib/utils";
 import type { WorkbenchKind, WorkbenchPromptPreset, WorkbenchReferenceSlot, WorkbenchTool } from "@/services/api/workbench";
@@ -59,44 +60,15 @@ export function ComposerSection({ title, hint, aside, children, className }: { t
     );
 }
 
-export function SceneSection({
-    kind,
-    tool,
-    quickTools,
-    loading,
-    error,
-    onOpenLibrary,
-    onChoose,
-    onRetry,
-}: {
-    kind: WorkbenchKind;
-    tool: WorkbenchTool | null;
-    quickTools: WorkbenchTool[];
-    loading: boolean;
-    error: string;
-    onOpenLibrary: () => void;
-    onChoose: (tool: WorkbenchTool | null) => void;
-    onRetry: () => void;
-}) {
-    const subtitle = tool ? workbenchToolSubtitle(tool) : kind === "image" ? "不套用场景模板，直接描述想要的商品画面" : "不套用场景模板，直接描述镜头里发生什么";
+export function SceneSection({ kind, tool, loading, error, onOpenLibrary, onRetry }: { kind: WorkbenchKind; tool: WorkbenchTool | null; loading: boolean; error: string; onOpenLibrary: () => void; onRetry: () => void }) {
     return (
-        <ComposerSection
-            title="出品场景"
-            hint={tool ? undefined : "自动套用模板与素材要求"}
-            aside={
-                <Button size="small" type="text" className="wb-text-action" onClick={onOpenLibrary}>
-                    全部场景
-                    <ArrowRight className="size-3.5" />
-                </Button>
-            }
-        >
-            <button type="button" className="wb-scene-current" onClick={onOpenLibrary} aria-haspopup="dialog" title={tool ? `${tool.name}\n${subtitle}` : "选择出品场景"}>
-                <SceneGlyph tool={tool} kind={kind} size="lg" />
+        <section className="wb-section wb-scene-section" aria-label="出品场景">
+            <button type="button" className="wb-scene-current" onClick={onOpenLibrary} aria-haspopup="dialog" aria-busy={loading} title={tool ? workbenchToolSubtitle(tool) || tool.name : "选择创作场景（可选）"}>
+                <SceneGlyph tool={tool} kind={kind} size="sm" />
                 <span className="wb-scene-current-copy">
-                    <strong>{tool?.name || "自由创作"}</strong>
-                    <small>{subtitle}</small>
+                    <strong>{tool?.name || "选择创作场景（可选）"}</strong>
                 </span>
-                <span className="wb-scene-current-switch">更换</span>
+                <ChevronDown className="wb-scene-chevron" aria-hidden />
             </button>
             {error ? (
                 <div className="wb-inline-error" role="alert">
@@ -105,22 +77,65 @@ export function SceneSection({
                         重试
                     </Button>
                 </div>
-            ) : loading ? (
-                <div className="wb-scene-chips is-loading" aria-hidden>
-                    {Array.from({ length: 4 }, (_, index) => (
-                        <span key={index} className="wb-skeleton-chip" />
-                    ))}
-                </div>
-            ) : quickTools.length ? (
-                <div className="wb-scene-chips" role="group" aria-label="常用场景">
-                    {quickTools.map((item) => (
-                        <button key={item.id} type="button" className="wb-chip" aria-pressed={item.id === tool?.id} title={workbenchToolSubtitle(item) || item.name} onClick={() => onChoose(item.id === tool?.id ? null : item)}>
-                            {item.name}
-                        </button>
-                    ))}
-                </div>
             ) : null}
-        </ComposerSection>
+        </section>
+    );
+}
+
+const compactParametersQuery = "(max-width: 1023px)";
+function subscribeCompactParameters(listener: () => void) {
+    const query = window.matchMedia(compactParametersQuery);
+    query.addEventListener("change", listener);
+    return () => query.removeEventListener("change", listener);
+}
+const compactParametersSnapshot = () => window.matchMedia(compactParametersQuery).matches;
+const desktopParametersSnapshot = () => false;
+
+export function ParameterDisclosure({ summary, error, children }: { summary: string; error: string; children: ReactNode }) {
+    const compact = useSyncExternalStore(subscribeCompactParameters, compactParametersSnapshot, desktopParametersSnapshot);
+    const [desktopOpen, setDesktopOpen] = useState(true);
+    const [mobileOpen, setMobileOpen] = useState(false);
+    const open = compact ? mobileOpen : desktopOpen;
+    const setOpen = compact ? setMobileOpen : setDesktopOpen;
+    const id = useId();
+    useEffect(() => {
+        if (error) {
+            if (compact) setMobileOpen(true);
+            else setDesktopOpen(true);
+        }
+    }, [error, compact]);
+    return (
+        <div className="wb-parameters">
+            <button type="button" className="wb-parameters-trigger" aria-label={`生成参数：${summary}`} aria-expanded={open} aria-controls={id} aria-haspopup={compact ? "dialog" : undefined} onClick={() => setOpen((current) => !current)}>
+                <SlidersHorizontal aria-hidden />
+                <span>{summary}</span>
+                <ChevronDown aria-hidden />
+            </button>
+            {compact ? (
+                <AppDrawer
+                    open={open}
+                    onClose={() => setOpen(false)}
+                    placement="bottom"
+                    size="min(80dvh, 640px)"
+                    title="生成参数"
+                    rootClassName="wb-parameters-drawer"
+                    destroyOnHidden={false}
+                    extra={
+                        <Button aria-label="完成参数设置" onClick={() => setOpen(false)}>
+                            完成
+                        </Button>
+                    }
+                >
+                    <div id={id} className="wb-parameter-content">
+                        {children}
+                    </div>
+                </AppDrawer>
+            ) : (
+                <div id={id} className="wb-parameter-content" hidden={!open}>
+                    {children}
+                </div>
+            )}
+        </div>
     );
 }
 
@@ -265,6 +280,7 @@ export function ReferenceSection({
     kind,
     tool,
     references,
+    error,
     unslottedLimit,
     onPick,
     onDropFiles,
@@ -276,6 +292,7 @@ export function ReferenceSection({
     kind: WorkbenchKind;
     tool: WorkbenchTool | null;
     references: WorkbenchReference[];
+    error?: string;
     unslottedLimit: number;
     onPick: (slotKey?: string) => void;
     onDropFiles: (files: File[], slotKey?: string) => void;
@@ -285,6 +302,15 @@ export function ReferenceSection({
     onClear: () => void;
 }) {
     const slots = tool?.inputContract?.slots || [];
+    const requiredSlots = slots.filter((slot) => slot.required || slot.minCount > 0);
+    const optionalSlots = slots.filter((slot) => !slot.required && slot.minCount <= 0);
+    const optionalReferences = references.filter((reference) => optionalSlots.some((slot) => slot.key === reference.slotKey));
+    const unassignedReferences = references.filter((reference) => !slots.some((slot) => slot.key === reference.slotKey && slot.mediaTypes.includes(reference.kind)));
+    const optionalDetails = useRef<HTMLDetailsElement>(null);
+    const optionalError = optionalReferences.some((reference) => reference.error);
+    useEffect(() => {
+        if (optionalError && optionalDetails.current) optionalDetails.current.open = true;
+    }, [optionalError, tool?.id]);
     const mediaHint = kind === "image" ? "支持拖拽、粘贴截图" : "图片 / 视频 / 音频，支持拖拽";
     const clearAction = references.length ? (
         <Button size="small" type="text" className="wb-text-action" onClick={onClear}>
@@ -305,8 +331,31 @@ export function ReferenceSection({
             onRoleChange={onRoleChange}
         />
     );
+    const renderSlot = (slot: WorkbenchReferenceSlot) => {
+        const items = references.filter((reference) => reference.slotKey === slot.key && slot.mediaTypes.includes(reference.kind));
+        const required = slot.required || slot.minCount > 0;
+        const readyCount = items.filter((item) => item.resourceId && !item.uploading && !item.error).length;
+        const missing = required && readyCount < Math.max(1, slot.minCount);
+        return (
+            <div key={slot.key} className={cn("wb-slot", missing && "is-missing")}>
+                <div className="wb-slot-head">
+                    <strong>{slot.name || "参考素材"}</strong>
+                    <span className={cn("wb-badge", required && "is-required")}>{required ? "必填" : "可选"}</span>
+                    <small>
+                        {items.length} / {slot.maxCount}
+                    </small>
+                </div>
+                {missing ? (
+                    <span className="wb-slot-requirement">
+                        还需上传 {Math.max(1, slot.minCount) - readyCount} 个{slot.name || "素材"}
+                    </span>
+                ) : null}
+                {renderGroup(items, { slotKey: slot.key, limit: slot.maxCount, label: `上传${slot.name || "素材"}`, detail: slotRequirementText(slot) })}
+            </div>
+        );
+    };
     if (!slots.length) {
-        if (unslottedLimit <= 0) {
+        if (unslottedLimit <= 0 && !references.length) {
             return (
                 <ComposerSection title={kind === "image" ? "商品素材" : "参考素材"} hint="当前模型不接受参考素材">
                     <p className="wb-muted-note">换一个支持参考图的模型后，可以上传商品原图保持外观一致。</p>
@@ -315,31 +364,42 @@ export function ReferenceSection({
         }
         return (
             <ComposerSection title={kind === "image" ? "商品素材" : "参考素材"} hint={`${references.length} / ${unslottedLimit} · ${mediaHint}`} aside={clearAction}>
+                {error ? (
+                    <p className="wb-inline-error" role="alert">
+                        {error}
+                    </p>
+                ) : null}
                 {renderGroup(references, { limit: unslottedLimit, label: kind === "image" ? "上传商品图" : "上传参考素材", detail: kind === "image" ? "白底或实拍图，外观越清晰越好" : "图片可设为首帧或尾帧" })}
             </ComposerSection>
         );
     }
     return (
         <ComposerSection title="商品素材" hint={mediaHint} aside={clearAction}>
-            <div className="wb-slot-list">
-                {slots.map((slot) => {
-                    const items = references.filter((reference) => reference.slotKey === slot.key);
-                    const required = slot.required || slot.minCount > 0;
-                    const missing = required && !items.some((item) => item.resourceId && !item.uploading && !item.error);
-                    return (
-                        <div key={slot.key} className={cn("wb-slot", missing && "is-missing")}>
-                            <div className="wb-slot-head">
-                                <strong>{slot.name || "参考素材"}</strong>
-                                <span className={cn("wb-badge", required && "is-required")}>{required ? "必填" : "可选"}</span>
-                                <small>
-                                    {items.length} / {slot.maxCount}
-                                </small>
-                            </div>
-                            {renderGroup(items, { slotKey: slot.key, limit: slot.maxCount, label: `上传${slot.name || "素材"}`, detail: slotRequirementText(slot) })}
-                        </div>
-                    );
-                })}
-            </div>
+            {error ? (
+                <p className="wb-inline-error" role="alert">
+                    {error}
+                </p>
+            ) : null}
+            {unassignedReferences.length ? (
+                <div className="wb-slot is-missing">
+                    <div className="wb-slot-head">
+                        <strong>未分配素材</strong>
+                    </div>
+                    <span className="wb-slot-requirement">素材仍已保留，请重新选择场景或移除后添加到对应位置。</span>
+                    {renderGroup(unassignedReferences, { limit: unassignedReferences.length, label: "未分配素材", detail: "" })}
+                </div>
+            ) : null}
+            {requiredSlots.length ? <div className="wb-slot-list">{requiredSlots.map(renderSlot)}</div> : null}
+            {optionalSlots.length ? (
+                <details key={tool?.id} ref={optionalDetails} className="wb-disclosure">
+                    <summary>
+                        <ChevronDown aria-hidden />
+                        <span>更多素材（可选）</span>
+                        <small>{optionalError ? "上传失败，请检查" : optionalReferences.length ? `已添加 ${optionalReferences.length} 个` : `${optionalSlots.length} 类素材`}</small>
+                    </summary>
+                    <div className="wb-slot-list">{optionalSlots.map(renderSlot)}</div>
+                </details>
+            ) : null}
         </ComposerSection>
     );
 }
@@ -368,22 +428,29 @@ export function PromptSection({
     onClear: () => void;
 }) {
     const [group, setGroup] = useState(inspirations[0]?.key || "");
+    const [expanded, setExpanded] = useState(false);
+    const editorId = useId();
     const activeGroup = inspirations.find((item) => item.key === group) || inspirations[0];
     return (
         <ComposerSection
             title="画面描述"
             hint={kind === "image" ? "写清商品、场景、光线和需要保留的细节" : "写清主体动作、运镜、节奏和结尾画面"}
             aside={
-                prompt ? (
-                    <Button size="small" type="text" className="wb-text-action" onClick={onClear}>
-                        清空
-                    </Button>
-                ) : null
+                <>
+                    {prompt ? (
+                        <Button size="small" type="text" className="wb-text-action" onClick={onClear}>
+                            清空
+                        </Button>
+                    ) : null}
+                    <button type="button" className="wb-icon-button wb-prompt-expand" aria-label={expanded ? "缩小输入框" : "放大输入框"} aria-expanded={expanded} aria-controls={editorId} onClick={() => setExpanded((current) => !current)}>
+                        {expanded ? <Minimize2 aria-hidden /> : <Maximize2 aria-hidden />}
+                    </button>
+                </>
             }
         >
             {tool?.presets.length ? (
                 <div className="wb-preset-row" role="group" aria-label="场景提示词模板">
-                    {tool.presets.slice(0, 5).map((item) => (
+                    {tool.presets.map((item) => (
                         <button key={item.id} type="button" className="wb-preset" aria-pressed={preset?.id === item.id} title={item.summary || item.name} onClick={() => onChoosePreset(item)}>
                             {preset?.id === item.id ? <Check /> : null}
                             <span>{item.name}</span>
@@ -391,7 +458,7 @@ export function PromptSection({
                     ))}
                 </div>
             ) : null}
-            <div className="wb-prompt">
+            <div id={editorId} className={cn("wb-prompt", expanded && "is-expanded")}>
                 {editor}
                 <div className="wb-prompt-meta">
                     <span className={cn(prompt.length > maxChars * 0.9 && "is-warning")}>
@@ -401,26 +468,32 @@ export function PromptSection({
                 </div>
             </div>
             {activeGroup ? (
-                <div className="wb-inspire">
-                    <div className="wb-inspire-tabs" role="tablist" aria-label="灵感词分类">
-                        {inspirations.map((item) => (
-                            <button key={item.key} type="button" role="tab" aria-selected={item.key === activeGroup.key} className={item.key === activeGroup.key ? "is-active" : ""} onClick={() => setGroup(item.key)}>
-                                {item.label}
-                            </button>
-                        ))}
-                    </div>
-                    <div className="wb-inspire-chips" role="group" aria-label={`${activeGroup.label}灵感词，点击加入或移出描述`}>
-                        {activeGroup.phrases.map((phrase) => {
-                            const active = promptHasPhrase(prompt, phrase);
-                            return (
-                                <button key={phrase} type="button" className="wb-chip is-soft" aria-pressed={active} onClick={() => onTogglePhrase(phrase)}>
-                                    {active ? <Check /> : null}
-                                    {phrase}
+                <details className="wb-disclosure">
+                    <summary>
+                        <ChevronDown aria-hidden />
+                        <span>灵感词</span>
+                    </summary>
+                    <div className="wb-inspire">
+                        <div className="wb-inspire-tabs" role="tablist" aria-label="灵感词分类">
+                            {inspirations.map((item) => (
+                                <button key={item.key} type="button" role="tab" aria-selected={item.key === activeGroup.key} className={item.key === activeGroup.key ? "is-active" : ""} onClick={() => setGroup(item.key)}>
+                                    {item.label}
                                 </button>
-                            );
-                        })}
+                            ))}
+                        </div>
+                        <div className="wb-inspire-chips" role="group" aria-label={`${activeGroup.label}灵感词，点击加入或移出描述`}>
+                            {activeGroup.phrases.map((phrase) => {
+                                const active = promptHasPhrase(prompt, phrase);
+                                return (
+                                    <button key={phrase} type="button" className="wb-chip is-soft" aria-pressed={active} onClick={() => onTogglePhrase(phrase)}>
+                                        {active ? <Check /> : null}
+                                        {phrase}
+                                    </button>
+                                );
+                            })}
+                        </div>
                     </div>
-                </div>
+                </details>
             ) : null}
         </ComposerSection>
     );

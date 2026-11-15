@@ -312,14 +312,14 @@ export function InspirationHall({ onUse }: { onUse: (item: CreationInspiration) 
             modal.confirm({
                 className: "workspace-modal workspace-modal-compact",
                 title: isCustom ? "删除这条灵感？" : "从库中隐藏这条灵感？",
-                content: isCustom ? `「${item.title}」会从本地灵感库移除，此操作不可撤销。` : `「${item.title}」来自外部目录，不能真正删除；隐藏后可用「已隐藏」视图恢复，重新导入外部目录也不会让它复现。`,
+                content: isCustom ? `「${item.title}」会从当前账号在此浏览器的本地库移除，不影响其他用户，此操作不可撤销。` : `「${item.title}」仅在当前账号的此浏览器中隐藏，不影响其他用户。可在「已隐藏」视图恢复。`,
                 okText: isCustom ? "删除" : "隐藏",
                 okButtonProps: { danger: true },
                 cancelText: "保留",
                 onOk: () => {
                     removeEntry(id);
                     if (detail && catalogIdOf(detail) === id) setDetail(null);
-                    message.success(isCustom ? "已删除" : "已隐藏");
+                    message.success(isCustom ? "已从本地库删除" : "已在本地隐藏");
                 },
             });
         },
@@ -331,7 +331,7 @@ export function InspirationHall({ onUse }: { onUse: (item: CreationInspiration) 
             if (!canManage) return;
             if (editing) {
                 updateEntry(catalogIdOf(editing), draft);
-                message.success("已保存修改");
+                message.success("已更新本地灵感，仅在此浏览器生效");
                 setDetail((current) => (current && catalogIdOf(current) === catalogIdOf(editing) ? { ...current, ...draft } : current));
                 setEditing(null);
                 return;
@@ -346,7 +346,7 @@ export function InspirationHall({ onUse }: { onUse: (item: CreationInspiration) 
             setSort("daily");
             setSearch("");
             setPage(1);
-            message.success("灵感已创建");
+            message.success("已创建本地灵感，仅在此浏览器生效");
         },
         [canManage, createEntry, editing, message, updateEntry],
     );
@@ -362,7 +362,7 @@ export function InspirationHall({ onUse }: { onUse: (item: CreationInspiration) 
             if (!canManage) return;
             try {
                 const result = importPayload(await file.text());
-                message.success(`导入完成：新增 ${result.created}，覆盖 ${result.updated}${result.skipped ? `，跳过 ${result.skipped} 条无效数据` : ""}`);
+                message.success(`已导入当前账号的本地库：新增 ${result.created}，覆盖 ${result.updated}${result.skipped ? `，跳过 ${result.skipped} 条无效数据` : ""}`);
             } catch (error) {
                 message.error(error instanceof Error ? error.message : "导入失败");
             }
@@ -401,14 +401,14 @@ export function InspirationHall({ onUse }: { onUse: (item: CreationInspiration) 
                                     setEditorOpen(true);
                                 }}
                             >
-                                新建灵感
+                                新建本地灵感
                             </Button>
                             <Dropdown
                                 trigger={["click"]}
                                 placement="bottomRight"
                                 menu={{
                                     items: [
-                                        { key: "import", label: "导入灵感", icon: <Import className="size-4" />, disabled: !hydrated },
+                                        { key: "import", label: "导入本地灵感", icon: <Import className="size-4" />, disabled: !hydrated },
                                         { key: "export", label: "导出本地灵感", icon: <Download className="size-4" />, disabled: !hydrated },
                                     ],
                                     onClick: ({ key }) => {
@@ -423,6 +423,8 @@ export function InspirationHall({ onUse }: { onUse: (item: CreationInspiration) 
                     ) : null}
                 </div>
             </header>
+
+            {canManage ? <p className="mb-4 text-sm text-[var(--user-ink-muted)]">此处的新增、编辑、隐藏和导入仅对当前账号在此浏览器生效，不会发布给其他用户。</p> : null}
 
             <div className="inspiration-hall-toolbar">
                 <SegmentedControl options={modeOptions} value={modeFilter} onChange={(value) => setModeFilter(value as ModeFilter)} ariaLabel="按创作类型筛选灵感" className="inspiration-hall-modes" />
@@ -523,7 +525,7 @@ export function InspirationHall({ onUse }: { onUse: (item: CreationInspiration) 
                                         onToggleFavorite={() => toggleFavorite(id)}
                                         onRestore={() => {
                                             restoreEntry(id);
-                                            message.success("灵感已恢复显示");
+                                            message.success("灵感已在本地恢复显示");
                                         }}
                                         onEdit={() => {
                                             if (!canManage) return;

@@ -110,6 +110,11 @@ export function VideoNodeContent({ node, theme, mediaActive = false, onMediaPlay
     const [videoReady, setVideoReady] = useState(false);
     // 播放器身份是节点上的媒体（storageKey），不是当前签名地址：续签只换 src，不重建播放器、不退回静态预览。
     const playerKey = node.metadata?.storageKey || node.id;
+    const pausedMediaRef = useRef<string | null>(null);
+
+    useEffect(() => {
+        pausedMediaRef.current = null;
+    }, [mediaActive, playerKey]);
 
     useEffect(() => {
         setVideoReady(false);
@@ -194,13 +199,20 @@ export function VideoNodeContent({ node, theme, mediaActive = false, onMediaPlay
                         mimeType={node.metadata?.mimeType}
                         title={node.title || "视频"}
                         hasAudio={inferVideoHasAudio(node.metadata)}
-                        autoPlay
+                        autoPlay={pausedMediaRef.current !== playerKey}
                         preload="metadata"
                         brandColor={theme.accent.primary}
                         className="h-full w-full rounded-[var(--node-radius)] bg-black"
                         dataCanvasNoZoom
                         compactControls
                         onCanPlay={() => setVideoReady(true)}
+                        onPlay={() => {
+                            pausedMediaRef.current = null;
+                        }}
+                        onPause={(event) => {
+                            // 控件/键盘发出的暂停请求才代表用户意图；资源故障或卸载引发的 pause 不算。
+                            if (event.triggers.hasType("media-pause-request")) pausedMediaRef.current = playerKey;
+                        }}
                         onError={onError}
                     />
                     {activeEntry && activeEntry.text.trim() ? <CanvasSubtitleOverlay text={activeEntry.text} highlight={activeHighlight} style={subtitleStyle} /> : null}

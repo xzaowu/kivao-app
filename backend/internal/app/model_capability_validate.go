@@ -193,6 +193,24 @@ func validateVideoCapabilityConfig(value *VideoCapabilityConfig) error {
 	if len(value.Operations) == 0 || strings.TrimSpace(value.DefaultOperation) == "" || !containsCapabilityString(value.Operations, value.DefaultOperation) {
 		return BadAuthRequest("请至少配置一个生成模式，并选择默认模式")
 	}
+	if value.DefaultOperation == VideoProcessingOperationDepthCapture {
+		if len(value.Operations) != 1 || value.References.MaxVideos != 1 || value.References.MaxImages != 0 || value.References.MaxAudios != 0 {
+			return BadAuthRequest("深度动作捕捉只支持 depth_capture 模式和一个视频引用")
+		}
+		if value.Processing == nil || value.Processing.FPSPolicy != VideoProcessingFPSKeepSource || len(value.Processing.FPSOptions) > 0 {
+			return BadAuthRequest("深度动作捕捉需要处理配置，且不支持选择输出帧率")
+		}
+		if len(value.Resolutions) != 0 || len(value.Ratios) != 0 || value.GenerateAudio.Supported || value.Watermark.Supported {
+			return BadAuthRequest("深度动作捕捉不支持设置输出尺寸、画幅、音频或水印")
+		}
+		if value.Processing.MaxSourceSeconds < 1 || value.Processing.MaxSourceSeconds > MaxVideoDepthCaptureSeconds {
+			return BadAuthRequest("深度动作捕捉源视频时长上限须为 1-600 秒")
+		}
+		if value.Duration.Default > value.Processing.MaxSourceSeconds {
+			return BadAuthRequest("深度动作捕捉默认时长不能超过源视频上限")
+		}
+		return nil
+	}
 	return validateVideoProcessingConfig(value.Processing)
 }
 

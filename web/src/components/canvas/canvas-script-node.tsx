@@ -14,7 +14,6 @@ import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-refer
 import { type CanvasStoryboardPipelineProgress } from "@/lib/canvas/canvas-storyboard-progress";
 import { generationErrorMessage } from "@/lib/generation-error";
 import { generationTaskShowsProgress, generationTaskStageLabel } from "@/lib/generation-task-display";
-import { navigateToSettings } from "@/lib/settings-navigation";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useEffectiveConfig } from "@/stores/use-config-store";
 import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
@@ -369,7 +368,6 @@ export function CanvasScriptNodeContent({
                                 placeholder="选择文本模型"
                                 showSelectedPrice={false}
                                 onChange={onModelChange}
-                                onMissingConfig={() => navigateToSettings({ continueCreation: true })}
                             />
                         </div>
                     </Tooltip>

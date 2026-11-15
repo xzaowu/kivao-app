@@ -519,8 +519,8 @@ export function CanvasNodePromptPanel({
                 {renderSubmitButton(expanded)}
             </div>
         ) : (
-            <div className="canvas-node-composer-footer">
-                <div className={expanded ? "min-w-0 flex-1" : "canvas-node-composer-model"}>
+            <div className={`canvas-node-composer-footer${mode === "video" ? " is-video" : ""}`}>
+                <div className={`canvas-node-composer-model-slot ${expanded ? "min-w-0 flex-1" : "canvas-node-composer-model"}`}>
                     <ModelPicker
                         className="canvas-node-composer-model-trigger !h-8 !w-full !min-w-0 !text-[var(--fs-tiny)] !font-normal [&_img]:!size-3 [&_.lucide]:!size-3"
                         fullWidth
@@ -529,14 +529,13 @@ export function CanvasNodePromptPanel({
                         onChange={changeModel}
                         capability={mode}
                         requirements={resolvedRequirements}
-                        onMissingConfig={() => navigateToSettings({ continueCreation: true })}
                         showSelectedPrice={false}
                         showOptionPrices={creditsEnabled}
                         variant="creation"
                         showConfiguredModelName
                     />
                 </div>
-                <div className="ml-auto flex min-w-0 shrink-0 items-center gap-1">
+                <div className="canvas-node-composer-actions ml-auto flex min-w-0 shrink-0 items-center gap-1">
                     <ReferenceToolsPopover
                         canAutoMention={canAutoMention}
                         autoLinkEnabled={autoLinkEnabled}
@@ -725,7 +724,7 @@ export function CanvasNodePromptPanel({
                 >
                     <div
                         ref={expandedModalRef}
-                        className="relative flex min-h-0 flex-col"
+                        className="canvas-node-composer-expanded relative flex min-h-0 flex-col"
                         style={{ ...composerTokens, color: theme.node.text, maxHeight: `calc(100dvh - ${PROMPT_EDITOR_VIEWPORT_MARGIN}px)`, ...(expandedModalSize ? { height: expandedModalSize.height } : null) }}
                     >
                         <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-3">

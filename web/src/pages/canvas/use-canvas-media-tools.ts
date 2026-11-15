@@ -43,6 +43,7 @@ import { imageLayerBackgroundPatch, imageLayerExtractionTargets, resolveImageLay
 import { buildAngleLabel, buildAnglePrompt, createCanvasNode } from "@/lib/canvas/canvas-project-domain";
 import { validateVideoSegmentBatch } from "@/lib/canvas/canvas-video-regeneration";
 import { listVideoEnhanceModels, VIDEO_ENHANCE_OPERATION, videoEnhanceSourceReference, videoEnhanceTaskInput, type VideoEnhanceParams } from "@/lib/canvas/canvas-video-enhance";
+import { VIDEO_DEPTH_CAPTURE_OPERATION, videoDepthMaxSeconds, videoDepthSourceError, videoDepthTaskInput } from "@/lib/canvas/canvas-video-depth";
 import { resolveCanvasStyleExecution } from "@/lib/canvas/canvas-style-execution";
 import { buildGenerationConfig, buildImageGenerationMetadata, nodeReferenceImage, isGenerationCanceled, runBackendCanvasGenerationTask, runCanvasGenerationTaskToConsumer } from "@/lib/canvas/canvas-project-generation";
 import { canvasImageNodeDimensions } from "@/lib/canvas/canvas-reference-image-size";
@@ -144,6 +145,7 @@ export function useCanvasMediaTools({
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
     const extractingVideoFramesNodeIdRef = useRef<string | null>(null);
     const layerSubmissionIds = useRef(new Set<string>());
+    const processingNodeIds = useRef(new Set<string>());
     const [activeLayerGroupIds, setActiveLayerGroupIds] = useState<ReadonlySet<string>>(new Set());
     const [cropNodeId, setCropNodeId] = useState<string | null>(null);
     const [annotationNodeId, setAnnotationNodeId] = useState<string | null>(null);
@@ -2010,43 +2012,92 @@ export function useCanvasMediaTools({
         [effectiveConfig, message, setHoveredNodeId, setToolbarNodeId],
     );
 
-    // 画质增强：在源节点右侧创建 loading 视频节点并连线，后端任务完成后由统一结果回写填充。
-    const enhanceVideoNode = useCallback(
-        async (node: CanvasNodeData, params: VideoEnhanceParams) => {
-            setEnhanceDialogNodeId(null);
-            const source = videoEnhanceSourceReference(node);
-            const spec = NODE_DEFAULT_SIZE[CanvasNodeType.Video];
-            const childId = nanoid();
-            const videoEnhance = { sourceNodeId: node.id, model: params.model, resolution: params.resolution, fps: params.fps, bitrateLevel: params.bitrateLevel, bitrate: params.bitrate };
-            setRunningNodeId(childId);
+    const createVideoDepthNode = useCallback(
+        (source: CanvasNodeData) => {
+            if (!source.metadata?.storageKey && !source.metadata?.content) return;
+            const id = nanoid();
+            const size = fitNodeSize(source.metadata?.naturalWidth || source.width, source.metadata?.naturalHeight || source.height, 320, 420);
+            const model = listVideoEnhanceModels(effectiveConfig, VIDEO_DEPTH_CAPTURE_OPERATION)[0] || "";
             setNodes((current) => [
                 ...current,
                 {
-                    id: childId,
+                    id,
                     type: CanvasNodeType.Video,
-                    title: translate("canvasPage.mediaTools.titleEnhance", { title: node.title || translate("canvasPage.common.video"), resolution: params.resolution.toUpperCase() }),
-                    position: { x: node.position.x + node.width + 96, y: node.position.y },
-                    width: spec.width,
-                    height: spec.height,
-                    metadata: {
-                        prompt: `画质增强（${params.resolution}）`,
-                        status: NODE_STATUS_LOADING,
-                        generationMode: "video",
-                        model: params.model,
-                        vquality: params.resolution,
-                        videoEditOperation: VIDEO_ENHANCE_OPERATION,
-                        videoEnhance,
-                        taskCreatedAt: new Date().toISOString(),
-                    },
+                    title: `深度动作捕捉 · ${source.title || "视频"}`,
+                    position: { x: source.position.x + source.width + 96, y: source.position.y },
+                    ...size,
+                    metadata: { status: NODE_STATUS_IDLE, generationMode: "video", prompt: "深度动作捕捉", model, videoEditOperation: VIDEO_DEPTH_CAPTURE_OPERATION, videoDepthCapture: { sourceNodeId: source.id, model } },
                 },
             ]);
-            setConnections((current) => [...current, { id: nanoid(), fromNodeId: node.id, toNodeId: childId }]);
+            setConnections((current) => [...current, { id: nanoid(), fromNodeId: source.id, toNodeId: id }]);
+            setSelectedNodeIds(new Set([id]));
+            setSelectedConnectionId(null);
+            setHoveredNodeId(null);
+            setToolbarNodeId(null);
+            setDialogNodeId(id);
+        },
+        [effectiveConfig, setConnections, setDialogNodeId, setHoveredNodeId, setNodes, setSelectedConnectionId, setSelectedNodeIds, setToolbarNodeId],
+    );
+
+    // 处理任务共用持久化和结果回写；深度捕捉只在已有草稿节点按下开始后提交。
+    const processVideoNode = useCallback(
+        async (node: CanvasNodeData, params: VideoEnhanceParams | { model: string }, targetNodeId?: string) => {
+            const depth = !("resolution" in params);
+            if (depth) {
+                const current = nodesRef.current.find((item) => item.id === node.id);
+                const target = nodesRef.current.find((item) => item.id === targetNodeId);
+                if (!current || current.metadata?.storageKey !== node.metadata?.storageKey || current.metadata?.durationMs !== node.metadata?.durationMs) {
+                    message.warning("源视频已变化，请重新打开捕捉设置");
+                    return;
+                }
+                const sourceError = videoDepthSourceError(current, videoDepthMaxSeconds(effectiveConfig, params.model));
+                if (sourceError || !listVideoEnhanceModels(effectiveConfig, VIDEO_DEPTH_CAPTURE_OPERATION).includes(params.model)) {
+                    message.warning(sourceError || "请选择可用的深度动作捕捉模型");
+                    return;
+                }
+                if (!target || target.metadata?.videoDepthCapture?.sourceNodeId !== node.id || target.metadata.taskId || target.metadata.content || target.metadata.status === NODE_STATUS_LOADING || processingNodeIds.current.has(target.id)) return;
+            } else setEnhanceDialogNodeId(null);
+            const source = videoEnhanceSourceReference(node);
+            const spec = NODE_DEFAULT_SIZE[CanvasNodeType.Video];
+            const childId = targetNodeId || nanoid();
+            processingNodeIds.current.add(childId);
+            const processingMetadata: NonNullable<CanvasNodeData["metadata"]> = depth
+                ? { prompt: "深度动作捕捉", vquality: "", videoEditOperation: VIDEO_DEPTH_CAPTURE_OPERATION, videoDepthCapture: { sourceNodeId: node.id, model: params.model } }
+                : { prompt: `画质增强（${params.resolution}）`, vquality: params.resolution, videoEditOperation: VIDEO_ENHANCE_OPERATION, videoEnhance: { sourceNodeId: node.id, ...params } };
+            setRunningNodeId(childId);
+            setNodes((current) =>
+                depth
+                    ? current.map((item) => (item.id === childId ? { ...item, metadata: { ...resetGenerationTaskMetadata(item.metadata, NODE_STATUS_LOADING), ...processingMetadata, model: params.model } } : item))
+                    : [
+                          ...current,
+                          {
+                              id: childId,
+                              type: CanvasNodeType.Video,
+                              title: translate("canvasPage.mediaTools.titleEnhance", { title: node.title || translate("canvasPage.common.video"), resolution: "resolution" in params ? params.resolution.toUpperCase() : "" }),
+                              position: { x: node.position.x + node.width + 96, y: node.position.y },
+                              width: spec.width,
+                              height: spec.height,
+                              metadata: {
+                                  ...processingMetadata,
+                                  status: NODE_STATUS_LOADING,
+                                  generationMode: "video",
+                                  model: params.model,
+                                  taskCreatedAt: new Date().toISOString(),
+                              },
+                          },
+                      ],
+            );
+            if (!depth) setConnections((current) => [...current, { id: nanoid(), fromNodeId: node.id, toNodeId: childId }]);
             setSelectedNodeIds(new Set([childId]));
             setSelectedConnectionId(null);
             const controller = startGenerationRequest(childId, node.id, childId);
             let taskId: string | undefined;
             try {
-                await runCanvasGenerationTaskToConsumer(videoEnhanceTaskInput({ config: effectiveConfig, params, source, sourceNodeId: node.id, projectId, nodeId: childId, signal: controller.signal }), {
+                const input =
+                    "resolution" in params
+                        ? videoEnhanceTaskInput({ config: effectiveConfig, params, source, sourceNodeId: node.id, projectId, nodeId: childId, signal: controller.signal })
+                        : videoDepthTaskInput({ config: effectiveConfig, model: params.model, source, projectId, nodeId: childId, signal: controller.signal });
+                await runCanvasGenerationTaskToConsumer(input, {
                     bindTask: (task) => {
                         taskId = task.id;
                         bindGenerationTask(childId, task);
@@ -2061,18 +2112,20 @@ export function useCanvasMediaTools({
                         setNodes((current) => current.map((item) => (item.id === childId && item.metadata?.taskId === taskId ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_ERROR, errorDetails: details } } : item)));
                 }
             } finally {
+                processingNodeIds.current.delete(childId);
                 finishGenerationRequest(childId, controller);
-                setRunningNodeId(null);
+                setRunningNodeId((current) => (current === childId ? null : current));
             }
         },
-        [applyGenerationTaskResult, bindGenerationTask, effectiveConfig, finishGenerationRequest, message, projectId, setConnections, setNodes, setRunningNodeId, setSelectedConnectionId, setSelectedNodeIds, startGenerationRequest],
+        [applyGenerationTaskResult, bindGenerationTask, effectiveConfig, finishGenerationRequest, message, nodesRef, projectId, setConnections, setNodes, setRunningNodeId, setSelectedConnectionId, setSelectedNodeIds, startGenerationRequest],
     );
 
     return {
         enhanceDialogNodeId,
         setEnhanceDialogNodeId,
         openVideoEnhance,
-        enhanceVideoNode,
+        processVideoNode,
+        createVideoDepthNode,
         angleNodeId,
         lightingNodeId,
         emotionNodeId,
