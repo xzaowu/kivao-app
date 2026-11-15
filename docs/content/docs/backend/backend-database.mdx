@@ -464,6 +464,14 @@ Schema 45 新增 `upload_reservations`：`id`、`user_id`、`size`、`day`、`ex
 
 ## 结构迁移与版本
 
+### KIVAO 旧定制库的离线选择性导入
+
+`cmd/kivao-import` 只用于独立 PostgreSQL 17 演练库，将已确认的旧定制 Schema 79 数据按白名单迁入新 Schema 104。旧定制 78／79 与新版编号含义不同，因此不复制或改写源 `schema_migrations`，不从正常服务启动调用此工具。
+
+工具只在成功导入的新库内创建 `kivao_import_receipts`：`id` 为导入规则标识，当前为 `accounts-models79-to104-v2`；`source_digest`、`target_digest`、`files_digest` 为验证摘要，`created_at` 为完成时间。该表是离线导入元数据，不属于业务 Models 或新增正式迁移版本；保留范围内的源数据／文件或任意目标数据变动会阻止重复应用。旧范围回执不复用；明确省略的历史仅计数并检查活动／资金状态，不进入内容摘要。摘要及回执应与数据库同等保护，不作为公开日志输出。
+
+本次只迁账号／权益／原始积分流水、模型配置及两份独立坤肉插件；订单、任务、画布、素材、旧支付配置与技能不迁入。流水保留历史订单 ID，旧订单明细留在原库；不伪造开账记录。新库正常执行官方迁移，导入后仅对保留模型数据补做 88／89／97 转换。完整边界见仓库 `docs/plans/kivao-production-upgrade.md`。工具默认只检查，不具备生产切换授权，不启动任务或外部调用，也不删除旧库或文件。
+
 版本 52 `user_avatar_presets` 为 `users` 新增 `avatar_preset`，保存系统头像的稳定标识：`person`、`director`、`camera`、`cat`、`rabbit`、`robot`、`rocket`、`sparkles`。系统头像由前端共享组件渲染；选择时原子更新 default 模式、预设标识并清除上传图片。上传个人头像保留上次系统头像偏好，后续可以再次选择；未知标识被拒绝，不保存客户端提供的任意图片地址。
 
 版本 51 `personal_profile_security` 增加个人信息与身份重新核验结构：`users.avatar_mode`（空字符串沿用第三方头像、`custom` 为个人上传、`default` 为系统头像）、`users.avatar_version`（仅用于头像地址，不作为用户 JSON 字段返回）；新增 `user_avatars`（主键 `user_id`、标准化 PNG `data`、`updated_at`）。头像图片与用户选择在同一事务保存或清除，独立于创作素材资源；数据库备份同时包含头像。上传最大 5 MiB、1600 万像素，服务端居中裁剪并缩小到不超过 512×512。
