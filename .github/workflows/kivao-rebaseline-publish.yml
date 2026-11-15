@@ -27,13 +27,14 @@ jobs:
       - name: Require owner approval bound to exact SHA, CI and expiry
         id: approval
         env:
+          GH_TOKEN: ${{ github.token }}
           KIVAO_REBASELINE_PUBLISH_ENABLED: ${{ vars.KIVAO_REBASELINE_PUBLISH_ENABLED }}
           KIVAO_REBASELINE_PUBLISH_APPROVAL: ${{ vars.KIVAO_REBASELINE_PUBLISH_APPROVAL }}
         run: |
           python3 scripts/kivao-rebaseline-release.py authorize --sha "$GITHUB_SHA" \
             --release "$GITHUB_REF_NAME" --output "$RUNNER_TEMP/approval.json"
-          test "$(git cat-file -t "refs/tags/$GITHUB_REF_NAME")" = tag
-          test "$(git rev-parse "refs/tags/$GITHUB_REF_NAME^{commit}")" = "$GITHUB_SHA"
+          python3 scripts/kivao-rebaseline-release.py check-tag --sha "$GITHUB_SHA" \
+            --release "$GITHUB_REF_NAME" --output "$RUNNER_TEMP/tag-verified.json"
           python3 scripts/kivao-rebaseline-release.py source --sha "$GITHUB_SHA" \
             --release "$GITHUB_REF_NAME" --output "$RUNNER_TEMP/source.json"
       - name: Verify the approved CI run and its artifact

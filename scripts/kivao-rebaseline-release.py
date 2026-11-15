@@ -88,6 +88,22 @@ def authorize(sha, release, approval, context, now=None):
     return {**approval, 'independent_review': False}
 
 
+def check_tag(sha, release):
+    release = release_name(sha, release)
+    api = f"repos/{POLICY['repository']}/git"
+    # checkout may replace its local annotated tag ref with the event commit.
+    # Read the remote ref and object; never trust the rewritten local ref.
+    ref = json.loads(capture(['gh', 'api', f'{api}/ref/tags/{release}']))
+    obj = ref.get('object') or {}
+    if ref.get('ref') != 'refs/tags/'+release or obj.get('type') != 'tag' or not re.fullmatch(r'[0-9a-f]{40}', obj.get('sha') or ''):
+        raise ValueError('remote_annotated_tag_required')
+    tag = json.loads(capture(['gh', 'api', f"{api}/tags/{obj['sha']}"]))
+    target = tag.get('object') or {}
+    if tag.get('sha') != obj['sha'] or tag.get('tag') != release or target.get('type') != 'commit' or target.get('sha') != sha:
+        raise ValueError('remote_tag_target_mismatch')
+    return {'source_commit': sha, 'release': release, 'tag_object': obj['sha'], 'remote_annotated_tag_verified': True}
+
+
 def source(sha, release=None):
     release = release_name(sha, release)
     if git('rev-parse', 'HEAD') != sha or git('status', '--porcelain', '--untracked-files=no'):
@@ -242,7 +258,7 @@ def write_json(path, value):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('command', choices=['source', 'authorize', 'verify-image', 'registry-preflight', 'check-ci-run', 'check-ci', 'summary', 'locks'])
+    p.add_argument('command', choices=['source', 'authorize', 'check-tag', 'verify-image', 'registry-preflight', 'check-ci-run', 'check-ci', 'summary', 'locks'])
     p.add_argument('--sha', required=True)
     p.add_argument('--release')
     p.add_argument('--role', choices=ROLES)
@@ -266,6 +282,8 @@ def main():
                 f.write(f"ci_run_id={result['ci_run_id']}\n")
     elif a.command == 'verify-image':
         result = verify_image(a.sha, a.release, a.role, a.image, a.registry_digest)
+    elif a.command == 'check-tag':
+        result = check_tag(a.sha, a.release)
     elif a.command == 'registry-preflight':
         result = registry_preflight(a.sha, a.release, [a.role] if a.role else ROLES)
     elif a.command == 'check-ci-run':

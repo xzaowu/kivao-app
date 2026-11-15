@@ -5,7 +5,9 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -65,6 +67,51 @@ class ReleaseTests(unittest.TestCase):
         for tag in ['latest', 'v1.8.5', 'kivao-rebaseline-bbbbbbbbbbbb-r1', RELEASE + '-extra']:
             with self.subTest(tag=tag), self.assertRaises(ValueError):
                 r.release_name(SHA, tag)
+
+    def test_remote_tag_requires_annotation_name_object_and_exact_commit(self):
+        ref = {'ref': 'refs/tags/'+RELEASE, 'object': {'type': 'tag', 'sha': 'b'*40}}
+        tag = {'sha': 'b'*40, 'tag': RELEASE, 'object': {'type': 'commit', 'sha': SHA}}
+        for field, value in [('ref', 'refs/tags/other'), ('object', None),
+                             ('object', {'type': 'commit', 'sha': SHA}),
+                             ('object', {'type': 'tag', 'sha': '../../other'})]:
+            with self.subTest(ref=field, value=value), patch.object(r, 'capture', return_value=json.dumps({**ref, field: value})) as fetch:
+                with self.assertRaisesRegex(ValueError, 'remote_annotated_tag_required'):
+                    r.check_tag(SHA, RELEASE)
+                self.assertEqual(fetch.call_count, 1)
+        for field, value in [('sha', 'c'*40), ('tag', 'another-release'), ('object', None),
+                             ('object', {'type': 'commit', 'sha': 'c'*40}),
+                             ('object', {'type': 'tag', 'sha': SHA})]:
+            with self.subTest(tag=field, value=value), patch.object(r, 'capture', side_effect=[json.dumps(ref), json.dumps({**tag, field: value})]):
+                with self.assertRaisesRegex(ValueError, 'remote_tag_target_mismatch'):
+                    r.check_tag(SHA, RELEASE)
+        with patch.object(r, 'capture', side_effect=subprocess.CalledProcessError(1, ['gh', 'api'])):
+            with self.assertRaises(subprocess.CalledProcessError):
+                r.check_tag(SHA, RELEASE)
+
+    def test_remote_annotation_survives_checkout_rewriting_local_tag(self):
+        with tempfile.TemporaryDirectory() as directory:
+            def git(*args):
+                return subprocess.check_output(['git', '-C', directory, *args], text=True, stderr=subprocess.DEVNULL).strip()
+            git('init', '-q')
+            git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
+                '-c', 'commit.gpgsign=false', 'commit', '--allow-empty', '-m', 'synthetic release')
+            sha = git('rev-parse', 'HEAD')
+            name = r.release_name(sha)
+            git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
+                '-c', 'tag.gpgsign=false', 'tag', '-a', name, '-m', 'synthetic annotation')
+            tag_sha = git('rev-parse', 'refs/tags/'+name)
+            ref = {'ref': 'refs/tags/'+name, 'object': {'type': 'tag', 'sha': tag_sha}}
+            tag = {'sha': tag_sha, 'tag': name, 'object': {'type': 'commit', 'sha': sha}}
+            self.assertEqual(git('cat-file', '-t', 'refs/tags/'+name), 'tag')
+            git('update-ref', 'refs/tags/'+name, sha)
+            self.assertEqual(git('cat-file', '-t', 'refs/tags/'+name), 'commit')
+            with patch.object(r, 'capture', side_effect=[json.dumps(ref), json.dumps(tag)]) as fetch:
+                result = r.check_tag(sha, name)
+                self.assertEqual(result['source_commit'], sha)
+                self.assertEqual(result['tag_object'], tag_sha)
+                self.assertTrue(result['remote_annotated_tag_verified'])
+                self.assertEqual(fetch.call_args_list[0].args[0], ['gh', 'api', f"repos/{r.POLICY['repository']}/git/ref/tags/{name}"])
+                self.assertEqual(fetch.call_args_list[1].args[0], ['gh', 'api', f"repos/{r.POLICY['repository']}/git/tags/{tag_sha}"])
 
     def test_source_allows_only_preparation_on_frozen_product(self):
         def fake_git(*args):
