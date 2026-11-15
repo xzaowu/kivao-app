@@ -17,7 +17,9 @@
 
 GitHub compare 确认：`main@82fc5c03` 是新上游基线的祖先，`3979305c` 比它多 282 个提交，没有反向独有提交。因此新开发分支可以经过正常 PR 合入，不需要清空仓库、替换 Git 历史或强推 main。旧生产分支与 main 则已分叉（27 / 14 个独有提交），不能直接拿旧生产分支覆盖 main。
 
-本地仓库仍有 shallow 边界；不能把本地 `merge-base` 查询失败理解为没有共同祖先。未来推送前补齐所需祖先链，再本地复核血统。本次远端判断依据 [上游 compare](https://github.com/ddcat-ai/open-ai-canvas/compare/82fc5c03233c33380a5335146c50bb507deb5692...3979305c1413be231cbaef242e50afc67f553c5e)。
+首次盘点时本地仓库有 shallow 边界；随后执行准备已补齐历史，本地确认 `origin/main` 是当前分支的祖先，没有反向落后。同步时 Git 尝试展开上游合并历史，已中止 rebase 并恢复原提交；保留上游血统，不重放或改写现有提交。本次远端判断依据 [上游 compare](https://github.com/ddcat-ai/open-ai-canvas/compare/82fc5c03233c33380a5335146c50bb507deb5692...3979305c1413be231cbaef242e50afc67f553c5e)。
+
+源码树另移除上游误入的 `backend/server`（约 63 MiB 的 macOS ARM64 编译文件），并加入 Git 与 Docker 忽略规则。当前宿主开发、Air 与 Docker 都从源码构建或运行各自的输出路径，没有依赖该文件；原历史中的文件仍保留，不做历史清洗。此清理不删除模型、插件、许可证或恢复资料。
 
 ## 先保留什么
 
