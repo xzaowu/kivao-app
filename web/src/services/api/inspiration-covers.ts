@@ -7,7 +7,7 @@ export function inspirationCoverURL(item: CreationInspiration, catalogImage?: st
     try {
         const url = new URL(item.image);
         if (url.protocol !== "https:" || url.username || url.password) return item.image;
-        return `${apiBaseURL.replace(/\/$/, "")}/public/inspirations/covers/${encodeURIComponent(catalogIdOf(item))}`;
+        return `${apiBaseURL.replace(/\/$/, "")}/public/inspirations/covers/${encodeURIComponent(catalogIdOf(item))}?v=2`;
     } catch {
         return item.image;
     }

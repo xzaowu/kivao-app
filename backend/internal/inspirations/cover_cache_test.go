@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"image"
 	"image/color"
+	"image/jpeg"
 	"image/png"
 	"io"
 	"net/http"
@@ -234,27 +235,24 @@ func TestCoverCacheFallsBackToValidatedSourceOnTruncatedEncoderOutput(t *testing
 	}
 }
 
-func TestCoverEncodingFinalizesUnseekableWebPRIFFLength(t *testing.T) {
-	// A 32px static WebP; Alpine FFmpeg emits the same bytes with RIFF length 0
-	// when stdout cannot seek. Chunk contents must still pass the full decoder.
+func TestCoverEncodingUsesCompleteImagePacketsWithoutSeek(t *testing.T) {
+	// A complete static WebP packet, as emitted by libwebp without a muxer rewrite.
 	encoded, err := base64.StdEncoding.DecodeString("UklGRkwAAABXRUJQVlA4IEAAAABwAwCdASogACAAPpFCnEolo6KhqAgAsBIJZQCsLoB+AABBlBAA/uyXj/6yv5lfzK/3yP/xu3GG++nGjFhjGAAA")
 	if err != nil {
 		t.Fatal(err)
 	}
-	binary.LittleEndian.PutUint32(encoded[4:8], 0)
-	if _, err := inspectCover(encoded); err == nil {
-		t.Fatal("fixture did not reproduce the production decoder failure")
-	}
 	dir := t.TempDir()
 	fixture := filepath.Join(dir, "pipe.webp")
+	arguments := filepath.Join(dir, "arguments")
 	if err := os.WriteFile(fixture, encoded, 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "ffmpeg"), []byte("#!/bin/sh\nexec /bin/cat \"$COVER_TEST_WEBP\"\n"), 0700); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "ffmpeg"), []byte("#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$COVER_TEST_ARGUMENTS\"\nexec /bin/cat \"$COVER_TEST_WEBP\"\n"), 0700); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir)
 	t.Setenv("COVER_TEST_WEBP", fixture)
+	t.Setenv("COVER_TEST_ARGUMENTS", arguments)
 	raw := coverPNG(t, 128, 96)
 	cache := newCoverCache(t.TempDir())
 	cache.client.Transport = coverTransport(func(*http.Request) (*http.Response, error) {
@@ -272,6 +270,42 @@ func TestCoverEncodingFinalizesUnseekableWebPRIFFLength(t *testing.T) {
 	config, err := inspectCover(stored)
 	if err != nil || config.Width != 32 || config.Height != 32 || binary.LittleEndian.Uint32(stored[4:8]) != uint32(len(stored)-8) {
 		t.Fatal("completed encoder output is not a fully decodable WebP", err)
+	}
+	args, err := os.ReadFile(arguments)
+	if err != nil || !strings.HasSuffix(string(args), "-f\nimage2pipe\npipe:1\n") {
+		t.Fatal("encoder output requires a seekable muxer", err)
+	}
+}
+
+func TestCoverCacheRejectsWebPTrailerIgnoredByPixelDecoder(t *testing.T) {
+	encoded, err := base64.StdEncoding.DecodeString("UklGRkwAAABXRUJQVlA4IEAAAABwAwCdASogACAAPpFCnEolo6KhqAgAsBIJZQCsLoB+AABBlBAA/uyXj/6yv5lfzK/3yP/xu3GG++nGjFhjGAAA")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, extra := range [][]byte{{0, 0, 0, 0}, []byte("VP8X\xff\xff\xff\xff")} {
+		broken := append(append([]byte(nil), encoded...), extra...)
+		binary.LittleEndian.PutUint32(broken[4:8], uint32(len(broken)-8))
+		if _, _, err := image.Decode(bytes.NewReader(broken)); err != nil {
+			t.Fatal("fixture must expose the pixel decoder's incomplete validation", err)
+		}
+		if _, err := inspectCover(broken); err == nil {
+			t.Fatal("malformed WebP container accepted")
+		}
+		raw := coverPNG(t, 128, 96)
+		cache := newCoverCache(t.TempDir())
+		cache.encode = func(context.Context, []byte) []byte { return broken }
+		cache.client.Transport = coverTransport(func(*http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(raw)), Header: make(http.Header)}, nil
+		})
+		file, err := cache.open(context.Background(), "https://media.goodcase.ai/cover.png")
+		if err != nil {
+			t.Fatal("malformed encoder output discarded a validated source", err)
+		}
+		stored, err := io.ReadAll(file.Body)
+		file.Body.Close()
+		if err != nil || !bytes.Equal(stored, raw) {
+			t.Fatal("malformed WebP reached the public cache", err)
+		}
 	}
 }
 
@@ -458,12 +492,20 @@ func TestCoverEncodingKeepsManagedImagesAndProducesWebP(t *testing.T) {
 			t.Fatal("managed/oriented image changed")
 		}
 	}
-	encoded := encodeCover(context.Background(), raw)
-	if http.DetectContentType(encoded) != "image/webp" || len(encoded) >= len(raw) {
-		t.Fatalf("real ffmpeg/libwebp path did not compress: input=%d output=%d type=%s", len(raw), len(encoded), http.DetectContentType(encoded))
+	var jpegSource bytes.Buffer
+	if err := jpeg.Encode(&jpegSource, texture, &jpeg.Options{Quality: 90}); err != nil {
+		t.Fatal(err)
 	}
-	config, err := inspectCover(encoded)
-	if err != nil || config.Width != 960 || config.Height != 686 {
-		t.Fatalf("unexpected dimensions: %+v %v", config, err)
+	for name, input := range map[string][]byte{"png": raw, "jpeg": jpegSource.Bytes()} {
+		t.Run(name, func(t *testing.T) {
+			encoded := encodeCover(context.Background(), input)
+			if http.DetectContentType(encoded) != "image/webp" || len(encoded) >= len(input) {
+				t.Fatalf("real ffmpeg/libwebp path did not compress: input=%d output=%d type=%s", len(input), len(encoded), http.DetectContentType(encoded))
+			}
+			config, err := inspectCover(encoded)
+			if err != nil || config.Width != 960 || config.Height != 686 {
+				t.Fatalf("unexpected dimensions/container: %+v %v", config, err)
+			}
+		})
 	}
 }

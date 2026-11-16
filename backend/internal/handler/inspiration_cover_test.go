@@ -71,7 +71,7 @@ func TestPublicInspirationCoverCacheDelivery(t *testing.T) {
 	if err := png.Encode(&raw, image.NewRGBA(image.Rect(0, 0, 24, 24))); err != nil {
 		t.Fatal(err)
 	}
-	key := sha256.Sum256([]byte("w960-q85-v1\n" + source))
+	key := sha256.Sum256([]byte("w960-q85-v2\n" + source))
 	cacheDir := filepath.Join(dir, "cache", "inspiration-covers")
 	if err := os.MkdirAll(cacheDir, 0700); err != nil {
 		t.Fatal(err)

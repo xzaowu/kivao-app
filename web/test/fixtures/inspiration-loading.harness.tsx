@@ -175,7 +175,7 @@ test("管理员失效缓存后旧的延迟响应不能覆盖新目录", async ()
 
 test("服务器缓存只用于已知目录的原封面，本地图片与个人覆盖保持原地址", () => {
     const item = fixture("seedance");
-    expect(inspirationCoverURL(item, item.image)).toBe("/api/public/inspirations/covers/seedance%3Asample");
+    expect(inspirationCoverURL(item, item.image)).toBe("/api/public/inspirations/covers/seedance%3Asample?v=2");
     expect(inspirationCoverURL({ ...item, image: "/local.webp" }, "/local.webp")).toBe("/local.webp");
     expect(inspirationCoverURL({ ...item, image: "https://custom.example.com/image.jpg" }, item.image)).toBe("https://custom.example.com/image.jpg");
     expect(inspirationCoverURL({ ...item, sourceId: "original" }, item.image)).toBe(item.image);

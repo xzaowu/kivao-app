@@ -32,7 +32,7 @@ const (
 	coverCacheMaxBytes = 256 << 20
 	coverFreshFor      = 24 * time.Hour
 	coverKeepFor       = 7 * 24 * time.Hour
-	coverCacheVersion  = "w960-q85-v1"
+	coverCacheVersion  = "w960-q85-v2"
 )
 
 type coverJob struct {
@@ -219,6 +219,23 @@ func inspectCover(raw []byte) (image.Config, error) {
 	if mime != "image/jpeg" && mime != "image/png" && mime != "image/webp" {
 		return image.Config{}, errors.New("unsupported cover format")
 	}
+	if mime == "image/webp" {
+		if len(raw) < 12 || uint64(binary.LittleEndian.Uint32(raw[4:8])) != uint64(len(raw)-8) {
+			return image.Config{}, errors.New("invalid WebP container length")
+		}
+		// Pixel decoders may stop after VP8 and ignore an incomplete trailing chunk.
+		for offset := 12; offset < len(raw); {
+			if len(raw)-offset < 8 {
+				return image.Config{}, errors.New("incomplete WebP chunk header")
+			}
+			size := int64(binary.LittleEndian.Uint32(raw[offset+4 : offset+8]))
+			next := int64(offset) + 8 + size + size%2
+			if next > int64(len(raw)) {
+				return image.Config{}, errors.New("incomplete WebP chunk")
+			}
+			offset = int(next)
+		}
+	}
 	config, _, err := image.DecodeConfig(bytes.NewReader(raw))
 	if err != nil || config.Width <= 0 || config.Height <= 0 || config.Width > 8192 || config.Height > 8192 || int64(config.Width)*int64(config.Height) > 12_000_000 {
 		return image.Config{}, errors.New("invalid cover dimensions")
@@ -254,20 +271,16 @@ func encodeCover(ctx context.Context, raw []byte) []byte {
 	command := exec.CommandContext(ctx, "ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin", "-filter_threads", "1",
 		"-threads", "1", "-protocol_whitelist", "pipe", "-f", "image2pipe", "-c:v", codec, "-i", "pipe:0",
 		"-vf", "scale=w='min(960,iw)':h=-1:flags=lanczos", "-frames:v", "1", "-an", "-sn",
-		"-c:v", "libwebp", "-quality", "85", "-compression_level", "4", "-threads", "1", "-f", "webp", "pipe:1")
+		"-c:v", "libwebp", "-quality", "85", "-compression_level", "4", "-threads", "1", "-f", "image2pipe", "pipe:1")
 	command.Stdin = bytes.NewReader(raw)
 	var output limitedCoverBuffer
 	command.Stdout = &output
 	if err := command.Run(); err != nil || output.Len() == 0 || output.Len() >= len(raw) {
 		return raw
 	}
-	encoded := output.Bytes()
-	// Some FFmpeg builds cannot finalize RIFF length on an unseekable pipe.
-	// Only repair our completed encoder output; downloaded files stay untouched.
-	if len(encoded) >= 12 && string(encoded[:4]) == "RIFF" && string(encoded[8:12]) == "WEBP" && binary.LittleEndian.Uint32(encoded[4:8]) == 0 {
-		binary.LittleEndian.PutUint32(encoded[4:8], uint32(len(encoded)-8))
-	}
-	return encoded
+	// libwebp packets already contain a complete RIFF container. The WebP muxer
+	// can append its length rewrite at EOF instead of the header on stdout.
+	return output.Bytes()
 }
 
 type limitedCoverBuffer struct{ bytes.Buffer }
