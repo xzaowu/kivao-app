@@ -245,9 +245,11 @@ def paired_locks(reports):
         values[ROLES[r['role']]] = f"ghcr.io/{POLICY['repository']}-{r['role']}@{digest(r.get('registry_digest'))}"
         if r['image'] != values[ROLES[r['role']]]:
             raise ValueError('pulled_reference_mismatch')
+    same_schema = POLICY['schema'] == POLICY['rollback_schema']
     return {'source_commit': sha, 'release': values, 'rollback': POLICY['rollback'], 'agent_init_required': True,
             'target_schema': POLICY['schema'], 'rollback_schema': POLICY['rollback_schema'],
-            'database_strategy': 'separate_database_data_and_redis', 'image_only_cutover_allowed': False,
+            'database_strategy': 'reuse_existing_database_data_and_redis' if same_schema else 'separate_database_data_and_redis',
+            'image_only_cutover_allowed': same_schema,
             'production_cutover_authorized': False, 'migration_authorized': False}
 
 

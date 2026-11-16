@@ -175,14 +175,19 @@ class ReleaseTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             r.validate_image({**info, 'Config': {'Labels': {}}}, plan)
 
-    def test_locks_require_pulled_registry_evidence_and_old_database(self):
+    def test_locks_require_pulled_registry_evidence_and_configured_rollback(self):
         reports = [image(role, True) for role in r.ROLES]
         locks = r.paired_locks(reports)
         self.assertEqual(locks['rollback'], r.POLICY['rollback'])
-        self.assertFalse(locks['image_only_cutover_allowed'])
+        self.assertTrue(locks['image_only_cutover_allowed'])
+        self.assertEqual(locks['database_strategy'], 'reuse_existing_database_data_and_redis')
         self.assertFalse(locks['production_cutover_authorized'])
         self.assertTrue(locks['agent_init_required'])
-        self.assertEqual((locks['target_schema'], locks['rollback_schema']), (104, 79))
+        self.assertEqual((locks['target_schema'], locks['rollback_schema']), (104, 104))
+        with patch.dict(r.POLICY, {'rollback_schema': 79}):
+            historical = r.paired_locks(reports)
+            self.assertFalse(historical['image_only_cutover_allowed'])
+            self.assertEqual(historical['database_strategy'], 'separate_database_data_and_redis')
         for field, value in [('registry_digest', None), ('registry_publish', False), ('source_scope_verified', False),
                              ('source_commit', 'b' * 40), ('image', 'local-image:latest')]:
             bad = copy.deepcopy(reports)
