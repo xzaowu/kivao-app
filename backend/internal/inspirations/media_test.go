@@ -27,7 +27,7 @@ func TestSeedanceMediaPersistsInExistingSyncStateAndRefreshes(t *testing.T) {
 	if err := db.AutoMigrate(&model.InspirationFeedEntry{}, &model.SystemSetting{}); err != nil {
 		t.Fatal(err)
 	}
-	svc := New(repository.New(db), nil, nil, nil)
+	svc := New(repository.New(db), nil, nil, nil, "")
 	video := "https://media.example.com/original.mp4"
 	failed := false
 	svc.sources = []source{{id: "seedance", load: func(context.Context, fetchFunc) (batch, error) {
@@ -42,7 +42,7 @@ func TestSeedanceMediaPersistsInExistingSyncStateAndRefreshes(t *testing.T) {
 			t.Fatalf("sync: %v acquired=%v", err, acquired)
 		}
 		// Recreate the service to verify persistence, rather than an in-memory cache.
-		fresh := New(repository.New(db), nil, nil, nil)
+		fresh := New(repository.New(db), nil, nil, nil, "")
 		feed, err := fresh.Feed()
 		if err != nil || len(feed.Entries) != 1 {
 			t.Fatalf("feed: %v %#v", err, feed)

@@ -4,13 +4,12 @@ import { useState } from "react";
 
 import { Tooltip } from "@/components/ui/base/tooltip";
 import { AppModal } from "@/components/ui/product/app-modal";
-import { MediaPlaceholder } from "@/components/ui/product/media-placeholder";
 import { catalogIdOf, inspirationSourceOf, type CreationInspiration } from "@/lib/inspirations/catalog";
 import { isCustomInspiration } from "@/lib/inspirations/resolve";
 import { modeLabels } from "@/pages/create/creation-types";
 import { useUserStore } from "@/stores/use-user-store";
 import type { InspirationPreview } from "@/lib/inspirations/examples";
-import { InspirationExampleMedia } from "./inspiration-example-media";
+import { InspirationExampleMedia, InspirationImage } from "./inspiration-example-media";
 
 function MetaRow({ label, children }: { label: string; children: React.ReactNode }) {
     return (
@@ -192,9 +191,8 @@ export function InspirationDetailModal({
     );
 }
 
-export function InspirationCover({ image }: { image: string }) {
-    const [failed, setFailed] = useState(false);
-    return failed ? <MediaPlaceholder failed /> : <img src={image} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setFailed(true)} />;
+export function InspirationCover({ image, coverURL, priority = false }: { image: string; coverURL?: string; priority?: boolean }) {
+    return <InspirationImage src={coverURL || image} fallbackSrc={image} priority={priority} />;
 }
 
 function PromptSection({ label, text, onCopy }: { label: string; text: string; onCopy: (text: string, label: string) => void }) {

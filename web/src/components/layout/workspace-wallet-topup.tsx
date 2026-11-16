@@ -1,5 +1,5 @@
 import { Button, Skeleton } from "antd";
-import { Check, CircleAlert, Coins, FolderOpen, HardDrive } from "lucide-react";
+import { Check, CircleAlert, Coins, FolderOpen, HardDrive, RefreshCw } from "lucide-react";
 import { useEffect, useRef, type ReactNode } from "react";
 import { Trans, useTranslation } from "react-i18next";
 
@@ -153,6 +153,10 @@ function StorageSummary({ usage, grants, onCleanAssets }: { usage?: AccountFileS
 
 export function WalletTopupPanel({
     loading,
+    paymentLoading = false,
+    paymentReady = true,
+    catalogError,
+    onRefresh,
     products,
     paymentOptions,
     usdCnyRate,
@@ -169,6 +173,10 @@ export function WalletTopupPanel({
     onCleanAssets,
 }: {
     loading: boolean;
+    paymentLoading?: boolean;
+    paymentReady?: boolean;
+    catalogError?: string;
+    onRefresh?: () => void;
     products: TopupProduct[];
     /** 渠道展开后的支付入口，易支付等聚合渠道的每种支付方式各一个。 */
     paymentOptions: PaymentOption[];
@@ -225,9 +233,30 @@ export function WalletTopupPanel({
 
     return (
         <div className="workspace-wallet-content wallet-topup">
+            {catalogError ? (
+                <div className="workspace-wallet-inline-state is-error" role="alert">
+                    <CircleAlert />
+                    <div>
+                        <strong>{t("account.wallet.configLoadFailed")}</strong>
+                        <span>{catalogError}</span>
+                    </div>
+                    {onRefresh ? (
+                        <Button loading={paymentLoading} onClick={onRefresh}>
+                            {t("common.retry")}
+                        </Button>
+                    ) : null}
+                </div>
+            ) : null}
             <div ref={groupsRef} className="wallet-topup-groups">
                 {kinds.map((kind) => (
-                    <TopupGroup key={kind} kind={kind} products={byKind[kind]} selectedProductId={selectedProduct?.id || ""} onSelectProduct={onSelectProduct}>
+                    <TopupGroup
+                        key={kind}
+                        kind={kind}
+                        products={byKind[kind]}
+                        selectedProductId={selectedProduct?.id || ""}
+                        onSelectProduct={onSelectProduct}
+                        aside={kind === kinds[0] && onRefresh ? <Button type="text" size="small" icon={<RefreshCw />} aria-label={t("common.refresh")} title={t("common.refresh")} loading={paymentLoading} onClick={onRefresh} /> : undefined}
+                    >
                         {kind === "storage" ? <StorageSummary usage={storageUsage} grants={storageGrants} onCleanAssets={onCleanAssets} /> : null}
                     </TopupGroup>
                 ))}
@@ -259,7 +288,11 @@ export function WalletTopupPanel({
                             <span className="wallet-topup-checkout-hint">{t("account.wallet.topup.selectPlan")}</span>
                         )}
                     </div>
-                    {paymentOptions.length ? (
+                    {!paymentReady ? (
+                        <span className="wallet-topup-checkout-hint" role="status">
+                            {catalogError ? t("account.wallet.configLoadFailed") : t("account.layout.state.loading")}
+                        </span>
+                    ) : paymentOptions.length ? (
                         <div className="workspace-wallet-providers" role="radiogroup" aria-label={t("account.wallet.topup.paymentMethod")}>
                             {paymentOptions.map((option) => {
                                 // 渠道结算货币与商品不同且未配置汇率时无法换算，入口禁用并说明原因。
@@ -284,11 +317,11 @@ export function WalletTopupPanel({
                     ) : (
                         <span className="wallet-topup-checkout-hint">{t("account.wallet.topup.noProvider")}</span>
                     )}
-                    <Button type="primary" size="large" loading={creating} disabled={!selectedProduct || !selectedProduct.canPurchase || !selectedOptionPayable} onClick={onPay}>
+                    <Button type="primary" size="large" loading={creating} disabled={!paymentReady || !selectedProduct || !selectedProduct.canPurchase || !selectedOptionPayable} onClick={onPay}>
                         {t("account.wallet.topup.payNow")}
                     </Button>
                 </footer>
-            ) : (
+            ) : catalogError ? null : (
                 <div className="workspace-wallet-inline-state">
                     <CircleAlert />
                     <div>

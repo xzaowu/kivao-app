@@ -12,6 +12,24 @@ import (
 // RegisterInspirationFeedRoutes 注册灵感上新：公开读取上新条目（匿名访客也能看到灵感大厅），管理员查看状态、开关与立即同步。
 func RegisterInspirationFeedRoutes(r *gin.RouterGroup, svc *service.Service) {
 	registerInspirationShowcaseRoutes(r, svc)
+	r.GET("/public/inspirations/covers/:id", func(c *gin.Context) {
+		c.Header("Cache-Control", "no-store")
+		if !enforceRateLimit(c, "public-inspiration-covers:"+c.ClientIP(), 240, time.Minute) {
+			return
+		}
+		cover, err := svc.OpenInspirationCover(c.Request.Context(), c.Param("id"))
+		if err != nil {
+			c.Header("Retry-After", "60")
+			failService(c, err)
+			return
+		}
+		defer cover.Body.Close()
+		c.Header("Content-Type", cover.MIME)
+		c.Header("X-Content-Type-Options", "nosniff")
+		c.Header("Cache-Control", "public, max-age=3600")
+		c.Header("ETag", cover.ETag)
+		http.ServeContent(c.Writer, c.Request, "cover", cover.Info.ModTime(), cover.Body)
+	})
 	r.GET("/public/inspirations/feed", func(c *gin.Context) {
 		if !enforceRateLimit(c, "public-inspirations:"+c.ClientIP(), 120, time.Minute) {
 			return

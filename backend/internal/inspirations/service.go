@@ -4,7 +4,8 @@
 //   - 只同步托管在 GitHub、按 CC BY 4.0 发布的 YouMind 提示词库与 awesome-seedance；
 //     其余来源和人工译审过的条目仍随静态目录（web/public/inspirations）发布。
 //   - 只收录正文已是中文的条目。英文正文要人工翻译后随静态目录发布，这里不做机器翻译。
-//   - 封面直接引用上游地址，不下载到本站；上游删掉的条目继续保留，管理员关闭上新即整体下线。
+//   - 原始媒体地址保留；登记过的封面可通过限额缩略图缓存交付，不缓存视频。
+//     上游删掉的条目继续保留，管理员关闭上新即整体下线。
 //   - 前端按条目 ID 与静态目录去重，静态目录已有的条目以静态目录为准。
 package inspirations
 
@@ -67,18 +68,19 @@ type Service struct {
 	cacheMu  sync.Mutex
 	cached   *Feed
 	cachedAt time.Time
+	covers   *coverCache
 }
 
 // New 由组合根注入仓储、管理员校验、跨实例同步锁和后台循环。
 // lock 为 nil 时只在本进程内互斥；runWorkerLoop 为 nil 时不启动定时同步。
-func New(repo *repository.Repository, admin AdminGate, lock Locker, runWorkerLoop func(func(context.Context)) bool) *Service {
+func New(repo *repository.Repository, admin AdminGate, lock Locker, runWorkerLoop func(func(context.Context)) bool, dataDir string) *Service {
 	if lock == nil {
 		lock = processLock()
 	}
 	if runWorkerLoop == nil {
 		runWorkerLoop = func(func(context.Context)) bool { return false }
 	}
-	return &Service{
+	service := &Service{
 		repo:          repo,
 		admin:         admin,
 		lock:          lock,
@@ -87,6 +89,10 @@ func New(repo *repository.Repository, admin AdminGate, lock Locker, runWorkerLoo
 		sources:       defaultSources(),
 		now:           time.Now,
 	}
+	if dataDir != "" {
+		service.covers = newCoverCache(dataDir)
+	}
+	return service
 }
 
 func processLock() Locker {

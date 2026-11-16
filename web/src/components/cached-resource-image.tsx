@@ -26,35 +26,47 @@ export function CachedResourceImage({ storageKey, src = "", fallback = null, loa
     const scope = getActiveUserScope();
     const identity = `${scope}:${resourceId || storageKey || src}`;
     const targetRef = useRef<HTMLSpanElement>(null);
-    const [nearViewport, setNearViewport] = useState(eager || !remoteResource);
+    const [nearIdentity, setNearIdentity] = useState("");
+    const nearViewport = eager || !remoteResource || nearIdentity === identity;
     const [displayed, setDisplayed] = useState<{ identity: string; src: string } | null>(null);
     const displayedRef = useRef(displayed);
+    const imageRetryRef = useRef<AbortController | null>(null);
     displayedRef.current = displayed;
     const [failedIdentity, setFailedIdentity] = useState("");
     const cachedSrc = displayed?.identity === identity ? displayed.src : "";
 
     useEffect(() => {
+        return () => {
+            imageRetryRef.current?.abort();
+            imageRetryRef.current = null;
+        };
+    }, [identity, src, variant]);
+
+    useEffect(() => {
         if (!remoteResource || eager) {
-            setNearViewport(true);
             return;
         }
         const image = targetRef.current;
         if (!image || typeof IntersectionObserver === "undefined") {
-            setNearViewport(true);
+            setNearIdentity(identity);
             return;
         }
+        let active = true;
         const observer = new IntersectionObserver(
             (entries) => {
-                if (entries.some((entry) => entry.isIntersecting)) {
-                    setNearViewport(true);
+                if (active && entries.some((entry) => entry.isIntersecting)) {
+                    setNearIdentity(identity);
                     observer.disconnect();
                 }
             },
             { rootMargin: "240px" },
         );
         observer.observe(image);
-        return () => observer.disconnect();
-    }, [eager, remoteResource]);
+        return () => {
+            active = false;
+            observer.disconnect();
+        };
+    }, [eager, identity, remoteResource]);
 
     useEffect(() => {
         if (remoteResource && !nearViewport) return;
@@ -68,22 +80,27 @@ export function CachedResourceImage({ storageKey, src = "", fallback = null, loa
                     const access = await getResourceAccess(storageKey, "display", variant);
                     candidate = resolveResourceAccessURL(access.url);
                 } catch (error) {
-                    if (variant !== "thumbnail") throw error;
+                    if (variant !== "thumbnail" || !isCurrent()) throw error;
                     const access = await getResourceAccess(storageKey, "display", "original");
                     candidate = resolveResourceAccessURL(access.url);
                 }
             } else if (localImageResource && storageKey) {
                 candidate = (await resolveImageUrl(storageKey, src)) || src;
             }
+            if (!isCurrent()) return;
             if (!candidate) throw new Error("图片地址为空");
             try {
                 await prepareCanvasImage(candidate, controller.signal);
             } catch (error) {
+                if (!isCurrent()) throw error;
                 if (!remoteResource || variant !== "thumbnail") {
-                    if (candidate !== src && src) await prepareCanvasImage(src, controller.signal);
-                    else throw error;
+                    if (candidate !== src && src) {
+                        await prepareCanvasImage(src, controller.signal);
+                        candidate = src;
+                    } else throw error;
                 } else {
                     const access = await getResourceAccess(storageKey, "display", "original");
+                    if (!isCurrent()) return;
                     const originalURL = resolveResourceAccessURL(access.url);
                     if (!originalURL || originalURL === candidate) throw error;
                     await prepareCanvasImage(originalURL, controller.signal);
@@ -106,20 +123,23 @@ export function CachedResourceImage({ storageKey, src = "", fallback = null, loa
 
     const handleImgError = (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
         if (localImageResource && storageKey && cachedSrc.startsWith("blob:")) {
+            imageRetryRef.current?.abort();
+            const controller = new AbortController();
+            imageRetryRef.current = controller;
+            const isCurrent = () => !controller.signal.aborted && getActiveUserScope() === scope;
             void resolveImageUrl(storageKey)
-                .then((url) => {
+                .then(async (url) => {
+                    if (!isCurrent()) return;
                     if (url && url !== cachedSrc) {
-                        const controller = new AbortController();
-                        void prepareCanvasImage(url, controller.signal).then(() => setDisplayed({ identity, src: url })).catch(() => {
-                            setFailedIdentity(identity);
-                            onError?.(e);
-                        });
+                        await prepareCanvasImage(url, controller.signal);
+                        if (isCurrent()) setDisplayed({ identity, src: url });
                         return;
                     }
                     setFailedIdentity(identity);
                     onError?.(e);
                 })
                 .catch(() => {
+                    if (!isCurrent()) return;
                     setFailedIdentity(identity);
                     onError?.(e);
                 });

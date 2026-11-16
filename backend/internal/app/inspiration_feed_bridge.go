@@ -39,7 +39,7 @@ func (s *Service) inspirationFeedDomain() *inspirations.Service {
 	if s.inspirationFeed != nil {
 		return s.inspirationFeed
 	}
-	return inspirations.New(s.repo, inspirationFeedAdminGate{svc: s}, nil, nil)
+	return inspirations.New(s.repo, inspirationFeedAdminGate{svc: s}, nil, nil, s.dataDir)
 }
 
 func (s *Service) startInspirationFeedWorker() {
@@ -48,6 +48,10 @@ func (s *Service) startInspirationFeedWorker() {
 
 func (s *Service) InspirationFeed() (*InspirationFeed, error) {
 	return s.inspirationFeedDomain().Feed()
+}
+
+func (s *Service) OpenInspirationCover(ctx context.Context, id string) (*inspirations.CoverFile, error) {
+	return s.inspirationFeedDomain().OpenCover(ctx, id)
 }
 
 func (s *Service) AdminInspirationFeed(actor *model.User) (*InspirationFeedAdminStatus, error) {

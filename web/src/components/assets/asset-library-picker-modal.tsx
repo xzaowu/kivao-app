@@ -611,7 +611,7 @@ export function AssetLibraryPickerModal({
                                     <span>{t("library.picker.loadFailedDescription")}</span>
                                     <Button onClick={() => void remoteQuery.refetch()}>{t("common.retry")}</Button>
                                 </div>
-                            ) : loading || (projectId && remoteEnabled && remoteQuery.isPending) || (refreshing && !visibleItems.length) ? (
+                            ) : loading || (remoteEnabled && remoteQuery.isPending && (Boolean(projectId) || !visibleItems.length)) || (refreshing && !visibleItems.length) ? (
                                 // 首次读取或切换后还没有可显示的条目：骨架卡片占位，不再整块换成转圈。
                                 <div className="asset-picker-grid" aria-busy="true" aria-label={t("library.picker.loadingTitle")}>
                                     {Array.from({ length: PICKER_SKELETON_CARDS }, (_, index) => (

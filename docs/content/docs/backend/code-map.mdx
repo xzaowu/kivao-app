@@ -373,7 +373,8 @@ HTTP 请求 -> handler -> service（稳定导入面 / 别名）-> app（组合�
 ## 创作首页纵深画廊与灵感库
 
 - `web/src/pages/create/creation-inspiration-tunnel.tsx`、`creation-inspiration-tunnel.css`：纵深画廊的排布、随机取样、封面就绪门控与样式。
-- `web/src/pages/inspirations/`：灵感页（`index.tsx`）、详情弹窗、编辑弹窗与 `inspirations.css`。
+- `web/src/pages/inspirations/`：灵感页（`index.tsx`）、详情弹窗、编辑弹窗与 `inspirations.css`；`services/inspiration-catalog.ts` 按来源渐进加载，`services/api/inspiration-covers.ts` 生成登记 ID 的公开封面地址。
+- `backend/internal/inspirations/covers.go`、`cover_cache.go`：登记封面解析、出站校验、限额缩略图缓存及原子存储；`scripts/sync-inspiration-cover-sources.mjs` 从静态目录生成 `cover_sources.json`，`--check` 检查同步。
 - `web/src/lib/inspirations/catalog.ts`、`resolve.ts`、`source-revisions.ts`、`daily-order.ts`：来源登记表、条目类型与解析、原创条目、上游版本号、灵感大厅的每日推荐顺序。
 - `web/src/services/inspiration-catalog.ts`：全量目录与画廊池的运行时加载、内存缓存与失败退回。
 - `web/src/stores/use-inspiration-store.ts`：自建／覆盖／隐藏／收藏的本地持久化与导入导出。

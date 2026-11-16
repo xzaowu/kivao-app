@@ -13,7 +13,8 @@ import { catalogIdOf, inspirationSources, type CreationInspiration, type Inspira
 import { resolveInspirationExamples, type InspirationPreview } from "@/lib/inspirations/examples";
 import { isFreshInspiration, localDayKey, orderInspirationsByLatest, orderInspirationsForToday } from "@/lib/inspirations/daily-order";
 import { isCustomInspiration, resolveInspirations } from "@/lib/inspirations/resolve";
-import { loadInspirationCatalog, type InspirationCatalog } from "@/services/inspiration-catalog";
+import { loadInspirationCatalog, subscribeInspirationCatalog, type InspirationCatalog } from "@/services/inspiration-catalog";
+import { inspirationCoverURL } from "@/services/api/inspiration-covers";
 import { getInspirationShowcases, inspirationShowcasesQueryKey } from "@/services/api/inspiration-showcases";
 import { useInspirationStore } from "@/stores/use-inspiration-store";
 import { useUserStore } from "@/stores/use-user-store";
@@ -89,7 +90,7 @@ export function InspirationHall({ onUse }: { onUse: (item: CreationInspiration) 
 
     const [catalog, setCatalog] = useState<InspirationCatalog | null>(null);
     const [shouldLoadCatalog, setShouldLoadCatalog] = useState(false);
-    const showcases = useQuery({ queryKey: inspirationShowcasesQueryKey, queryFn: ({ signal }) => getInspirationShowcases(false, signal), enabled: shouldLoadCatalog });
+    const showcases = useQuery({ queryKey: inspirationShowcasesQueryKey, queryFn: ({ signal }) => getInspirationShowcases(false, signal), enabled: shouldLoadCatalog, staleTime: 60_000 });
     const examplesByID = useMemo(() => new Map((showcases.data ?? []).map((item) => [item.inspirationId, item.examples])), [showcases.data]);
     const [hoverPlayback, setHoverPlayback] = useState(true);
     const [loadError, setLoadError] = useState("");
@@ -139,16 +140,27 @@ export function InspirationHall({ onUse }: { onUse: (item: CreationInspiration) 
     useEffect(() => {
         if (!shouldLoadCatalog) return;
         let cancelled = false;
-        setLoadError("");
-        loadInspirationCatalog()
-            .then((loaded) => {
-                if (!cancelled) setCatalog(loaded);
-            })
-            .catch((error) => {
-                if (!cancelled) setLoadError(error instanceof Error ? error.message : "灵感目录加载失败");
+        const unsubscribe = subscribeInspirationCatalog((loaded) => {
+            if (!cancelled) {
+                setCatalog(loaded);
+                if (!loaded.failedSources?.length) setLoadError("");
+            }
+        });
+        const refresh = () => {
+            if (document.visibilityState === "hidden") return;
+            setLoadError("");
+            void loadInspirationCatalog().catch((error) => {
+                if (!cancelled && (!(error instanceof DOMException) || error.name !== "AbortError")) setLoadError(error instanceof Error ? error.message : "灵感目录加载失败");
             });
+        };
+        refresh();
+        const timer = setInterval(refresh, 5 * 60_000);
+        document.addEventListener("visibilitychange", refresh);
         return () => {
             cancelled = true;
+            unsubscribe();
+            clearInterval(timer);
+            document.removeEventListener("visibilitychange", refresh);
         };
     }, [shouldLoadCatalog, reloadKey]);
 
@@ -163,6 +175,7 @@ export function InspirationHall({ onUse }: { onUse: (item: CreationInspiration) 
 
     const overlay = useMemo(() => ({ custom, overrides, hidden }), [custom, hidden, overrides]);
     const resolved = useMemo(() => (catalog ? resolveInspirations(catalog.entries, overlay) : []), [catalog, overlay]);
+    const catalogImages = useMemo(() => new Map((catalog?.entries ?? []).map((item) => [catalogIdOf(item), item.image])), [catalog]);
 
     /** 隐藏态在合成结果里已经滤掉了，单独还原一份给「已隐藏」视图。 */
     const hiddenItems = useMemo(() => {
@@ -493,6 +506,19 @@ export function InspirationHall({ onUse }: { onUse: (item: CreationInspiration) 
             ) : null}
 
             <div className="inspiration-hall-results">
+                {catalog?.pendingSources?.length ? (
+                    <p role="status" className="inspiration-showcase-warning">
+                        正在补充灵感，搜索结果会继续更新。
+                    </p>
+                ) : null}
+                {catalog && (loadError || catalog.failedSources?.length) && !catalog.pendingSources?.length ? (
+                    <p role="alert" className="inspiration-showcase-warning">
+                        部分灵感暂时无法加载，已有内容仍可浏览。
+                        <Button type="link" onClick={() => setReloadKey((key) => key + 1)}>
+                            重试
+                        </Button>
+                    </p>
+                ) : null}
                 {showcases.isError ? (
                     <p role="alert" className="inspiration-showcase-warning">
                         自定义作品示例暂时无法加载，当前显示目录示例。
@@ -503,20 +529,22 @@ export function InspirationHall({ onUse }: { onUse: (item: CreationInspiration) 
                 ) : null}
                 {!shouldLoadCatalog ? (
                     <div className="inspiration-hall-deferred" aria-hidden="true" />
-                ) : loadError ? (
+                ) : loadError && !catalog ? (
                     <WorkspaceErrorState title="灵感目录加载失败" description={loadError} onRetry={() => setReloadKey((key) => key + 1)} />
                 ) : !catalog || !hydrated ? (
                     <WorkspaceLoadingState label="正在准备灵感" rows={3} />
                 ) : paged.length ? (
                     <>
                         <div className="inspiration-gallery">
-                            {paged.map((item) => {
+                            {paged.map((item, index) => {
                                 const id = catalogIdOf(item);
                                 return (
                                     <InspirationCard
                                         key={id}
                                         item={item}
                                         examples={resolveInspirationExamples(item, examplesByID.get(id))}
+                                        coverURL={!examplesByID.get(id)?.length ? inspirationCoverURL(item, catalogImages.get(id)) : undefined}
+                                        priority={index < 3}
                                         hoverPlayback={hoverPlayback}
                                         favorite={favorites.includes(id)}
                                         hidden={view === "hidden"}
@@ -539,6 +567,8 @@ export function InspirationHall({ onUse }: { onUse: (item: CreationInspiration) 
                         </div>
                         <PaginationBar current={currentPage} pageSize={pageSize} total={visible.length} pageSizeOptions={[30, 60, 90]} alwaysShow onChange={handlePageChange} />
                     </>
+                ) : catalog.pendingSources?.length ? (
+                    <WorkspaceLoadingState label="正在查找更多灵感" rows={2} />
                 ) : (
                     <WorkspaceState
                         icon="empty"
@@ -600,6 +630,8 @@ export function InspirationHall({ onUse }: { onUse: (item: CreationInspiration) 
 function InspirationCard({
     item,
     examples,
+    coverURL,
+    priority,
     hoverPlayback,
     favorite,
     hidden,
@@ -612,6 +644,8 @@ function InspirationCard({
 }: {
     item: CreationInspiration;
     examples: InspirationPreview[];
+    coverURL?: string;
+    priority: boolean;
     hoverPlayback: boolean;
     favorite: boolean;
     hidden: boolean;
@@ -638,7 +672,13 @@ function InspirationCard({
             }}
         >
             <button type="button" className="inspiration-card-open" aria-label={`查看灵感：${item.title}`} aria-haspopup="dialog" onClick={onOpen}>
-                <span className="inspiration-card-cover">{example ? <InspirationExampleMedia key={example.id} example={example} preview={hoverPlayback && hovered} /> : <InspirationCover key={item.image} image={item.image} />}</span>
+                <span className="inspiration-card-cover">
+                    {example ? (
+                        <InspirationExampleMedia key={`${example.id}:${example.mediaUrl}:${coverURL}`} example={example} preview={hoverPlayback && hovered} coverURL={coverURL} priority={priority} />
+                    ) : (
+                        <InspirationCover key={`${item.image}:${coverURL}`} image={item.image} coverURL={coverURL} priority={priority} />
+                    )}
+                </span>
                 <span className="inspiration-card-body">
                     <strong className="inspiration-card-title" title={item.title}>
                         {item.title}

@@ -213,12 +213,38 @@
     aspect-ratio: auto;
     object-fit: contain;
 }
+.inspiration-video-preview {
+    position: relative;
+    display: block;
+    width: 100%;
+}
+.inspiration-video-poster {
+    display: block;
+    min-height: var(--space-16);
+}
+.inspiration-video-preview > video {
+    position: absolute;
+    inset: 0;
+    height: 100%;
+    opacity: 0;
+    pointer-events: none;
+}
+.inspiration-video-preview.is-playing > video {
+    opacity: 1;
+}
+.inspiration-video-preview.is-playing .inspiration-video-poster {
+    visibility: hidden;
+}
 .inspiration-example-error {
     margin-bottom: var(--space-2);
     color: var(--user-ink-muted);
     font-size: var(--fs-caption);
 }
 .inspiration-example-error a {
+    margin-left: var(--space-2);
+    text-decoration: underline;
+}
+.inspiration-example-error button {
     margin-left: var(--space-2);
     text-decoration: underline;
 }

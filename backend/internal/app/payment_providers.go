@@ -66,8 +66,13 @@ func (s *Service) PaymentProviders(actor *model.User) ([]PaymentProviderView, er
 		return nil, Unauthorized("请先登录")
 	}
 	items := make([]PaymentProviderView, 0)
-	for _, descriptor := range s.paymentRegistry.Descriptors() {
-		view, config, err := s.paymentProviderView(descriptor)
+	descriptors := s.paymentRegistry.Descriptors()
+	if len(descriptors) == 0 {
+		return items, nil
+	}
+	plugins := s.Plugins()
+	for _, descriptor := range descriptors {
+		view, config, err := s.paymentProviderViewWithPlugins(descriptor, plugins)
 		if err != nil {
 			return nil, err
 		}
@@ -78,7 +83,7 @@ func (s *Service) PaymentProviders(actor *model.User) ([]PaymentProviderView, er
 		if err != nil {
 			return nil, err
 		}
-		options, err := s.paymentProviderOptions(descriptor.ID, values)
+		options, err := paymentProviderOptionsWithPlugins(descriptor.ID, values, plugins)
 		if err != nil {
 			// 保存时已严格校验；读到无效配置（如手工改库）时只隐藏该渠道，不影响其他渠道充值。
 			continue
@@ -97,12 +102,16 @@ type paymentProviderOptions struct {
 // paymentProviderOptions 解析渠道配置中宿主约定的两个字段：settlementCurrency（结算货币，缺省 CNY）
 // 和清单 methodsField 指向的已启用支付方式列表。
 func (s *Service) paymentProviderOptions(providerID string, values payment.Config) (paymentProviderOptions, error) {
+	return paymentProviderOptionsWithPlugins(providerID, values, s.Plugins())
+}
+
+func paymentProviderOptionsWithPlugins(providerID string, values payment.Config, plugins []PluginView) (paymentProviderOptions, error) {
 	currency, err := paymentSettlementCurrency(values)
 	if err != nil {
 		return paymentProviderOptions{}, err
 	}
 	options := paymentProviderOptions{SettlementCurrency: currency}
-	manifest, ok := s.paymentManifestForProvider(providerID)
+	manifest, ok := paymentManifestFromPlugins(providerID, plugins)
 	if !ok {
 		return options, nil
 	}
@@ -189,12 +198,17 @@ func (s *Service) AdminPaymentProviders(actor *model.User) ([]AdminPaymentProvid
 		return nil, err
 	}
 	items := make([]AdminPaymentProviderView, 0)
-	for _, descriptor := range s.paymentRegistry.Descriptors() {
-		base, config, err := s.paymentProviderView(descriptor)
+	descriptors := s.paymentRegistry.Descriptors()
+	if len(descriptors) == 0 {
+		return items, nil
+	}
+	plugins := s.Plugins()
+	for _, descriptor := range descriptors {
+		base, config, err := s.paymentProviderViewWithPlugins(descriptor, plugins)
 		if err != nil {
 			return nil, err
 		}
-		manifest, _ := s.paymentManifestForProvider(descriptor.ID)
+		manifest, _ := paymentManifestFromPlugins(descriptor.ID, plugins)
 		view := AdminPaymentProviderView{PaymentProviderView: base, Values: map[string]string{}, SecretConfigured: map[string]bool{}, ConfigFields: manifest.Configuration.Fields}
 		if config != nil {
 			values, err := s.decryptPaymentConfig(config)
@@ -330,13 +344,18 @@ func (s *Service) UpdatePaymentProviderConfig(actor *model.User, providerID stri
 }
 
 func (s *Service) paymentProviderView(descriptor payment.Descriptor) (PaymentProviderView, *model.PaymentProviderConfig, error) {
+	return s.paymentProviderViewWithPlugins(descriptor, s.Plugins())
+}
+
+// A listing reuses one immutable request snapshot; later requests still see plugin changes.
+func (s *Service) paymentProviderViewWithPlugins(descriptor payment.Descriptor, plugins []PluginView) (PaymentProviderView, *model.PaymentProviderConfig, error) {
 	view := PaymentProviderView{ID: descriptor.ID, PluginID: descriptor.PluginID, Name: descriptor.Name, Icon: descriptor.Icon, CheckoutMode: descriptor.CheckoutMode}
-	if manifest, ok := s.paymentManifestForProvider(descriptor.ID); ok {
+	if manifest, ok := paymentManifestFromPlugins(descriptor.ID, plugins); ok {
 		if policy, found := paymentExpiryPolicy(manifest, descriptor.ID); found {
 			view.CloseAfterMinutes = policy.DefaultMinutes
 		}
 	}
-	state, err := s.pluginStateForUser(nil, descriptor.PluginID, s.Plugins())
+	state, err := s.pluginStateForUser(nil, descriptor.PluginID, plugins)
 	if err == nil {
 		view.PluginEnabled = state.PlatformAvailable
 		view.Enabled = state.PlatformAvailable
@@ -355,16 +374,22 @@ func (s *Service) paymentProviderView(descriptor payment.Descriptor) (PaymentPro
 }
 
 func (s *Service) paymentManifestForProvider(providerID string) (protocol.Manifest, bool) {
+	var plugins []PluginView
+	if s != nil {
+		plugins = s.Plugins()
+	}
+	return paymentManifestFromPlugins(providerID, plugins)
+}
+
+func paymentManifestFromPlugins(providerID string, plugins []PluginView) (protocol.Manifest, bool) {
 	providerID = strings.TrimSpace(providerID)
 	if providerID == "" {
 		return protocol.Manifest{}, false
 	}
-	if s != nil {
-		for _, plugin := range s.Plugins() {
-			for _, contribution := range plugin.Manifest.Contributes.PaymentProviders {
-				if contribution.ID == providerID {
-					return protocolManifestFromPluginView(plugin), true
-				}
+	for _, plugin := range plugins {
+		for _, contribution := range plugin.Manifest.Contributes.PaymentProviders {
+			if contribution.ID == providerID {
+				return protocolManifestFromPluginView(plugin), true
 			}
 		}
 	}

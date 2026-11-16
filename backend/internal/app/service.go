@@ -186,7 +186,7 @@ func newService(repo *repository.Repository, dataDir string) *Service {
 	service.canvasRealtime = canvasRealtime
 	service.workbench = workbench.New(service.repo, workbenchAdminGate{svc: service}, workbenchAdminGate{svc: service})
 	service.poseLibrary = poselibrary.New(service.repo, service.dataDir, poseLibraryAdminGate{svc: service})
-	service.inspirationFeed = inspirations.New(service.repo, inspirationFeedAdminGate{svc: service}, service.inspirationFeedLock, service.runWorkerLoop)
+	service.inspirationFeed = inspirations.New(service.repo, inspirationFeedAdminGate{svc: service}, service.inspirationFeedLock, service.runWorkerLoop, service.dataDir)
 	service.platform = platform.New(service.repo, coordinator, platformHost{svc: service})
 	return service
 }

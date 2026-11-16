@@ -771,7 +771,7 @@ SEO 标题、描述、可选关键词会投影到浏览器 metadata、Open Graph
 
 译文维护在 `web/scripts/data/inspiration-prompts-zh.json`，记录原文 SHA-256；导入脚本写入目录前校验原文版本，缺译会停止导入。
 
-外部提示词由 `web/scripts/import-inspirations.mjs` 同步。`web/public/inspirations/*.json` 继续提供静态目录数据，灵感大厅进入可视区域附近后才按需加载全量目录，浏览器缓存与会话内缓存避免重复请求；封面保持稳定比例，加载失败显示占位内容。
+外部提示词由 `web/scripts/import-inspirations.mjs` 同步。`web/public/inspirations/*.json` 继续提供静态目录数据，灵感大厅进入可视区域附近后按来源逐步显示；浏览器和会话内缓存避免重复请求，失败来源可单独重试，上新内容每 5 分钟刷新。列表先显示封面，桌面悬停后才请求视频，手机不预下载列表视频；详情保留原图和手动播放。已登记外部封面通过受限的同源缩略图缓存交付，首批图片优先加载，失败回退原地址一次；不改变源图或业务资源，容量与格式约束见[公开封面缓存](/docs/backend/http-api#公开封面缓存)。
 
 ### 相关实现
 

@@ -6,6 +6,7 @@ import { useLocation, useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
 
 import { WalletTopupPanel, type TopupCategory } from "@/components/layout/workspace-wallet-topup";
+import { useWalletPaymentCatalog, walletPaymentCatalogQueryKey } from "@/components/layout/workspace-wallet-catalog";
 import { usePaymentOrderFlow } from "@/components/payment/use-payment-order-flow";
 import { AppModal } from "@/components/ui/product/app-modal";
 import { formatCredits } from "@/constant/credits";
@@ -13,8 +14,8 @@ import { currentLocale } from "@/i18n";
 import { useAccountFileStorageUsage } from "@/hooks/use-account-file-storage-usage";
 import { accountFileStorageUsageQueryKey, accountStorageMeter } from "@/lib/account-storage-usage";
 import { generationErrorMessage } from "@/lib/generation-error";
-import { estimatePaymentCharge, paymentOptionsFromProviders, type PaymentOption } from "@/lib/payment-options";
-import { getPaymentSettings, listPaymentProviders, listTopupProducts, type PaymentOrder, type TopupProduct, type TopupProductKind } from "@/services/api/payments";
+import { estimatePaymentCharge, type PaymentOption } from "@/lib/payment-options";
+import { type PaymentOrder, type TopupProductKind } from "@/services/api/payments";
 import { listMyStorageGrants } from "@/services/api/storage-grants";
 import { getWallet, redeemCredits, type CreditLedgerEntry, type WalletSummary } from "@/services/api/wallet";
 import { cn } from "@/lib/utils";
@@ -28,7 +29,7 @@ const storageGrantsQueryKey = ["account-storage-grants"] as const;
 
 export function WorkspaceWalletHost() {
     const creditsEnabled = useUserStore((state) => state.features.creditsEnabled);
-    const loggedIn = useUserStore((state) => Boolean(state.user));
+    const userId = useUserStore((state) => state.user?.id || "");
     const { pathname, search } = useLocation();
     const navigate = useNavigate();
     const [open, setOpen] = useState(false);
@@ -58,9 +59,10 @@ export function WorkspaceWalletHost() {
         navigate("/", { replace: true });
     }, [navigate, pathname, search]);
 
-    if (!loggedIn) return null;
+    if (!userId) return null;
     return (
         <WorkspaceWalletModal
+            key={userId}
             open={open}
             creditsEnabled={creditsEnabled}
             initialTab={openDetail.tab}
@@ -96,6 +98,9 @@ export function WorkspaceWalletModal({
     const { message } = App.useApp();
     const navigate = useNavigate();
     const queryClient = useQueryClient();
+    const userId = useUserStore((state) => state.user?.id || "");
+    const catalog = useWalletPaymentCatalog(userId, open);
+    const { products, paymentOptions, usdCnyRate } = catalog;
     const redeemPurchaseUrl = useAppearanceStore((state) => state.appearance.redeemPurchaseUrl);
     const [tab, setTab] = useState<WalletModalTab>("topup");
     const [focusKind, setFocusKind] = useState<TopupProductKind | undefined>();
@@ -104,10 +109,6 @@ export function WorkspaceWalletModal({
     const [walletLoading, setWalletLoading] = useState(false);
     const [walletError, setWalletError] = useState("");
     const [page, setPage] = useState(1);
-    const [products, setProducts] = useState<TopupProduct[]>([]);
-    const [paymentOptions, setPaymentOptions] = useState<PaymentOption[]>([]);
-    const [usdCnyRate, setUsdCnyRate] = useState("");
-    const [paymentsLoading, setPaymentsLoading] = useState(false);
     const [selectedProductId, setSelectedProductId] = useState("");
     const [selectedOptionKey, setSelectedOptionKey] = useState("");
     const [code, setCode] = useState("");
@@ -140,27 +141,21 @@ export function WorkspaceWalletModal({
         if (!open) return;
         setTab(initialTab || "topup");
         setFocusKind(initialCategory && initialCategory !== "all" ? initialCategory : undefined);
+        if (initialCategory && initialCategory !== "all") setSelectedProductId("");
         setPage(1);
         void reloadWallet(1);
-        setPaymentsLoading(true);
-        Promise.all([listTopupProducts(), listPaymentProviders(), getPaymentSettings()])
-            .then(([productResult, providerResult, settingsResult]) => {
-                const enabledProducts = productResult.products.filter((item) => item.enabled);
-                const usableProviders = providerResult.providers.filter((item) => item.enabled && item.pluginEnabled && item.configured);
-                const options = paymentOptionsFromProviders(usableProviders);
-                setProducts(enabledProducts);
-                setPaymentOptions(options);
-                setUsdCnyRate(settingsResult.settings.usdCnyRate || "");
-                // 从容量入口进入时优先选中存储空间套餐。
-                const preferred = enabledProducts.filter((item) => !initialCategory || initialCategory === "all" || item.kind === initialCategory);
-                setSelectedProductId((current) =>
-                    current && enabledProducts.some((item) => item.id === current) && !initialCategory ? current : preferred.find((item) => item.canPurchase)?.id || enabledProducts.find((item) => item.canPurchase)?.id || "",
-                );
-                setSelectedOptionKey((current) => (current && options.some((item) => item.key === current) ? current : options[0]?.key || ""));
-            })
-            .catch((error) => message.error(error instanceof Error ? error.message : t("account.wallet.configLoadFailed")))
-            .finally(() => setPaymentsLoading(false));
+        return () => {
+            requestSequence.current++;
+        };
     }, [open]);
+
+    useEffect(() => {
+        if (!open) return;
+        // Prefer the requested category while data arrives; keep later manual choices.
+        const preferred = products.filter((item) => !initialCategory || initialCategory === "all" || item.kind === initialCategory);
+        setSelectedProductId((current) => (products.some((item) => item.id === current && item.canPurchase) ? current : preferred.find((item) => item.canPurchase)?.id || products.find((item) => item.canPurchase)?.id || ""));
+        setSelectedOptionKey((current) => (paymentOptions.some((item) => item.key === current) ? current : paymentOptions[0]?.key || ""));
+    }, [open, products, paymentOptions, initialCategory]);
 
     useEffect(() => {
         if (!open || !paymentInvalid) return;
@@ -174,6 +169,7 @@ export function WorkspaceWalletModal({
     };
 
     const announceGranted = async (order: PaymentOrder) => {
+        void queryClient.invalidateQueries({ queryKey: walletPaymentCatalogQueryKey(userId) });
         if (order.productKind === "storage") {
             await Promise.all([queryClient.invalidateQueries({ queryKey: accountFileStorageUsageQueryKey }), queryClient.invalidateQueries({ queryKey: storageGrantsQueryKey })]);
             return;
@@ -221,6 +217,7 @@ export function WorkspaceWalletModal({
     };
 
     const startPayment = async () => {
+        if (!catalog.ready) return;
         if (!selectedProduct || !selectedOption) {
             message.error(t("account.wallet.selectRequired"));
             return;
@@ -306,7 +303,11 @@ export function WorkspaceWalletModal({
 
                     {activeTab === "topup" ? (
                         <WalletTopupPanel
-                            loading={paymentsLoading}
+                            loading={catalog.productsLoading}
+                            paymentLoading={catalog.loading}
+                            paymentReady={catalog.ready}
+                            catalogError={catalog.error ? (catalog.error instanceof Error ? catalog.error.message : t("account.wallet.configLoadFailed")) : undefined}
+                            onRefresh={() => void catalog.refresh()}
                             products={products}
                             paymentOptions={paymentOptions}
                             usdCnyRate={usdCnyRate}
