@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -207,7 +208,8 @@ func (c *coverCache) fetchAndStore(ctx context.Context, key, source string) erro
 		encoded = raw
 	}
 	if _, err := inspectCover(encoded); err != nil {
-		return err
+		// A codec failure must not discard a source already fully validated above.
+		encoded = raw
 	}
 	return c.store(key, encoded)
 }
@@ -259,7 +261,13 @@ func encodeCover(ctx context.Context, raw []byte) []byte {
 	if err := command.Run(); err != nil || output.Len() == 0 || output.Len() >= len(raw) {
 		return raw
 	}
-	return output.Bytes()
+	encoded := output.Bytes()
+	// Some FFmpeg builds cannot finalize RIFF length on an unseekable pipe.
+	// Only repair our completed encoder output; downloaded files stay untouched.
+	if len(encoded) >= 12 && string(encoded[:4]) == "RIFF" && string(encoded[8:12]) == "WEBP" && binary.LittleEndian.Uint32(encoded[4:8]) == 0 {
+		binary.LittleEndian.PutUint32(encoded[4:8], uint32(len(encoded)-8))
+	}
+	return encoded
 }
 
 type limitedCoverBuffer struct{ bytes.Buffer }
