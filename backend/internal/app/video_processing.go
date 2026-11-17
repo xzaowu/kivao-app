@@ -57,10 +57,6 @@ func (s *Service) prepareVideoProcessingTask(userID string, input map[string]any
 	}
 	profile := capabilityConfig.Video
 	processing := profile.Processing
-	isDepth := protocolID == VolcengineMediaKitVideoDepthProtocol
-	if isDepth && profile.DefaultOperation != VideoProcessingOperationDepthCapture {
-		return nil, BadAuthRequest("深度动作捕捉模型的处理方式配置无效")
-	}
 
 	videos, _ := input["referenceVideos"].([]any)
 	if len(videos) != 1 {
@@ -87,9 +83,6 @@ func (s *Service) prepareVideoProcessingTask(userID string, input map[string]any
 	if resource.Status != model.ResourceStatusReady {
 		return nil, BadAuthRequest("源视频尚未上传完成")
 	}
-	if isDepth && resource.Kind != "video" {
-		return nil, BadAuthRequest("深度动作捕捉需要视频资源")
-	}
 	if mime := strings.ToLower(strings.TrimSpace(resource.MimeType)); mime != "" && !strings.HasPrefix(mime, "video/") {
 		return nil, BadAuthRequest("源资源不是视频")
 	}
@@ -97,19 +90,16 @@ func (s *Service) prepareVideoProcessingTask(userID string, input map[string]any
 	if durationMs <= 0 {
 		return nil, BadAuthRequest("无法读取源视频时长，请重新上传后再试")
 	}
-	maxSeconds := videoProcessingMaxSourceSeconds(processing)
+	maxSeconds := videoProcessingMaxSourceSeconds(profile)
 	if durationMs > int64(maxSeconds)*1000 {
 		return nil, BadAuthRequest(fmt.Sprintf("源视频时长超过 %d 秒上限，请先截取片段后再处理", maxSeconds))
 	}
-	if isDepth {
-		if resource.Width <= 0 || resource.Height <= 0 {
-			return nil, BadAuthRequest("源视频尺寸尚未就绪，请重新上传后再试")
+	isDepth := profile.DefaultOperation == VideoProcessingOperationDepth
+	// 深度接口只公布了 2K 上限，未定义像素边界；交由上游校验，不能套用增强的 1080p 限制。
+	if !isDepth {
+		if err := validateVideoProcessingSourceSize(resource.Width, resource.Height); err != nil {
+			return nil, err
 		}
-		if min(resource.Width, resource.Height) > 1440 || max(resource.Width, resource.Height) > 2560 {
-			return nil, BadAuthRequest("深度动作捕捉源视频不能超过 2K（短边 1440、长边 2560）")
-		}
-	} else if err := validateVideoProcessingSourceSize(resource.Width, resource.Height); err != nil {
-		return nil, err
 	}
 	seconds := int((durationMs + 999) / 1000)
 
@@ -127,9 +117,8 @@ func (s *Service) prepareVideoProcessingTask(userID string, input map[string]any
 	}
 	band := ""
 	if isDepth {
+		// 深度接口只有固定 standard 档，不接收增强参数或客户端指定的回调/存储位置。
 		options = map[string]any{}
-		delete(config, "vquality")
-		delete(config, "fpsBand")
 	} else {
 		band, err = normalizeVideoProcessingOptions(processing, options)
 		if err != nil {
@@ -142,8 +131,10 @@ func (s *Service) prepareVideoProcessingTask(userID string, input map[string]any
 	metadata["videoEditOperation"] = profile.DefaultOperation
 
 	config["videoSeconds"] = strconv.Itoa(seconds)
-	if !isDepth {
-		config["fpsBand"] = band
+	config["fpsBand"] = band
+	if isDepth {
+		delete(config, "vquality")
+		delete(config, "fpsBand")
 	}
 	for _, key := range []string{"size", "videoGenerateAudio", "videoWatermark"} {
 		delete(config, key)
@@ -153,11 +144,10 @@ func (s *Service) prepareVideoProcessingTask(userID string, input map[string]any
 			delete(capabilityOptions, key)
 		}
 		capabilityOptions["videoSeconds"] = seconds
+		capabilityOptions["fpsBand"] = band
 		if isDepth {
 			delete(capabilityOptions, "vquality")
 			delete(capabilityOptions, "fpsBand")
-		} else {
-			capabilityOptions["fpsBand"] = band
 		}
 	}
 	source["durationMs"] = durationMs

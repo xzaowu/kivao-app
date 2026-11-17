@@ -147,7 +147,7 @@ test("已有深度捕捉配置更换模型 ID 保留自定义限制，切回生�
 
 test("重新打开携带普通视频配置的深度捕捉草稿时修正模式", () => {
     const values = { ...initialChannelModelValues(null, protocols), capability: "video" as const, protocol: VOLCENGINE_MEDIAKIT_VIDEO_DEPTH_PROTOCOL, modelKey: "standard", capabilityConfig: defaultModelCapabilityConfig("newapi") };
-    expect(updateChannelModelUpstreamCapabilities(values).capabilityConfig?.video?.defaultOperation).toBe("depth_capture");
+    expect(updateChannelModelUpstreamCapabilities(values).capabilityConfig?.video?.defaultOperation).toBe("depth");
 });
 const protocolsWithAudio = [...protocols, definition("audio", "audio")];
 

@@ -59,6 +59,10 @@ type AdminPluginStateView struct {
 }
 
 var officialApplicationPolicies = map[string]PluginManagementView{
+	PluginOfficialAssetLibrary: {
+		Origin: PluginOriginOfficial, Kind: PluginKindApplication,
+		ActivationScope: PluginScopeSystem, ConfigurationScope: PluginConfigurationSystem,
+	},
 	WorkflowPluginRunningHub: {
 		Origin: PluginOriginOfficial, Kind: PluginKindApplication,
 		ActivationScope: PluginScopeSystem, ConfigurationScope: PluginConfigurationUser,
@@ -198,7 +202,7 @@ func (s *Service) pluginStateForUser(actor *model.User, pluginID string, items [
 	policy := pluginManagement(pluginID, source)
 	// Keep the previously enabled built-in utilities available. Optional
 	// applications require an explicit administrator choice or enabled runtime.
-	platformAvailable := pluginID == PluginMediaConversion || pluginID == PluginUserFeedback
+	platformAvailable := pluginID == PluginMediaConversion || pluginID == PluginUserFeedback || pluginID == PluginOfficialAssetLibrary
 	if hasRuntime && (policy.ActivationScope == PluginScopeSystem || s.repo == nil) {
 		platformAvailable = runtimePlugin.Status == "enabled"
 	}

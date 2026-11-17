@@ -1,4 +1,5 @@
 import { translate } from "@/i18n";
+import { hasSkillLibraryAccess } from "@/lib/skill-access";
 import { useCallback, useRef, type Dispatch, type SetStateAction } from "react";
 import { App } from "antd";
 
@@ -39,8 +40,9 @@ import { buildPortraitTexturePrompt } from "@/lib/canvas/canvas-portrait-texture
 import { resolveCanvasStyleExecution } from "@/lib/canvas/canvas-style-execution";
 import { generationFailureMetadata, unchangedModeratedPrompt } from "@/lib/generation-error";
 import { modelCapabilityConfigFor } from "@/lib/model-capabilities";
-import { listVideoEnhanceModels, videoEnhanceSourceReference, videoEnhanceTaskInput, type VideoEnhanceParams } from "@/lib/canvas/canvas-video-enhance";
-import { VIDEO_DEPTH_CAPTURE_OPERATION, videoDepthMaxSeconds, videoDepthSourceError, videoDepthTaskInput } from "@/lib/canvas/canvas-video-depth";
+import { videoEnhanceTaskInput } from "@/lib/canvas/canvas-video-enhance";
+import { videoDepthTaskInput } from "@/lib/canvas/canvas-video-depth";
+import { videoProcessingSourceReference } from "@/lib/canvas/canvas-video-processing";
 import { navigateToSettings } from "@/lib/settings-navigation";
 import type { Skill } from "@/services/api/skills";
 import { skillRuntime, type SkillRuntimeMetadata } from "@/services/skill-runtime";
@@ -290,11 +292,11 @@ export function useCanvasGenerationRetry({
                 }
                 return;
             }
-            // 视频处理节点按自身参数重建请求；媒体保存失败在上方恢复，不重复调用供应商。
+            // 处理节点按保存的参数重建请求，不能落入普通视频生成。
             const videoEnhance = node.metadata?.videoEnhance;
-            const videoDepth = node.metadata?.videoDepthCapture;
-            const processing = videoEnhance || videoDepth;
-            if (processing) {
+            const videoDepth = node.metadata?.videoDepth;
+            const videoProcessing = videoDepth || videoEnhance;
+            if (videoProcessing) {
                 if (processingRetries.current.has(node.id)) return;
                 if (videoDepth && sourceTask && sourceTask.status !== "failed" && sourceTask.status !== "cancelled") {
                     const controller = startGenerationRequest(node.id, node.id, node.id);
@@ -319,17 +321,10 @@ export function useCanvasGenerationRetry({
                     }
                     return;
                 }
-                const sourceVideoNode = nodesRef.current.find((item) => item.id === processing.sourceNodeId);
+                const sourceVideoNode = nodesRef.current.find((item) => item.id === videoProcessing.sourceNodeId);
                 if (!sourceVideoNode || (!sourceVideoNode.metadata?.storageKey && !sourceVideoNode.metadata?.content)) {
-                    message.error(videoDepth ? "源视频已删除或不可用，请重新选择原视频" : translate("canvasPage.retry.enhanceSourceMissing"));
+                    message.error(translate(videoDepth ? "canvasPage.retry.depthSourceMissing" : "canvasPage.retry.enhanceSourceMissing"));
                     return;
-                }
-                if (videoDepth) {
-                    const error = videoDepthSourceError(sourceVideoNode, videoDepthMaxSeconds(effectiveConfig, videoDepth.model));
-                    if (error || !listVideoEnhanceModels(effectiveConfig, VIDEO_DEPTH_CAPTURE_OPERATION).includes(videoDepth.model)) {
-                        message.error(error || "原深度动作捕捉模型已不可用，请联系管理员");
-                        return;
-                    }
                 }
                 processingRetries.current.add(node.id);
                 const controller = startGenerationRequest(node.id, sourceVideoNode.id, node.id);
@@ -338,10 +333,8 @@ export function useCanvasGenerationRetry({
                 let retryTaskId: string | undefined;
                 try {
                     const retryContext = node.metadata?.taskId ? await createGenerationRetryContext(node.metadata.taskId, node.metadata.attemptGroupId) : {};
-                    const source = videoEnhanceSourceReference(sourceVideoNode);
-                    const input = videoEnhance
-                        ? videoEnhanceTaskInput({ config: effectiveConfig, params: videoEnhance satisfies VideoEnhanceParams, source, sourceNodeId: sourceVideoNode.id, projectId, nodeId: node.id, signal: controller.signal })
-                        : videoDepthTaskInput({ config: effectiveConfig, model: processing.model, source, projectId, nodeId: node.id, signal: controller.signal });
+                    const inputOptions = { config: effectiveConfig, source: videoProcessingSourceReference(sourceVideoNode), sourceNodeId: sourceVideoNode.id, projectId, nodeId: node.id, signal: controller.signal };
+                    const input = videoDepth ? videoDepthTaskInput({ ...inputOptions, params: videoDepth }) : videoEnhanceTaskInput({ ...inputOptions, params: videoEnhance! });
                     await runCanvasGenerationTaskToConsumer(
                         { ...input, ...retryContext },
                         {
@@ -354,7 +347,7 @@ export function useCanvasGenerationRetry({
                     );
                 } catch (error) {
                     if (controller.signal.aborted || isGenerationCanceled(error)) return;
-                    const details = error instanceof Error ? error.message : videoDepth ? "深度动作捕捉失败，请稍后重试" : translate("canvasPage.retry.enhanceFailed");
+                    const details = error instanceof Error ? error.message : translate(videoDepth ? "canvasPage.retry.depthFailed" : "canvasPage.retry.enhanceFailed");
                     message.error(details);
                     if (!isCanvasGenerationDurableAckError(error))
                         setNodes((current) => current.map((item) => (item.id === node.id && (!retryTaskId || item.metadata?.taskId === retryTaskId) ? { ...item, metadata: { ...item.metadata, status: "error", errorDetails: details } } : item)));
@@ -418,11 +411,13 @@ export function useCanvasGenerationRetry({
                 setNodes((current) => current.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_ERROR, ...failure } } : item)));
                 return;
             }
-            let skillMetadata: SkillRuntimeMetadata = {
-                skillIds: node.metadata?.skillIds || [],
-                skillVersions: node.metadata?.skillVersions || [],
-                skillFiles: node.metadata?.skillFiles || [],
-            };
+            let skillMetadata: SkillRuntimeMetadata = hasSkillLibraryAccess()
+                ? {
+                      skillIds: node.metadata?.skillIds || [],
+                      skillVersions: node.metadata?.skillVersions || [],
+                      skillFiles: node.metadata?.skillFiles || [],
+                  }
+                : {};
             let context = rawContext;
             if (rawContext) {
                 try {

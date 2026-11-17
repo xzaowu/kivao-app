@@ -6,7 +6,7 @@ import (
 )
 
 func TestVolcengineMediaKitVideoDepthRequest(t *testing.T) {
-	adapter := officialPackageAdapter(t, "volcengine-mediakit-video-depth.yingce-plugin", "volcengine-mediakit-video-depth")
+	adapter := officialPackageAdapter(t, "volcengine-mediakit-depth.yingce-plugin", "volcengine-mediakit-video-depth")
 	if metadata := adapter.Metadata(); !metadata.Kind.IsProcessing() || !metadata.RequiresPublicMediaURLs {
 		t.Fatalf("depth metadata = %#v", metadata)
 	}
@@ -36,7 +36,7 @@ func TestVolcengineMediaKitVideoDepthRequest(t *testing.T) {
 }
 
 func TestVolcengineMediaKitVideoDepthLifecycle(t *testing.T) {
-	adapter := officialPackageAdapter(t, "volcengine-mediakit-video-depth.yingce-plugin", "volcengine-mediakit-video-depth")
+	adapter := officialPackageAdapter(t, "volcengine-mediakit-depth.yingce-plugin", "volcengine-mediakit-video-depth")
 	created, err := adapter.ParseCreate(context.Background(), []byte(`{"success":true,"task_id":"depth-1"}`))
 	if err != nil || created.TaskID != "depth-1" || created.Status == StatusFailed {
 		t.Fatalf("create response = %#v, err=%v", created, err)

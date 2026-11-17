@@ -15,7 +15,7 @@ func TestVideoDepthCaptureCatalogDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cm := model.ChannelModel{ID: "depth-catalog", ModelKey: "standard", Protocol: model.ChannelInterfaceType(VolcengineMediaKitVideoDepthProtocol), Capability: "video", CapabilityConfigJSON: string(encoded), PriceTiers: []model.ChannelModelPriceTier{{ID: "depth-free", SelectorJSON: `{"operation":"depth_capture"}`, Resolution: "*", Enabled: true, PriceConfigured: true, BillingMode: "per_second", UnitPriceMicrocredits: 0}}}
+	cm := model.ChannelModel{ID: "depth-catalog", ModelKey: "standard", Protocol: model.ChannelInterfaceType(VolcengineMediaKitVideoDepthProtocol), Capability: "video", CapabilityConfigJSON: string(encoded), PriceTiers: []model.ChannelModelPriceTier{{ID: "depth-free", SelectorJSON: `{"operation":"depth"}`, Resolution: "*", Enabled: true, PriceConfigured: true, BillingMode: "per_second", UnitPriceMicrocredits: 0}}}
 	public, err := svc.sanitizeChannelModel(&cm)
 	if err != nil {
 		t.Fatalf("configured depth model omitted from catalog: %v", err)
@@ -34,7 +34,7 @@ func TestVideoDepthCaptureUsesActualOutputDuration(t *testing.T) {
 	if err := db.Create(&resource).Error; err != nil {
 		t.Fatal(err)
 	}
-	task := model.Task{UserID: admin.ID, Type: "video", InputJSON: `{"config":{"videoSeconds":"19"},"metadata":{"videoProcessing":true,"videoEditOperation":"depth_capture"}}`, ResultJSON: `{"videos":[{"storageKey":"resource:depth-output"}],"usage":{"outputDurationSeconds":18.625}}`}
+	task := model.Task{UserID: admin.ID, Type: "video", InputJSON: `{"config":{"videoSeconds":"19"},"metadata":{"videoProcessing":true,"videoEditOperation":"depth"}}`, ResultJSON: `{"videos":[{"storageKey":"resource:depth-output"}],"usage":{"outputDurationSeconds":18.625}}`}
 	if ms, handled, err := svc.VideoProcessingOutputDurationMs(task); err != nil || !handled || ms != 2100 {
 		t.Fatalf("persisted output duration = %d, handled=%v, err=%v", ms, handled, err)
 	}
@@ -68,68 +68,5 @@ func TestVideoDepthCaptureUsesActualOutputDuration(t *testing.T) {
 	task.ResultJSON = `{}`
 	if _, handled, err := svc.VideoProcessingOutputDurationMs(task); !handled || err == nil {
 		t.Fatal("missing output duration must require reconciliation, not use reserved seconds")
-	}
-}
-
-func TestVideoDepthCaptureAdmissionAndDefaults(t *testing.T) {
-	svc, db, _, admin := newAppearanceTestService(t)
-	svc.pluginRuntime = nil
-	profile := DefaultModelCapabilityConfigForModel(VolcengineMediaKitVideoDepthProtocol, "standard")
-	if profile.Video.Processing.MaxSourceSeconds != 60 || len(profile.Video.Resolutions) != 0 {
-		t.Fatal("unsafe default profile")
-	}
-	profile.Video.Processing.MaxSourceSeconds = 600
-	if err := validateVideoCapabilityConfig(profile.Video); err != nil {
-		t.Fatal(err)
-	}
-	encoded, _ := json.Marshal(profile)
-	cm := model.ChannelModel{ID: "depth-model", ChannelID: "depth-channel", ModelKey: "standard", Protocol: model.ChannelInterfaceType(VolcengineMediaKitVideoDepthProtocol), Capability: "video", Enabled: true, CapabilityConfigJSON: string(encoded)}
-	if err := db.Create(&cm).Error; err != nil {
-		t.Fatal(err)
-	}
-	resource := model.Resource{ID: "depth-source", UserID: admin.ID, Kind: "video", Status: model.ResourceStatusReady, MimeType: "video/mp4", Width: 1440, Height: 2560, DurationMs: 18_625}
-	if err := db.Create(&resource).Error; err != nil {
-		t.Fatal(err)
-	}
-	input := func() map[string]any {
-		return map[string]any{"mode": "video", "config": map[string]any{"channelId": "depth-channel", "model": "standard", "vquality": "4k", "videoSeconds": "1", "fpsBand": "le120"}, "referenceVideos": []any{map[string]any{"storageKey": "resource:depth-source", "durationMs": 1}}, "metadata": map[string]any{"providerOptions": map[string]any{VolcengineMediaKitVideoDepthProtocol: map[string]any{"fps": 120, "bitrate": 9000}}}, "capabilityOptions": map[string]any{"vquality": "4k", "fpsBand": "le120"}}
-	}
-	valid := input()
-	admission, err := svc.prepareVideoProcessingTask(admin.ID, valid)
-	if err != nil || admission == nil {
-		t.Fatalf("depth admission failed: %v", err)
-	}
-	config := valid["config"].(map[string]any)
-	metadata := valid["metadata"].(map[string]any)
-	options := metadata["providerOptions"].(map[string]any)[VolcengineMediaKitVideoDepthProtocol].(map[string]any)
-	if config["videoSeconds"] != "19" || config["vquality"] != nil || config["fpsBand"] != nil || len(options) != 0 || metadata["videoEditOperation"] != VideoProcessingOperationDepthCapture {
-		t.Fatal("client overrides escaped admission")
-	}
-	if _, err := svc.prepareVideoProcessingTask("other-user", input()); err == nil {
-		t.Fatal("foreign resource accepted")
-	}
-	tooMany := input()
-	tooMany["referenceVideos"] = []any{map[string]any{"storageKey": "resource:depth-source"}, map[string]any{"storageKey": "resource:depth-source"}}
-	if _, err := svc.prepareVideoProcessingTask(admin.ID, tooMany); err == nil {
-		t.Fatal("multiple videos accepted")
-	}
-	for _, change := range []map[string]any{{"duration_ms": 600_001}, {"duration_ms": 0}, {"width": 3840, "height": 2160}, {"width": 0}, {"status": "uploading"}, {"kind": "image"}, {"mime_type": "image/png"}} {
-		if err := db.Model(&model.Resource{}).Where("id = ?", resource.ID).Updates(change).Error; err != nil {
-			t.Fatal(err)
-		}
-		if _, err := svc.prepareVideoProcessingTask(admin.ID, input()); err == nil {
-			t.Fatal("invalid source accepted")
-		}
-		if err := db.Model(&model.Resource{}).Where("id = ?", resource.ID).Updates(map[string]any{"duration_ms": resource.DurationMs, "width": resource.Width, "height": resource.Height, "status": resource.Status, "kind": resource.Kind, "mime_type": resource.MimeType}).Error; err != nil {
-			t.Fatal(err)
-		}
-	}
-	selector := skuSelectorForIntent(ModelRequestIntent{Capability: "video", Operation: VideoProcessingOperationDepthCapture, Inputs: map[string]int{"video": 1}})
-	if selector["operation"] != VideoProcessingOperationDepthCapture {
-		t.Fatal("depth billed as video generation")
-	}
-	profile.Video.Processing.FPSPolicy = VideoProcessingFPSUserSelect
-	if err := validateVideoCapabilityConfig(profile.Video); err == nil {
-		t.Fatal("depth FPS controls accepted")
 	}
 }

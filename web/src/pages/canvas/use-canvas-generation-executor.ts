@@ -115,11 +115,6 @@ export function useCanvasGenerationExecutor({
                         message.info(translate("canvasPage.generation.mergedNodeNoRegenerate"));
                         return;
                     }
-                    if (sourceNode?.metadata?.videoDepthCapture) {
-                        setDialogNodeId(nodeId);
-                        message.info("请在深度动作捕捉设置中开始或重试任务");
-                        return;
-                    }
                     // 与提示词面板同一来源：第一张上游参考图决定未选尺寸时的默认比例。
                     const referenceImageSize = mode === "image" ? canvasReferenceImageDimensions(nodeId, nodesRef.current, connectionsRef.current) : undefined;
                     let generationConfig = buildGenerationConfig(effectiveConfig, sourceNode, mode, undefined, false, referenceImageSize);

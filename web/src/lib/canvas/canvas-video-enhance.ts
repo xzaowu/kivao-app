@@ -1,6 +1,6 @@
 import { DEFAULT_VIDEO_PROCESSING_MAX_SOURCE_SECONDS, modelCapabilityConfigFor, type VideoProcessingConfig } from "@/lib/model-capabilities";
 import type { ModelQuoteRequest } from "@/services/api/logical-models";
-import { decodeChannelModel, modelOptionName, modelOptionsFromChannels, resolveModelChannel, resolveModelRequestConfig, type AiConfig } from "@/stores/use-config-store";
+import { modelOptionName, resolveModelChannel, resolveModelRequestConfig, type AiConfig } from "@/stores/use-config-store";
 import type { CanvasNodeData } from "@/types/canvas";
 import type { ReferenceVideo } from "@/types/media";
 
@@ -17,18 +17,6 @@ export type VideoEnhanceParams = {
     bitrateLevel?: VideoEnhanceBitrateLevel;
     bitrate?: number;
 };
-
-/** 按处理操作筛选系统视频模型，避免深度捕捉与画质增强串用；普通生成列表会排除这些模型。 */
-export function listVideoEnhanceModels(config: AiConfig, operation = VIDEO_ENHANCE_OPERATION): string[] {
-    return modelOptionsFromChannels(config.channels).filter((model) => {
-        const decoded = decodeChannelModel(model);
-        const channel = decoded ? config.channels.find((item) => item.id === decoded.channelId) : undefined;
-        if (!channel || channel.scope !== "system") return false;
-        const cost = channel.modelCosts?.find((item) => item.model === modelOptionName(model));
-        const video = cost?.capabilityConfig?.video;
-        return cost?.capability === "video" && Boolean(video?.processing) && video?.defaultOperation === operation;
-    });
-}
 
 export function videoEnhanceProfile(config: AiConfig, model: string) {
     const video = modelCapabilityConfigFor(config, model).video;
@@ -50,7 +38,7 @@ export function videoEnhanceResolutionShortEdge(resolution: string) {
     return Number.isFinite(numeric) ? numeric : 0;
 }
 
-/** 火山画质增强（大模型版）输入规格：短边 [360,1080]、长边 [360,1920]、时长不超过后台上限。 */
+/** MediaKit 视频画质增强工具输入规格：短边 [360,1080]、长边 [360,1920]、时长不超过后台上限。 */
 export function videoEnhanceSourceError(node: CanvasNodeData, maxSourceSeconds: number) {
     const metadata = node.metadata;
     if (!metadata?.storageKey && !metadata?.content) return "视频节点为空，无法画质增强";
@@ -69,22 +57,6 @@ export function videoEnhanceSourceError(node: CanvasNodeData, maxSourceSeconds: 
 export function videoEnhanceFpsBand(fps?: number) {
     if (!fps || fps <= 30) return "le30";
     return fps <= 60 ? "le60" : "le120";
-}
-
-export function videoEnhanceSourceReference(node: CanvasNodeData): ReferenceVideo {
-    const metadata = node.metadata || {};
-    return {
-        id: node.id,
-        name: `${node.title || "video"}.mp4`,
-        type: metadata.mimeType || "video/mp4",
-        url: metadata.content || "",
-        storageKey: metadata.storageKey,
-        role: "reference",
-        ...(metadata.bytes ? { bytes: metadata.bytes } : {}),
-        ...(metadata.naturalWidth ? { width: metadata.naturalWidth } : {}),
-        ...(metadata.naturalHeight ? { height: metadata.naturalHeight } : {}),
-        ...(metadata.durationMs ? { durationMs: metadata.durationMs } : {}),
-    };
 }
 
 /** 生成任务配置：只覆盖模型与分辨率；时长和帧率档由后端按源资源重算。 */

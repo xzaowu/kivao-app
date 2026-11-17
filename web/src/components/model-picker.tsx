@@ -62,6 +62,7 @@ export function ModelPicker({
 }: ModelPickerProps) {
     const creditsEnabled = useUserStore((state) => state.features.creditsEnabled);
     const user = useUserStore((state) => state.user);
+    const userId = user?.id;
     const hydrated = useUserStore((state) => state.hydrated);
     const customChannelsEnabled = useUserStore((state) => state.features.customChannelsEnabled);
     const catalogStatus = useModelCatalogStore((state) => state.status);
@@ -80,16 +81,13 @@ export function ModelPicker({
     useLayoutEffect(() => {
         setInSpatialWorkspace(Boolean(triggerRef.current?.closest(".app-spatial-workspace")));
     }, []);
-    const capabilityOptions = useMemo(
-        () => selectableModelsByCapability(config, capability).filter((model) => Boolean(model) && (catalogSource === "provided" || user || resolveModelChannel(config, model).scope !== "system")),
-        [capability, catalogSource, config, user],
-    );
+    const capabilityOptions = useMemo(() => selectableModelsByCapability(config, capability).filter(Boolean), [capability, config]);
     const options = useMemo(() => Array.from(new Set(capabilityOptions.filter((model) => !modelFilter || modelFilter(model)))), [capabilityOptions, modelFilter]);
     // 独立传入的个人渠道配置不受平台目录加载状态影响；已有模型始终可以继续选择。
     const usesSystemCatalog = catalogSource === "session" && (!config.channels.length || config.channels.some((channel) => channel.scope === "system"));
     const catalogRelevant = usesSystemCatalog && (!options.length || options.some((model) => resolveModelChannel(config, model).scope === "system"));
     const guestEmpty = !user && usesSystemCatalog && !options.length;
-    const catalogPending = catalogRelevant && Boolean(user) && catalogStatus !== "ready";
+    const catalogPending = catalogRelevant && catalogStatus !== "ready";
     const catalogMessage = catalogStatus === "loading" ? "正在加载模型…" : catalogStatus === "error" ? (options.length ? "模型列表刷新失败，仍可选择已加载模型。" : "模型列表加载失败，请重试。") : "模型列表尚未加载，请重试。";
     const retryCatalog = () => {
         // 按需加载，避免静态模型展示也初始化整个用户会话模块。
@@ -129,7 +127,7 @@ export function ModelPicker({
     }, [open]);
 
     useEffect(() => {
-        if (!showSelectedPrice || !creditsEnabled || !quoteRequest) {
+        if (!userId || !showSelectedPrice || !creditsEnabled || !quoteRequest) {
             setRouteQuote(undefined);
             return;
         }
@@ -141,7 +139,7 @@ export function ModelPicker({
                 if (!controller.signal.aborted) setRouteQuote(undefined);
             });
         return () => controller.abort();
-    }, [creditsEnabled, quoteRequest, showSelectedPrice]);
+    }, [creditsEnabled, quoteRequest, showSelectedPrice, userId]);
 
     useEffect(() => {
         const closeOtherPicker = (event: Event) => {
@@ -364,8 +362,10 @@ export function ModelPicker({
                 )
             ) : (
                 <div className="canvas-model-picker-empty" style={{ color: theme.node.muted }}>
-                    {!guestEmpty || !hydrated ? <p role="status">{guestEmpty ? "正在确认登录状态…" : catalogPending ? catalogMessage : emptyModelLabel(capability, Boolean(capabilityOptions.length && modelFilter))}</p> : null}
-                    {guestEmpty ? (
+                    {!guestEmpty || !hydrated || catalogPending ? (
+                        <p role="status">{guestEmpty && !hydrated ? "正在确认登录状态…" : catalogPending ? catalogMessage : emptyModelLabel(capability, Boolean(capabilityOptions.length && modelFilter))}</p>
+                    ) : null}
+                    {guestEmpty && !catalogPending ? (
                         hydrated ? (
                             <button type="button" className="canvas-model-picker-recovery" onClick={openLogin}>
                                 登录后查看模型

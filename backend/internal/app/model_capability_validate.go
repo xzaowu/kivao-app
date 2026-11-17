@@ -193,30 +193,15 @@ func validateVideoCapabilityConfig(value *VideoCapabilityConfig) error {
 	if len(value.Operations) == 0 || strings.TrimSpace(value.DefaultOperation) == "" || !containsCapabilityString(value.Operations, value.DefaultOperation) {
 		return BadAuthRequest("请至少配置一个生成模式，并选择默认模式")
 	}
-	if value.DefaultOperation == VideoProcessingOperationDepthCapture {
-		if len(value.Operations) != 1 || value.References.MaxVideos != 1 || value.References.MaxImages != 0 || value.References.MaxAudios != 0 {
-			return BadAuthRequest("深度动作捕捉只支持 depth_capture 模式和一个视频引用")
-		}
-		if value.Processing == nil || value.Processing.FPSPolicy != VideoProcessingFPSKeepSource || len(value.Processing.FPSOptions) > 0 {
-			return BadAuthRequest("深度动作捕捉需要处理配置，且不支持选择输出帧率")
-		}
-		if len(value.Resolutions) != 0 || len(value.Ratios) != 0 || value.GenerateAudio.Supported || value.Watermark.Supported {
-			return BadAuthRequest("深度动作捕捉不支持设置输出尺寸、画幅、音频或水印")
-		}
-		if value.Processing.MaxSourceSeconds < 1 || value.Processing.MaxSourceSeconds > MaxVideoDepthCaptureSeconds {
-			return BadAuthRequest("深度动作捕捉源视频时长上限须为 1-600 秒")
-		}
-		if value.Duration.Default > value.Processing.MaxSourceSeconds {
-			return BadAuthRequest("深度动作捕捉默认时长不能超过源视频上限")
-		}
-		return nil
-	}
-	return validateVideoProcessingConfig(value.Processing)
+	return validateVideoProcessingConfig(value.Processing, value.DefaultOperation)
 }
 
-func validateVideoProcessingConfig(value *VideoProcessingConfig) error {
+func validateVideoProcessingConfig(value *VideoProcessingConfig, operation string) error {
 	if value == nil {
 		return nil
+	}
+	if operation == VideoProcessingOperationDepth && value.FPSPolicy != VideoProcessingFPSKeepSource {
+		return BadAuthRequest("相对深度视频不支持选择输出帧率")
 	}
 	switch value.FPSPolicy {
 	case VideoProcessingFPSKeepSource:
@@ -237,18 +222,25 @@ func validateVideoProcessingConfig(value *VideoProcessingConfig) error {
 	default:
 		return BadAuthRequest("视频处理帧率策略仅支持保持原帧率或用户选择")
 	}
-	if value.MaxSourceSeconds < 0 || value.MaxSourceSeconds > DefaultVideoProcessingMaxSourceSeconds {
-		return BadAuthRequest(fmt.Sprintf("源视频时长上限必须在 1-%d 秒之间（任务轮询上限为 1 小时）", DefaultVideoProcessingMaxSourceSeconds))
+	maxSeconds := DefaultVideoProcessingMaxSourceSeconds
+	if operation == VideoProcessingOperationDepth {
+		maxSeconds = MediaKitDepthMaxSourceSeconds
+	}
+	if value.MaxSourceSeconds < 0 || value.MaxSourceSeconds > maxSeconds {
+		return BadAuthRequest(fmt.Sprintf("源视频时长上限不能超过 %d 秒", maxSeconds))
 	}
 	return nil
 }
 
 // videoProcessingMaxSourceSeconds 返回生效的源视频时长上限。
-func videoProcessingMaxSourceSeconds(value *VideoProcessingConfig) int {
-	if value == nil || value.MaxSourceSeconds <= 0 {
-		return DefaultVideoProcessingMaxSourceSeconds
+func videoProcessingMaxSourceSeconds(profile *VideoCapabilityConfig) int {
+	if profile.Processing != nil && profile.Processing.MaxSourceSeconds > 0 {
+		return profile.Processing.MaxSourceSeconds
 	}
-	return value.MaxSourceSeconds
+	if profile.DefaultOperation == VideoProcessingOperationDepth {
+		return MediaKitDepthMaxSourceSeconds
+	}
+	return DefaultVideoProcessingMaxSourceSeconds
 }
 
 // videoFPSBand 把帧率映射到火山 MediaKit 的计费档位：≤30、≤60、≤120。

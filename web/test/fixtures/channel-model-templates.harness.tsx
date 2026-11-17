@@ -684,7 +684,7 @@ test("完整模型编辑器：切换深度捕捉协议自动写入固定模式�
             expect(fixture.saves[0]).toMatchObject({
                 modelKey: "standard",
                 protocol: VOLCENGINE_MEDIAKIT_VIDEO_DEPTH_PROTOCOL,
-                capabilityConfig: { video: { defaultOperation: "depth_capture", operations: ["depth_capture"], processing: { fpsPolicy: "keep_source", maxSourceSeconds: 30 }, references: { maxVideoBytes: 128 * 1024 * 1024 } } },
+                capabilityConfig: { video: { defaultOperation: "depth", operations: ["depth"], processing: { fpsPolicy: "keep_source", maxSourceSeconds: 30 }, references: { maxVideoBytes: 128 * 1024 * 1024 } } },
             });
             expect(fixture.saves[0].priceTiers[0]).toMatchObject({ billingMode: "per_second" });
         } finally {
@@ -849,12 +849,13 @@ test("完整模型编辑器：迟到的协议建议保留已应用模板能力�
     }
 });
 
-test("完整模型编辑器：先应用或撤销模板再发起协议建议也保留能力", async () => {
-    const values = draft();
-    values.capabilityConfig!.image!.references.maxImageBytes = 7 * 1024 * 1024;
-    saveCapabilityTemplate("template-test", "先设能力", values);
-    for (const loading of [false, true]) {
-        for (const undo of [false, true]) {
+// 每个组合独立计时、清理，避免四次完整编辑流程共用一个测试时限。
+for (const loading of [false, true]) {
+    for (const undo of [false, true]) {
+        test(`完整模型编辑器：先应用或撤销模板再发起协议建议也保留能力（加载中 ${loading}，撤销 ${undo}）`, async () => {
+            const values = draft();
+            values.capabilityConfig!.image!.references.maxImageBytes = 7 * 1024 * 1024;
+            saveCapabilityTemplate("template-test", "先设能力", values);
             const initial = { ...draft(), protocol: "", modelKey: "", providerModelKey: "" };
             initial.capabilityConfig!.image!.references.maxImageBytes = 11 * 1024 * 1024;
             const fixture = await mountEditor(null, protocols, initial, loading);
@@ -878,9 +879,9 @@ test("完整模型编辑器：先应用或撤销模板再发起协议建议也�
             } finally {
                 await fixture.close();
             }
-        }
+        });
     }
-});
+}
 
 test("完整模型编辑器：未操作保存保留参考视频计价及独立成本", async () => {
     const values = { ...draft(), capability: "video" as const, protocol: "video-test", referenceVideoBilling: true, capabilityConfig: defaultModelCapabilityConfig("video-test") };
@@ -899,9 +900,9 @@ test("完整模型编辑器：未操作保存保留参考视频计价及独立�
     }
 });
 
-test("完整模型编辑器：复制预填与模板操作不记录协议选择，主动改协议才记录", async () => {
-    const catalog = [...protocols, { ...protocols[0], value: "other-image", label: "另一图片协议" }];
-    for (const action of ["unchanged", "manual", "template", "undo"] as const) {
+for (const action of ["unchanged", "manual", "template", "undo"] as const) {
+    test(`完整模型编辑器：复制预填与模板操作不记录协议选择，主动改协议才记录（${action}）`, async () => {
+        const catalog = [...protocols, { ...protocols[0], value: "other-image", label: "另一图片协议" }];
         const copied = duplicateChannelModelValues(savedModel(), catalog);
         const fixture = await mountEditor(null, catalog, copied);
         try {
@@ -921,8 +922,8 @@ test("完整模型编辑器：复制预填与模板操作不记录协议选择�
         } finally {
             await fixture.close();
         }
-    }
-});
+    });
+}
 
 test("完整模型编辑器：已有模型改协议再改回原值，保存不刷新协议记忆", async () => {
     const catalog = [...protocols, { ...protocols[0], value: "other-image", label: "另一图片协议" }];

@@ -17,6 +17,7 @@ import { aceternityMotion } from "@/lib/aceternity-motion";
 import { cn } from "@/lib/utils";
 import { preloadWorkspaceRoute } from "@/lib/workspace-route-modules";
 import { useUserStore, type FeatureAvailability } from "@/stores/use-user-store";
+import { useSkillLibraryAccess } from "@/lib/skill-access";
 import { useAppearanceStore } from "@/stores/use-appearance-store";
 import { WorkspaceAccountCard } from "./workspace-account-card";
 import { WorkspaceSidebarCheckin } from "./workspace-sidebar-checkin";
@@ -57,7 +58,7 @@ function toolItem(slug: NavigationToolSlug, to: string, t: TFunction): Workspace
     return { id: slug, title: tool ? t(tool.labelKey) : slug, icon: tool?.icon, to };
 }
 
-function buildNav(features: FeatureAvailability, t: TFunction, guest: boolean): { groups: WorkspaceNavGroup[]; footer: WorkspaceNavItem[] } {
+function buildNav(features: FeatureAvailability, t: TFunction, guest: boolean, canUseSkills: boolean): { groups: WorkspaceNavGroup[]; footer: WorkspaceNavItem[] } {
     // 游客会话不下发功能配置；导航完整展示，实际访问仍由路由登录校验与后台开关控制。
     const groups: WorkspaceNavGroup[] = [
         {
@@ -74,7 +75,7 @@ function buildNav(features: FeatureAvailability, t: TFunction, guest: boolean): 
             items: [
                 ...(guest || features.imageWorkbenchEnabled ? [{ id: "toolbox-image", title: t("nav.sidebar.toolboxImage"), icon: ImageIcon, to: "/toolbox/image" }] : []),
                 ...(guest || features.videoWorkbenchEnabled ? [{ id: "toolbox-video", title: t("nav.sidebar.toolboxVideo"), icon: Video, to: "/toolbox/video" }] : []),
-                { ...toolItem("skills", "/skills", t), title: t("nav.sidebar.skills") },
+                ...(canUseSkills ? [{ ...toolItem("skills", "/skills", t), title: t("nav.sidebar.skills") }] : []),
                 ...(guest || features.taskCenterEnabled ? [{ id: "tasks", title: t("nav.sidebar.history"), icon: HistoryIcon, to: "/tasks" }] : []),
             ],
         },
@@ -350,7 +351,8 @@ export function WorkspaceSidebarNav({ collapsed, onNavigate, onOpenSearch, onExp
     const guest = !user;
     const { handleLogout } = useWorkspaceLogout();
     const { t, i18n } = useTranslation();
-    const { groups, footer } = useMemo(() => buildNav(features, t, guest), [features, t, guest, i18n.language]);
+    const canUseSkills = useSkillLibraryAccess();
+    const { groups, footer } = useMemo(() => buildNav(features, t, guest, canUseSkills), [features, t, guest, i18n.language, canUseSkills]);
 
     const activeId = workspaceNavActiveId(pathname, searchParams.get("section"));
 

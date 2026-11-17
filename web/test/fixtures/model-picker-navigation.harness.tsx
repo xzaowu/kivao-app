@@ -138,15 +138,24 @@ test("无有效模型从全部分组进入，Escape 关闭，键盘左箭头仍�
     expect(changes).toEqual([]);
 });
 
-test("游客不展示遗留系统模型，登录入口打开现有弹窗且不切换模型", async () => {
+test("游客可选择公开目录模型，保留跨分组导航", async () => {
     useUserStore.setState({ user: null });
-    useModelCatalogStore.setState({ status: "error" });
     const { trigger, changes } = await mount();
+    expect(menu().textContent).not.toContain("登录后查看模型");
+    await click("全部模型分组");
+    await click("分组B");
+    await click("线路B");
+    expect(changes).toEqual(["picker-test::image-b"]);
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    expect(useAuthDialogStore.getState().open).toBe(false);
+});
+
+test("游客真实空目录仍提供登录弹窗，不跳配置页或切换模型", async () => {
+    useUserStore.setState({ user: null });
+    const { trigger, changes } = await mount("", { config: defaultConfig });
     expect(menu().textContent).toContain("登录后查看模型");
     expect(menu().textContent?.match(/登录后查看模型/g)).toHaveLength(1);
-    expect(menu().textContent).not.toContain("分组A");
     expect(menu().textContent).not.toContain("检查模型配置");
-    expect(menu().textContent).not.toContain("重新加载");
     await click("登录后查看模型");
     expect(useAuthDialogStore.getState()).toMatchObject({ open: true, view: "login", next: null });
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
@@ -227,10 +236,24 @@ test("管理员空目录有管理入口；能力为空与筛选无匹配不称�
     expect(menu().textContent).not.toContain("不支持当前输入");
 });
 
-test("退出账号时已打开的选择器立即移除缓存系统模型", async () => {
-    await mount();
-    expect(menu().querySelector('[role="option"]')).not.toBeNull();
-    await act(async () => useUserStore.setState({ user: null }));
-    expect(menu().querySelector('[role="option"]')).toBeNull();
-    expect(menu().textContent).toContain("登录后查看模型");
+test("退出账号清空旧目录，公开目录就绪后只显示游客可用模型", async () => {
+    useConfigStore.setState({ config });
+    await mount(undefined, { live: true });
+    expect(menu().querySelector('[role="option"]') !== null).toBe(true);
+    await act(async () => {
+        useUserStore.setState({ user: null });
+        useConfigStore.setState({ config: defaultConfig });
+        useModelCatalogStore.setState({ status: "loading" });
+    });
+    expect(menu().querySelector('[role="option"]') === null).toBe(true);
+    expect(menu().textContent).toContain("正在加载模型");
+    const publicConfig = { ...config, imageModel: "picker-test::image-b", channels: config.channels.map((item) => ({ ...item, models: ["image-b"], modelCosts: item.modelCosts?.filter((cost) => cost.model === "image-b") })) };
+    await act(async () => {
+        useConfigStore.setState({ config: publicConfig });
+        useModelCatalogStore.setState({ status: "ready" });
+    });
+    expect(menu().textContent).not.toContain("线路A");
+    expect(menu().textContent).not.toContain("分组A");
+    await click("分组B");
+    expect(menu().textContent).toContain("线路B");
 });
