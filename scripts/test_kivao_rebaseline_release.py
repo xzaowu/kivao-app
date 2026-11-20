@@ -23,14 +23,14 @@ NOW = datetime(2026, 11, 15, tzinfo=timezone.utc)
 def image(role, published=False):
     registry_digest = 'sha256:' + {'web': '1', 'backend': '2', 'agent': '3'}[role] * 64
     return {
-        'source_commit': SHA, 'role': role, 'release': RELEASE, 'application_version': 'v1.8.5',
-        'platform': 'linux/amd64', 'schema': 104, 'source_scope_verified': True,
+        'source_commit': SHA, 'role': role, 'release': RELEASE, 'application_version': (r.ROOT/'VERSION').read_text().strip(),
+        'platform': 'linux/amd64', 'schema': r.POLICY['schema'], 'source_scope_verified': True,
         'build_args': {'BUILD_COMMIT': SHA}, 'embedded_commit_verified': True,
         'registry_publish': published, 'registry_digest': registry_digest if published else None,
         'image': f"ghcr.io/{r.POLICY['repository']}-{role}@{registry_digest}" if published else 'local-candidate',
         'image_id': 'sha256:' + '4' * 64,
         'labels': {'org.opencontainers.image.source': 'https://github.com/' + r.POLICY['repository'],
-                   'org.opencontainers.image.revision': SHA, 'org.opencontainers.image.version': 'v1.8.5',
+                   'org.opencontainers.image.revision': SHA, 'org.opencontainers.image.version': (r.ROOT/'VERSION').read_text().strip(),
                    'io.kivao.release': RELEASE},
     }
 
@@ -121,7 +121,9 @@ class ReleaseTests(unittest.TestCase):
                 return '.github/workflows/kivao-rebaseline-ci.yml'
             return ''
         with patch.object(r, 'git', side_effect=fake_git):
-            self.assertEqual(r.source(SHA)['schema'], 104)
+            self.assertEqual(r.source(SHA)['schema'], 109)
+            with patch.dict(r.POLICY, {'schema': 104}), self.assertRaisesRegex(ValueError, 'unexpected_schema'):
+                r.source(SHA)
         def changed_product(*args):
             return 'web/src/application.tsx' if args[0] == 'diff' else fake_git(*args)
         with patch.object(r, 'git', side_effect=changed_product), self.assertRaises(ValueError):
@@ -141,7 +143,7 @@ class ReleaseTests(unittest.TestCase):
             with self.subTest(key=key), self.assertRaises(ValueError):
                 r.check_ci_run({**run, key: value}, SHA, 123)
         report = {'source_commit': SHA, 'status': 'PASS', 'quality_result': 'success',
-                  'import_result': 'success', 'registry_publish': False,
+                  'upgrade_result': 'success', 'registry_publish': False,
                   'images': {role: image(role) for role in r.ROLES}}
         r.check_ci(report, SHA)
         for field, value in [('platform', 'linux/arm64'), ('schema', 79), ('embedded_commit_verified', False), ('registry_publish', True),
@@ -179,15 +181,15 @@ class ReleaseTests(unittest.TestCase):
         reports = [image(role, True) for role in r.ROLES]
         locks = r.paired_locks(reports)
         self.assertEqual(locks['rollback'], r.POLICY['rollback'])
-        self.assertTrue(locks['image_only_cutover_allowed'])
-        self.assertEqual(locks['database_strategy'], 'reuse_existing_database_data_and_redis')
+        self.assertFalse(locks['image_only_cutover_allowed'])
+        self.assertEqual(locks['database_strategy'], 'separate_database_data_and_redis')
         self.assertFalse(locks['production_cutover_authorized'])
         self.assertTrue(locks['agent_init_required'])
-        self.assertEqual((locks['target_schema'], locks['rollback_schema']), (104, 104))
-        with patch.dict(r.POLICY, {'rollback_schema': 79}):
-            historical = r.paired_locks(reports)
-            self.assertFalse(historical['image_only_cutover_allowed'])
-            self.assertEqual(historical['database_strategy'], 'separate_database_data_and_redis')
+        self.assertEqual((locks['target_schema'], locks['rollback_schema']), (109, 104))
+        with patch.dict(r.POLICY, {'rollback_schema': r.POLICY['schema']}):
+            same_schema = r.paired_locks(reports)
+            self.assertTrue(same_schema['image_only_cutover_allowed'])
+            self.assertEqual(same_schema['database_strategy'], 'reuse_existing_database_data_and_redis')
         for field, value in [('registry_digest', None), ('registry_publish', False), ('source_scope_verified', False),
                              ('source_commit', 'b' * 40), ('image', 'local-image:latest')]:
             bad = copy.deepcopy(reports)

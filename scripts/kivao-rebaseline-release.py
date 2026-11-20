@@ -28,6 +28,7 @@ PREPARATION = {
     '.github/kivao-rebaseline.json', '.github/workflows/kivao-rebaseline-ci.yml',
     '.github/workflows/kivao-rebaseline-publish.yml', 'scripts/kivao-rebaseline-release.py',
     'scripts/test_kivao_rebaseline_release.py',
+    'scripts/verify-kivao-schema-upgrade.sh',
     'backend/cmd/kivao-import/main.go', 'backend/cmd/kivao-import/main_test.go',
     'backend/internal/database/kivao_import.go', 'backend/internal/database/kivao_import_files.go',
     'backend/internal/database/kivao_import_test.go', 'backend/internal/app/kivao_import_plugins_test.go',
@@ -114,7 +115,8 @@ def source(sha, release=None):
     if set(changed) - PREPARATION or git('rev-list', '--min-parents=2', POLICY['product_commit']+'..'+sha):
         raise ValueError('changes_outside_frozen_product_and_preparation')
     schema = (ROOT/'backend/internal/database/migrations.go').read_text()
-    if not re.search(r'CurrentSchemaVersion\s+int64\s*=\s*104\b', schema):
+    declared = re.search(r'CurrentSchemaVersion\s+int64\s*=\s*(\d+)\b', schema)
+    if not declared or int(declared[1]) != POLICY['schema']:
         raise ValueError('unexpected_schema')
     version = (ROOT/'VERSION').read_text().strip()
     if not re.fullmatch(r'v[0-9.]+', version):
@@ -221,7 +223,7 @@ def check_ci_run(run, sha, run_id):
 
 def check_ci(report, sha):
     if any(report.get(k) != v for k, v in {'source_commit': sha, 'status': 'PASS', 'quality_result': 'success',
-                                         'import_result': 'success', 'registry_publish': False}.items()):
+                                         'upgrade_result': 'success', 'registry_publish': False}.items()):
         raise ValueError('incomplete_ci')
     if set(report.get('images', {})) != set(ROLES):
         raise ValueError('missing_ci_images')
@@ -297,10 +299,10 @@ def main():
         if any(r['source_commit'] != a.sha for r in reports):
             raise ValueError('mixed_source_reports')
         if a.command == 'summary':
-            if os.environ.get('QUALITY_RESULT') != 'success' or os.environ.get('IMPORT_RESULT') != 'success':
+            if os.environ.get('QUALITY_RESULT') != 'success' or os.environ.get('UPGRADE_RESULT') != 'success':
                 raise ValueError('required_jobs_failed')
-            result = {'source_commit': a.sha, 'status': 'PASS', 'quality_result': 'success', 'import_result': 'success',
-                      'import_scope': 'synthetic_PG17', 'private_plugin_fixture': 'local_evidence_only',
+            result = {'source_commit': a.sha, 'status': 'PASS', 'quality_result': 'success', 'upgrade_result': 'success',
+                      'upgrade_scope': 'synthetic_PG17_upgrade_and_restore',
                       'registry_publish': False, 'images': {r['role']: r for r in reports}}
             check_ci(result, a.sha)
         else:

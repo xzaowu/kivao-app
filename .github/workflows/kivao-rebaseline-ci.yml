@@ -2,7 +2,7 @@ name: KIVAO rebaseline candidate
 
 on:
   push:
-    branches: [dev/kivao-upstream-baseline-3979305c]
+    branches: [dev/kivao-upstream-sync-20261117]
 
 permissions:
   contents: read
@@ -32,7 +32,7 @@ jobs:
     needs: source
     uses: ./.github/workflows/quality.yml
 
-  import:
+  upgrade:
     needs: source
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -46,38 +46,26 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U postgres"
           --health-interval 5s --health-timeout 5s --health-retries 12
-    env:
-      KIVAO_IMPORT_TEST_DSN: postgres://postgres:synthetic_ci_only@127.0.0.1:5432/kivao_rehearsal_ci?sslmode=disable
     steps:
       - uses: actions/checkout@v4
         with:
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-go@v5
         with:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
-      - name: Synthetic PG17 import and CLI checks
-        working-directory: backend
-        shell: bash
-        run: |
-          set -euo pipefail
-          go test -json -count=1 -timeout=10m ./cmd/kivao-import ./internal/database -run Kivao > "$RUNNER_TEMP/import-tests.jsonl"
-          python3 - <<'PY'
-          import json, os
-          from pathlib import Path
-          rows = [json.loads(s) for s in Path(os.environ['RUNNER_TEMP'], 'import-tests.jsonl').read_text().splitlines()]
-          passed = [r['Test'] for r in rows if r.get('Action') == 'pass' and r.get('Test')]
-          assert any('Postgres' in t for t in passed), 'PG17 importer was not exercised'
-          skipped = {r['Test'] for r in rows if r.get('Action') == 'skip' and r.get('Test')}
-          assert skipped <= {'TestKivaoImportHistoricalPluginCopy'}, 'Unexpected skipped import tests'
-          print('Synthetic import checks passed:', len(passed))
-          print('Private historical plugin fixture stays local:', sorted(skipped))
-          PY
+      - name: Rehearse upgrade and restore on synthetic PostgreSQL 17
+        env:
+          PG_CONTAINER: ${{ job.services.postgres.id }}
+        run: bash scripts/verify-kivao-schema-upgrade.sh "$PG_CONTAINER" "$RUNNER_TEMP/schema-upgrade" 5432
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: kivao-import-synthetic-tests
-          path: ${{ runner.temp }}/import-tests.jsonl
+          name: kivao-schema-upgrade
+          path: |
+            ${{ runner.temp }}/schema-upgrade/*-verify.json
+            ${{ runner.temp }}/schema-upgrade/old-reject.log
           retention-days: 14
 
   images:
@@ -137,7 +125,7 @@ jobs:
           retention-days: 30
 
   report:
-    needs: [source, quality, import, images]
+    needs: [source, quality, upgrade, images]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
@@ -148,9 +136,9 @@ jobs:
         env:
           SOURCE: ${{ needs.source.result }}
           QUALITY: ${{ needs.quality.result }}
-          IMPORT: ${{ needs.import.result }}
+          UPGRADE: ${{ needs.upgrade.result }}
           IMAGES: ${{ needs.images.result }}
-        run: test "$SOURCE/$QUALITY/$IMPORT/$IMAGES" = success/success/success/success
+        run: test "$SOURCE/$QUALITY/$UPGRADE/$IMAGES" = success/success/success/success
       - uses: actions/download-artifact@v4
         with:
           pattern: kivao-rebaseline-image-*
@@ -159,7 +147,7 @@ jobs:
       - name: Produce machine-readable candidate evidence
         env:
           QUALITY_RESULT: ${{ needs.quality.result }}
-          IMPORT_RESULT: ${{ needs.import.result }}
+          UPGRADE_RESULT: ${{ needs.upgrade.result }}
         run: |
           python3 scripts/kivao-rebaseline-release.py summary --sha "$GITHUB_SHA" \
             --directory "$RUNNER_TEMP/images" --output "$RUNNER_TEMP/ci-report.json"
