@@ -1,0 +1,70 @@
+.ec-presenter-inputs {
+    display: grid;
+    align-items: start;
+    gap: clamp(12px, 1.6cqi, 24px);
+}
+
+.ec-presenter-frame,
+.ec-presenter-script {
+    display: grid;
+    align-content: start;
+    gap: var(--space-3);
+    min-inline-size: 0;
+}
+
+.ec-presenter-frame .ec-film-material-source {
+    max-inline-size: none;
+}
+
+.ec-presenter-frame .ec-video-source-heading {
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: var(--space-1) var(--space-2);
+}
+
+.ec-presenter-frame .ec-video-frame-ready img {
+    max-block-size: clamp(12rem, 32dvh, 24rem);
+}
+
+.ec-presenter-script .ec-video-brief {
+    margin-block-start: 0;
+    padding-block-start: 0;
+    border: 0;
+}
+
+.ec-presenter-script .ec-video-brief > label {
+    margin-block-start: 0;
+}
+
+.ec-presenter-script textarea {
+    line-height: 1.65;
+    resize: vertical;
+}
+
+.ec-presenter-script .ec-presenter-delivery label:has(:checked) {
+    background: var(--user-surface-muted);
+    border-color: var(--user-ink);
+}
+
+.ec-presenter-script .ec-presenter-delivery label:has(:focus-visible) {
+    outline: var(--focus-ring-width, 2px) solid var(--ring);
+    outline-offset: 2px;
+}
+
+@container ecommerce-studio (min-width: 1040px) {
+    .ec-presenter-inputs:not([data-source="cast"]) {
+        grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+    }
+}
+
+@container ecommerce-studio (min-width: 1440px) {
+    .ec-presenter-inputs[data-source="cast"] {
+        grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
+    }
+}
+
+@container ecommerce-studio (max-width: 720px) {
+    .ec-presenter-script textarea {
+        font-size: max(1rem, 1em);
+    }
+}

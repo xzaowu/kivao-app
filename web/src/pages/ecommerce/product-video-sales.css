@@ -1,0 +1,304 @@
+.ec-sales-modebar {
+    display: flex;
+    align-items: center;
+    flex: none;
+    gap: var(--space-2);
+    padding-block: var(--space-3);
+}
+
+.ec-sales-layout {
+    --sales-panel-padding: clamp(12px, 1.45cqi, 20px);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) clamp(280px, 32%, 400px);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-areas: "main upload" "main controls" "main actions";
+    column-gap: clamp(16px, 2cqi, 32px);
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    padding-bottom: var(--space-2);
+}
+
+.ec-sales-main {
+    grid-area: main;
+    min-width: 0;
+    min-height: 0;
+    overflow-y: auto;
+    padding: var(--space-2) var(--space-2) var(--space-4);
+    scrollbar-gutter: stable;
+}
+
+.ec-sales-upload,
+.ec-sales-controls,
+.ec-sales-actions {
+    min-width: 0;
+    padding-inline: var(--sales-panel-padding);
+    background: var(--user-surface-muted);
+}
+
+.ec-sales-upload {
+    grid-area: upload;
+    padding-block: var(--sales-panel-padding) var(--space-3);
+    border-radius: var(--ant-border-radius-lg) var(--ant-border-radius-lg) 0 0;
+}
+
+.ec-sales-controls {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    grid-area: controls;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-block: var(--space-1) var(--sales-panel-padding);
+}
+
+.ec-sales-controls > * {
+    flex: none;
+    min-width: 0;
+}
+
+.ec-sales-facts,
+.ec-sales-model {
+    display: grid;
+    gap: var(--space-2);
+}
+
+.ec-sales-model .ant-select {
+    width: 100%;
+}
+
+.ec-sales-actions {
+    display: grid;
+    align-content: center;
+    gap: var(--space-2);
+    grid-area: actions;
+    padding-block: var(--space-3);
+    border-top: 1px solid var(--user-border);
+    border-radius: 0 0 var(--ant-border-radius-lg) var(--ant-border-radius-lg);
+}
+
+.ec-sales-actions button {
+    width: 100%;
+    min-height: 42px;
+}
+
+.ec-sales-actions [role="status"] {
+    color: var(--user-ink-muted);
+    font-size: var(--fs-ui);
+}
+
+@container ecommerce-studio (min-width: 721px) {
+    body:has(.canvas-agent-launcher:not([aria-hidden="true"])) .ec-sales-actions {
+        padding-inline-end: max(var(--sales-panel-padding), 7.5rem);
+    }
+}
+
+.ec-sales-gallery {
+    width: min(100%, 56rem);
+    min-width: 0;
+    margin-inline: auto;
+    padding: 0;
+    border: 0;
+}
+
+.ec-sales-gallery legend {
+    margin-bottom: var(--space-3);
+    padding: 0;
+    font-size: clamp(18px, 1.5cqi, 24px);
+    font-weight: 650;
+    line-height: 1.25;
+    color: var(--user-ink);
+}
+
+.ec-sales-posters {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: clamp(7px, 0.9cqi, 14px);
+}
+
+.ec-sales-poster {
+    position: relative;
+    display: grid;
+    isolation: isolate;
+    min-width: 0;
+    aspect-ratio: 8 / 5;
+    overflow: hidden;
+    border-radius: var(--ant-border-radius-lg);
+    background: var(--user-surface-muted);
+    cursor: pointer;
+}
+
+.ec-sales-poster input {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    opacity: 0;
+    cursor: inherit;
+}
+
+.ec-sales-poster img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.ec-sales-poster-caption {
+    position: absolute;
+    inset: auto 0 0;
+    display: grid;
+    gap: var(--space-half);
+    padding: var(--space-6) var(--space-3) var(--space-2);
+    background: linear-gradient(transparent, color-mix(in srgb, var(--color-neutral-950) 88%, transparent));
+    color: var(--color-neutral-0);
+}
+
+.ec-sales-poster-title {
+    font-size: var(--fs-body);
+    font-weight: 600;
+    line-height: 1.4;
+}
+
+.ec-sales-poster-mode {
+    font-size: var(--fs-caption);
+    line-height: 1.25;
+}
+
+.ec-sales-poster-check {
+    position: absolute;
+    inset: var(--space-2) var(--space-2) auto auto;
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    color: var(--color-neutral-950);
+    background: var(--color-neutral-0);
+}
+
+.ec-sales-poster:has(:checked) {
+    outline: 2px solid var(--user-ink);
+    outline-offset: 1px;
+}
+
+.ec-sales-poster:has(:focus-visible) {
+    outline: var(--focus-ring-width, 2px) solid var(--ring);
+    outline-offset: 3px;
+}
+
+.ec-sales-gallery:disabled .ec-sales-poster {
+    cursor: default;
+}
+
+@media (hover: hover) {
+    .ec-sales-gallery:enabled .ec-sales-poster:hover {
+        outline: 2px solid var(--user-ink-muted);
+        outline-offset: 1px;
+    }
+}
+
+.ec-sales-script {
+    width: min(100%, 56rem);
+    margin: var(--space-4) auto 0;
+    border-top: 1px solid var(--user-border);
+}
+
+.ec-sales-script > summary {
+    padding-block: var(--space-3);
+    color: var(--user-ink);
+    font-size: var(--fs-ui);
+    font-weight: 600;
+    cursor: pointer;
+}
+
+@container ecommerce-studio (max-width: 720px) {
+    .ec-sales-modebar {
+        padding-block: var(--space-2);
+    }
+
+    .ec-sales-layout {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-4);
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        padding: var(--space-1) var(--space-1) 0;
+    }
+
+    .ec-sales-layout > * {
+        flex: none;
+        width: 100%;
+        min-height: auto;
+    }
+
+    .ec-sales-main,
+    .ec-sales-upload,
+    .ec-sales-controls {
+        overflow: visible;
+        padding: 0;
+        background: transparent;
+    }
+
+    .ec-sales-gallery legend {
+        margin-bottom: var(--space-2);
+        font-size: var(--fs-heading);
+    }
+
+    .ec-sales-posters {
+        gap: var(--space-2);
+    }
+
+    .ec-sales-poster {
+        aspect-ratio: auto;
+        overflow: visible;
+        border-radius: var(--ant-border-radius);
+        background: transparent;
+    }
+
+    .ec-sales-poster img {
+        aspect-ratio: 3 / 2;
+        height: auto;
+        border-radius: inherit;
+    }
+
+    .ec-sales-poster-caption {
+        position: static;
+        padding: var(--space-1) var(--space-1-half);
+        color: var(--user-ink);
+        background: transparent;
+    }
+
+    .ec-sales-poster-title {
+        font-size: var(--fs-caption);
+    }
+
+    .ec-sales-poster-mode {
+        color: var(--user-ink-muted);
+        font-size: var(--fs-micro);
+    }
+
+    .ec-sales-poster-check {
+        inset: var(--space-1) var(--space-1) auto auto;
+        width: 17px;
+        height: 17px;
+    }
+
+    .ec-sales-script {
+        margin-top: var(--space-2);
+    }
+
+    .ec-sales-actions {
+        position: sticky;
+        z-index: 2;
+        bottom: 0;
+        grid-template-columns: minmax(0, 1fr) minmax(42%, auto);
+        align-items: center;
+        margin-block-start: auto;
+        padding: var(--space-2) 0 max(var(--space-2), env(safe-area-inset-bottom));
+        border-radius: 0;
+        background: var(--user-surface);
+    }
+}

@@ -7,12 +7,57 @@ payment_plugins="official-payment-wechat-native official-payment-alipay-page off
 payments_only=false
 default_payment_targets="linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64"
 
+package_plugin() {
+  package_id=$1
+  package_dir="$root_dir/$package_id"
+  output_file="$root_dir/$package_id.yingce-plugin"
+  temporary_file="$root_dir/.$package_id.yingce-plugin.tmp"
+  rm -f "$temporary_file"
+  (
+    cd "$package_dir"
+    case "$package_id" in
+    official-payment-*) ;;
+    *)
+      stage=$(mktemp -d)
+      trap 'rm -rf "$stage"' EXIT
+      mkdir "$stage/source"
+      for entry in manifest.json README.md docs assets web backend LICENSE; do
+        if [ -e "$entry" ]; then cp -R "$entry" "$stage/source/"; fi
+      done
+      cd "$stage/source"
+      # Already shipped ZIP bytes are part of a request release's identity.
+      # Retain older archives when only ZIP timestamps or toolchains differ.
+      if [ -f "$output_file" ]; then
+        unzip -qq "$output_file" -d "$stage/previous"
+        if diff -qr . "$stage/previous" >/dev/null; then exit 0; fi
+        if node -e 'process.exit(require("./manifest.json").version === require(process.argv[1]).version ? 0 : 1)' "$stage/previous/manifest.json"; then
+          echo "changed request package $package_id must use a new version" >&2
+          exit 1
+        fi
+      fi
+      export TZ=UTC
+      find . -type f -exec chmod 644 {} + -exec touch -t 200001010000 {} +
+      ;;
+    esac
+    find manifest.json README.md docs assets web backend LICENSE -type f 2>/dev/null | LC_ALL=C sort | zip -X -q "$temporary_file" -@
+  )
+  if [ -f "$temporary_file" ]; then mv "$temporary_file" "$output_file"; fi
+}
+
+if [ "${1:-}" = "--protocol" ] && [ "$#" -eq 2 ]; then
+  case "$2" in ''|*[!a-z0-9-]*|official-payment-*) exit 2 ;; esac
+  [ -f "$root_dir/$2/manifest.json" ]
+  node "$root_dir/embed-documentation.mjs" "$2"
+  package_plugin "$2"
+  exit 0
+fi
+
 if [ "${1:-}" = "--payments-only" ]; then
   payments_only=true
   shift
 fi
 if [ "$#" -ne 0 ]; then
-  echo "usage: $0 [--payments-only]" >&2
+  echo "usage: $0 [--payments-only | --protocol ID]" >&2
   exit 2
 fi
 
@@ -121,19 +166,6 @@ for target in $payment_targets; do
   build_payment_provider official-payment-zhifufm ./cmd/payment-zhifufm "$target_goos" "$target_goarch"
   build_payment_provider official-payment-epay ./cmd/payment-epay "$target_goos" "$target_goarch"
 done
-
-package_plugin() {
-  package_id=$1
-  package_dir="$root_dir/$package_id"
-  output_file="$root_dir/$package_id.yingce-plugin"
-  temporary_file="$root_dir/.$package_id.yingce-plugin.tmp"
-  rm -f "$temporary_file"
-  (
-    cd "$package_dir"
-    find manifest.json README.md docs assets web backend LICENSE -type f 2>/dev/null | LC_ALL=C sort | zip -X -q "$temporary_file" -@
-  )
-  mv "$temporary_file" "$output_file"
-}
 
 if [ "$payments_only" = true ]; then
   for payment_plugin in $payment_plugins; do

@@ -1,4 +1,4 @@
-import { hasSkillLibraryAccess } from "@/lib/skill-access";
+import { hasSkillLibraryAccess, hasSkillManagementAccess } from "@/lib/skill-access";
 import { http } from "@/services/api/request";
 
 export type EcommerceReferenceRole = "primary" | "detail" | "sku" | "style" | "logo" | "package" | "competitor" | "model";
@@ -39,6 +39,7 @@ export type EcommerceDraft = {
     description: string;
     claims: string;
     materials: string;
+    productFacts?: string[];
     colors: string;
     specifications: string;
     packaging: string;
@@ -220,7 +221,13 @@ export function normalizeEcommerceReferenceGroups(draft: EcommerceDraft): Ecomme
     const references = Array.isArray(draft.references) ? draft.references : [];
     const isLayout = (reference: EcommerceReference) => reference.role === "style" || reference.role === "competitor";
     const layoutReferences = Array.isArray(draft.layoutReferences) ? draft.layoutReferences : references.filter(isLayout);
-    return { ...draft, skillIds: hasSkillLibraryAccess() ? draft.skillIds : [], references: references.filter((reference) => !isLayout(reference)), layoutReferences: layoutReferences.filter(isLayout) };
+    return {
+        ...draft,
+        skillIds: hasSkillLibraryAccess() && Array.isArray(draft.skillIds) ? draft.skillIds : [],
+        skus: Array.isArray(draft.skus) ? draft.skus : [],
+        references: references.filter((reference) => !isLayout(reference)),
+        layoutReferences: layoutReferences.filter(isLayout),
+    };
 }
 
 export function projectDraft(project: EcommerceProject): EcommerceDraft {
@@ -282,7 +289,7 @@ export function patchEcommerceRoundImage(projectId: string, roundId: string, ima
 }
 
 export function getEcommerceSkillPrompt(skillIds: string[]) {
-    if (!hasSkillLibraryAccess() || !skillIds.length) return Promise.resolve("");
+    if (!hasSkillManagementAccess() || !skillIds.length) return Promise.resolve("");
     return http.post<{ prompt: string }>("/ecommerce/skills/prompt", { skillIds }).then(({ prompt }) => prompt);
 }
 

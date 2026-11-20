@@ -1,0 +1,176 @@
+.ec-video-prep-guide {
+    min-width: 0;
+    max-width: 40rem;
+}
+.ec-example-heading,
+.ec-example-variation {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+}
+.ec-example-heading h3,
+.ec-video-example h4,
+.ec-example-player p {
+    margin: 0;
+}
+.ec-example-heading h3 {
+    color: var(--user-ink);
+    font-size: var(--fs-body);
+    font-weight: 650;
+}
+.ec-example-source,
+.ec-example-film,
+.ec-example-apply {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--user-ink);
+    cursor: pointer;
+}
+.ec-example-source {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-height: 30px;
+    font-size: var(--fs-caption);
+    color: var(--user-ink-muted);
+    white-space: nowrap;
+}
+.ec-example-source:hover,
+.ec-example-film:hover .ec-example-caption {
+    color: var(--user-ink);
+    text-decoration: underline;
+}
+.ec-video-examples {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+    gap: var(--space-4);
+    margin-block-start: var(--space-2);
+}
+.ec-video-example {
+    display: grid;
+    align-content: start;
+    gap: var(--space-2);
+    min-width: 0;
+}
+.ec-video-example h4 {
+    color: var(--user-ink);
+    font-size: var(--fs-ui);
+    font-weight: 550;
+}
+.ec-example-film {
+    display: grid;
+    gap: var(--space-2);
+    min-width: 0;
+    text-align: start;
+}
+.ec-example-frames {
+    position: relative;
+    display: grid;
+    grid-template-columns: 1.4fr 1fr 1fr;
+    gap: 2px;
+    aspect-ratio: 2.45;
+    overflow: hidden;
+    border-radius: var(--r-md);
+}
+.ec-example-frames img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    object-fit: cover;
+}
+.ec-example-play {
+    position: absolute;
+    inset-inline-start: var(--space-2);
+    inset-block-end: var(--space-2);
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: 2px 6px;
+    border-radius: var(--r-sm);
+    background: color-mix(in srgb, var(--color-neutral-950) 78%, transparent);
+    color: var(--color-neutral-0);
+    font-size: var(--fs-caption);
+    font-variant-numeric: tabular-nums;
+}
+.ec-example-caption,
+.ec-example-player p,
+.ec-example-original {
+    color: var(--user-ink-muted);
+    font-size: var(--fs-caption);
+    line-height: var(--lh-body);
+}
+.ec-example-apply {
+    display: inline-flex;
+    align-items: center;
+    justify-self: start;
+    gap: var(--space-1);
+    padding-inline: var(--space-2);
+    min-height: 32px;
+    border-radius: var(--user-radius-control);
+    box-shadow: inset 0 0 0 1px var(--user-border);
+    font-size: var(--fs-caption);
+}
+.ec-example-apply[aria-pressed="true"] {
+    color: var(--control-selected-fg);
+    background: var(--control-selected-bg);
+    box-shadow: inset 0 0 0 1px var(--control-selected-border);
+}
+.ec-example-apply:disabled {
+    color: var(--user-ink-soft);
+    cursor: not-allowed;
+}
+.ec-example-player {
+    display: grid;
+    justify-items: center;
+    gap: var(--space-2);
+}
+.ec-example-player video {
+    display: block;
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: 62dvh;
+    border-radius: var(--r-md);
+}
+.ec-example-original {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin: 0;
+}
+.ec-example-original img {
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: var(--r-sm);
+    object-fit: contain;
+}
+@container ecommerce-studio (max-width: 720px) {
+    .ec-video-examples {
+        grid-template-columns: minmax(0, 1fr);
+        gap: var(--space-3);
+    }
+    .ec-example-film {
+        grid-template-columns: 6rem minmax(0, 1fr);
+        align-items: center;
+        gap: var(--space-3);
+    }
+    .ec-example-frames {
+        grid-template-columns: 1fr;
+        aspect-ratio: 1.6;
+    }
+    .ec-example-frames img:not(:first-child) {
+        display: none;
+    }
+    .ec-example-play {
+        inset-inline-start: var(--space-1);
+        inset-block-end: var(--space-1);
+    }
+    .ec-example-apply,
+    .ec-example-source {
+        min-height: 44px;
+    }
+}

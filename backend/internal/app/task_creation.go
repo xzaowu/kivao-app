@@ -48,18 +48,41 @@ func (s *Service) CreateTask(userID string, req CreateTaskRequest) (*model.Task,
 	if err := s.requireTaskGenerationFeatures(userID, req.ProjectID, taskType, req.Operation, req.workbenchKind, normalizedInput); err != nil {
 		return nil, err
 	}
+	tryOn, err := tryOnTaskIdentity(userID, req, normalizedInput)
+	if err != nil {
+		return nil, err
+	}
+	if tryOn != nil {
+		existing, err := s.repo.TryOnSubmittedTask(*tryOn)
+		if err != nil {
+			return nil, tryOnSubmissionError(err)
+		}
+		if existing != nil {
+			return taskForOutput(*existing), nil
+		}
+	}
+	if err := s.prepareEcommerceVideoVersion(userID, req, normalizedInput); err != nil {
+		return nil, err
+	}
+	if err := s.prepareProductVideoImage(userID, req, normalizedInput); err != nil {
+		return nil, err
+	}
 	prompt, err = s.prepareEcommerceWorkbenchTask(userID, normalizedInput, prompt)
 	if err != nil {
 		return nil, err
 	}
 	if metadata, ok := normalizedInput["metadata"].(map[string]any); ok && stringValue(metadata["source"]) == "ecommerce-agent" {
 		stage := stringValue(metadata["stage"])
-		if stage == "planning" || stage == "creative-directions" || stage == "product-understanding" {
+		if stage == ecommerceVideoStoryboardStage && !taskInputUsesSystemChannel(normalizedInput) && (strings.TrimSpace(req.LogicalModelID) == "" || taskInputUsesCustomChannel(normalizedInput) || taskInputUsesWorkflowProvider(normalizedInput)) {
+			return nil, InvalidModelSelection("商品视频分镜策划需要后台指定的系统模型")
+		}
+		planning := stage == "planning" || stage == ecommerceVideoStoryboardStage
+		if planning || stage == "creative-directions" || stage == "product-understanding" {
 			setting, settingErr := s.EcommerceAgentSetting()
 			if settingErr != nil {
 				return nil, settingErr
 			}
-			if stage == "planning" {
+			if planning {
 				if !ecommerceTaskUsesModel(setting.planningRef(), req.LogicalModelID, normalizedInput) {
 					return nil, InvalidModelSelection("电商 Agent 策划模型已由管理员更新，请刷新页面后重试")
 				}
@@ -68,7 +91,7 @@ func (s *Service) CreateTask(userID string, req CreateTaskRequest) (*model.Task,
 			}
 			// 工作台走通用任务队列，阶段思考意图同模型一样由后台配置决定，不能信任客户端覆盖。
 			thinking := setting.VisionThinkingLevel
-			if stage == "planning" {
+			if planning {
 				thinking = setting.ThinkingLevel
 			}
 			options, _ := normalizedInput["textOptions"].(map[string]any)
@@ -109,6 +132,10 @@ func (s *Service) CreateTask(userID string, req CreateTaskRequest) (*model.Task,
 		if _, err := s.ResolveToolMentionTokens(userID, toolMode, inputPrompt); err != nil {
 			return nil, err
 		}
+	}
+
+	if err := s.validateTaskSkills(userID, normalizedInput); err != nil {
+		return nil, err
 	}
 
 	var routed *RoutedModel
@@ -181,6 +208,14 @@ func (s *Service) CreateTask(userID string, req CreateTaskRequest) (*model.Task,
 		workbenchKind = workbenchKindFromTaskInput(normalizedInput, taskType)
 	}
 	task := model.Task{ID: newID(), UserID: userID, TraceID: req.TraceID, RequestID: req.RequestID, ProjectID: req.ProjectID, Type: taskType, WorkbenchKind: workbenchKind, Status: model.TaskStatusQueued, Stage: "等待队列调度", Progress: 5, Prompt: prompt, Operation: req.Operation, Provider: req.Provider, Model: req.Model}
+	var selected *model.ChannelModel
+	if routed != nil {
+		selected = &routed.ChannelModel
+	}
+	task.ProtocolBindingJSON, err = s.captureTaskProtocolBinding(normalizedInput, selected)
+	if err != nil {
+		return nil, err
+	}
 	if req.admission != nil {
 		task.ID = req.admission.ID
 		task.AgentRunID = req.admission.AgentRunID
@@ -223,6 +258,9 @@ func (s *Service) CreateTask(userID string, req CreateTaskRequest) (*model.Task,
 	if err != nil {
 		return nil, err
 	}
+	if err := applyEcommerceVideoQuote(normalizedInput, &task, billingOrder); err != nil {
+		return nil, err
+	}
 	if req.admission != nil && billingOrder != nil {
 		if billingOrder.AmountMicrocredits > req.admission.MaxCharge {
 			return nil, BadAuthRequest("模型调用报价超过本轮 Agent 积分上限，尚未创建任务或扣费")
@@ -256,7 +294,15 @@ func (s *Service) CreateTask(userID string, req CreateTaskRequest) (*model.Task,
 	if billingOrder != nil {
 		task.BillingOrderID = billingOrder.ID
 	}
-	err = s.createTaskWithinStorageQuota(&task, billingOrder, policy)
+	if tryOn != nil {
+		existing, submitErr := s.createTryOnTask(*tryOn, &task, billingOrder, policy)
+		if existing != nil {
+			return taskForOutput(*existing), nil
+		}
+		err = submitErr
+	} else {
+		err = s.createTaskWithinStorageQuota(&task, billingOrder, policy)
+	}
 	if errors.Is(err, repository.ErrActiveTaskLimit) {
 		return nil, BadAuthRequest(fmt.Sprintf("同时排队或运行的任务最多 %d 个，请等待已有任务完成", policy.Task.ActiveTaskLimit))
 	}
@@ -282,8 +328,44 @@ func (s *Service) CreateTask(userID string, req CreateTaskRequest) (*model.Task,
 // Client metadata can request a stricter gate, but cannot grant an exemption.
 func (s *Service) requireTaskGenerationFeatures(userID, projectID, taskType, operation, workbenchKind string, input map[string]any) error {
 	metadata, _ := input["metadata"].(map[string]any)
+	tryOnFunction := ""
+	if stringValue(metadata["source"]) == "ecommerce-tryon" {
+		tryOnFunction = stringValue(metadata["tryonFunction"])
+		if err := s.RequireEcommerceTryOn(userID, tryOnFunction); err != nil {
+			return err
+		}
+		if err := s.RequireFeature(FeatureImageWorkbench); err != nil {
+			return err
+		}
+	} else if wb, ok := metadata["workbench"].(map[string]any); ok {
+		batch, _ := wb["batch"].(map[string]any)
+		tryOnFunction = tryOnFunctionFromBatchID(stringValue(batch["id"]))
+		if tryOnFunction != "" {
+			if err := s.RequireEcommerceTryOn(userID, tryOnFunction); err != nil {
+				return err
+			}
+		}
+	}
 	ecommerceID := strings.TrimSpace(stringValue(metadata["ecommerceProjectId"]))
-	ecommerce := false
+	videoStoryboard := stringValue(metadata["stage"]) == ecommerceVideoStoryboardStage
+	videoClaims := metadata["productVideoClaims"] == true
+	if videoClaims && (metadata["source"] != "ecommerce-agent" || metadata["stage"] != "product-understanding" || ecommerceID == "" || ecommerceID != projectID || taskType != "canvas_text" || input["mode"] != "text") {
+		return BadAuthRequest("商品卖点分析必须是当前商品项目的识图任务")
+	}
+	videoImage := ecommerceVideoImageStage(metadata["stage"])
+	if videoImage {
+		requiredOperation := "image_to_image"
+		if metadata["stage"] == ecommerceVideoCastingStage {
+			requiredOperation = "text_to_image"
+		}
+		if metadata["source"] != "ecommerce-agent" || ecommerceID == "" || ecommerceID != projectID || taskType != "canvas_image" || input["mode"] != "image" || operation != requiredOperation {
+			return BadAuthRequest("模特及同框图需要当前商品项目中对应的图片生成任务")
+		}
+	}
+	if videoStoryboard && (stringValue(metadata["source"]) != "ecommerce-agent" || ecommerceID == "" || ecommerceID != strings.TrimSpace(projectID) || taskType != "canvas_text" || stringValue(input["mode"]) != "text") {
+		return BadAuthRequest("商品视频分镜策划必须是当前电商项目的文本任务")
+	}
+	ecommerce := tryOnFunction != ""
 	if ecommerceID != "" {
 		if _, err := s.repo.EcommerceProject(userID, ecommerceID); err != nil {
 			return NotFound("电商项目不存在")
@@ -313,7 +395,12 @@ func (s *Service) requireTaskGenerationFeatures(userID, projectID, taskType, ope
 	}
 	// The provider dispatches by mode; type and persisted kind are additional
 	// evidence so a mismatched public request cannot weaken media admission.
-	if isVideoTaskType(taskType) || stringValue(input["mode"]) == "video" || workbenchKind == WorkbenchKindVideo {
+	if videoImage {
+		if err := s.RequireFeature(FeatureImageWorkbench); err != nil {
+			return err
+		}
+	}
+	if videoStoryboard || videoClaims || videoImage || isVideoTaskType(taskType) || stringValue(input["mode"]) == "video" || workbenchKind == WorkbenchKindVideo {
 		if ecommerce {
 			if err := s.RequireFeature(FeatureEcommerceVideo); err != nil {
 				return err
@@ -407,6 +494,7 @@ func applyRoutedProviderSelection(input map[string]any, routed *RoutedModel) map
 	// interfaceType；缺失会让依赖协议的尺寸换算（比例 → 像素）静默跳过，把 16:9 这类比例
 	// 原样发给只认 WIDTHxHEIGHT 的上游（OpenAI Images 直接拒绝）。
 	nextConfig["interfaceType"] = string(routed.ChannelModel.Protocol)
+	nextConfig["protocolRelease"], nextConfig["priceRevision"], nextConfig["profileRevision"] = routed.ChannelModel.ProtocolRelease, routed.ChannelModel.PriceVersion, routed.ChannelModel.CapabilityVersion
 	providerModelKey := routed.ChannelModel.ProviderModelKey
 	if routed.PriceTier != nil {
 		nextConfig["priceTierId"] = routed.PriceTier.ID
@@ -733,6 +821,7 @@ func (s *Service) resolveSystemChannelModelSelection(access *userGroupAccess, in
 	nextConfig["priceTierId"] = priceTier.ID
 	nextConfig["providerModelKey"] = firstNonEmpty(priceTier.ProviderModelKey, channelModel.ProviderModelKey, channelModel.ModelKey)
 	nextConfig["interfaceType"] = string(channelModel.Protocol)
+	nextConfig["protocolRelease"], nextConfig["priceRevision"], nextConfig["profileRevision"] = channelModel.ProtocolRelease, channelModel.PriceVersion, channelModel.CapabilityVersion
 	nextConfig["apiFormat"] = channelAPIFormatForProtocol(channel.APIFormat, channelModel.Protocol)
 	return input, nil
 }

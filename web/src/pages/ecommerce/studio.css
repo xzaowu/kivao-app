@@ -3232,6 +3232,11 @@ html:not(.dark) .commerce-platform-logo[data-monochrome="true"] {
     font-size: 10px;
 }
 
+.commerce-hint,
+.commerce-hint .ant-tooltip-container,
+.commerce-hint .ant-tooltip-content {
+    pointer-events: none;
+}
 .commerce-hint .ant-tooltip-inner {
     max-width: 260px;
     font-size: 11px;

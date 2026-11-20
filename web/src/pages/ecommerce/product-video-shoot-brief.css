@@ -1,0 +1,118 @@
+.ec-shoot-brief {
+    min-width: 0;
+    padding-block: var(--space-2);
+    border-block-end: 1px solid var(--user-border);
+}
+.ec-shoot-brief > summary {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: 36px;
+    list-style: none;
+    cursor: pointer;
+}
+.ec-shoot-brief > summary::-webkit-details-marker {
+    display: none;
+}
+.ec-shoot-brief > summary > svg {
+    flex: none;
+}
+.ec-shoot-brief:not([open]) > summary > svg {
+    transform: rotate(-90deg);
+}
+.ec-shoot-brief > summary > strong {
+    flex: none;
+}
+.ec-shoot-brief > summary > small {
+    color: var(--user-ink-soft);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.ec-shoot-brief-assist {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    margin-inline-start: auto;
+    flex: none;
+    font-size: var(--fs-caption);
+    color: var(--user-ink-soft);
+}
+.ec-shoot-brief-fields {
+    display: grid;
+    gap: var(--space-3);
+    padding-block: var(--space-2);
+}
+.ec-shoot-brief-field {
+    display: grid;
+    gap: var(--space-1);
+}
+.ec-shoot-brief-tools {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+}
+.ec-shoot-brief-hint {
+    color: var(--user-ink-soft);
+}
+.ec-shoot-brief-hint:empty {
+    display: none;
+}
+.ec-shoot-brief-suggestion {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-1);
+    justify-self: start;
+    max-width: 100%;
+    min-height: 32px;
+    padding: var(--space-1) 0;
+    text-align: start;
+    border: 0;
+    background: transparent;
+    color: var(--user-ink-soft);
+    font: inherit;
+    cursor: pointer;
+}
+.ec-shoot-brief-suggestion svg {
+    flex: none;
+    align-self: center;
+}
+.ec-shoot-brief-suggestion strong {
+    margin-inline-end: var(--space-1);
+    font-weight: 600;
+}
+.ec-shoot-brief-suggestion span {
+    overflow-wrap: anywhere;
+}
+.ec-shoot-brief-suggestion:hover,
+.ec-shoot-brief-suggestion:focus-visible {
+    color: var(--user-ink);
+}
+@media (pointer: coarse) {
+    .ec-shoot-brief-suggestion,
+    .ec-shoot-brief-tools button {
+        min-height: 48px;
+    }
+    .ec-shoot-brief-field input {
+        font-size: max(1rem, 1em);
+    }
+}
+.ec-video-shoot-review dl {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    align-items: start;
+    gap: var(--space-2);
+    padding-block: var(--space-2);
+    margin: 0;
+}
+.ec-video-shoot-review dt {
+    color: var(--user-ink-soft);
+}
+.ec-video-shoot-review dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+.ec-video-shoot-prompt {
+    white-space: pre-line;
+}

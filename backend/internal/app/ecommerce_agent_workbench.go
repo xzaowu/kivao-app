@@ -492,6 +492,31 @@ func (s *Service) prepareEcommerceWorkbenchTask(userID string, input map[string]
 		return prompt, nil
 	}
 	stage := stringValue(metadata["stage"])
+	if metadata["productVideoClaims"] == true {
+		images, _ := input["referenceImages"].([]any)
+		if len(images) < 1 || len(images) > 3 {
+			return "", BadAuthRequest("商品卖点分析需要 1 至 3 张商品参考图")
+		}
+		for _, key := range []string{"referenceVideos", "referenceAudios"} {
+			if raw := input[key]; raw != nil {
+				if refs, ok := raw.([]any); !ok || len(refs) != 0 {
+					return "", BadAuthRequest("商品卖点分析只接受商品图片")
+				}
+			}
+		}
+		seen := map[string]bool{}
+		for _, raw := range images {
+			image, _ := raw.(map[string]any)
+			id := stringValue(image["id"])
+			if id == "" || seen[id] {
+				return "", BadAuthRequest("商品卖点分析需要不同的商品图片")
+			}
+			if _, err := s.ecommerceVideoInputResource(userID, image, id, "image"); err != nil {
+				return "", err
+			}
+			seen[id] = true
+		}
+	}
 	// The workbench sends directions as a one-line request and reads back
 	// {recommendationId, directions}; only this adapter writes that contract.
 	// The task runs on its own routed model and charge, so AI_MODE (the

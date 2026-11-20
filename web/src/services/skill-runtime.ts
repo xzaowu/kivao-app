@@ -1,6 +1,6 @@
-import { captureSkillLibraryAccess, isSkillLibraryAccessCurrent } from "@/lib/skill-access";
+import { hasSkillManagementAccess, captureSkillLibraryAccess, isSkillLibraryAccessCurrent } from "@/lib/skill-access";
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
-import { getSkillFile, listSkillFiles, type Skill, type SkillPackageFile } from "@/services/api/skills";
+import { skillNameReference, getSkillFile, listSkillFiles, type Skill, type SkillPackageFile } from "@/services/api/skills";
 
 export type SkillRuntimeProfile = "canvas" | "creation" | "shortDrama" | "director";
 export type SkillRuntimeDelivery = "linked-context";
@@ -41,6 +41,7 @@ export type SkillRuntimeMetadata = {
     skillIds?: string[];
     skillVersions?: SkillRuntimeVersion[];
     skillFiles?: SkillRuntimeFile[];
+    skillContextDelivery?: "server";
 };
 
 export type LinkedSkillRuntimeResult = {
@@ -169,6 +170,12 @@ export const skillRuntime = {
     async prepare<P extends keyof SkillRuntimeResultByProfile>(input: PrepareSkillRuntimeInput<P>): Promise<SkillRuntimeResultByProfile[P]> {
         const access = captureSkillLibraryAccess();
         if (!access) return linkedResult(input.prompt, [], EMPTY_PROVENANCE);
+        if (!hasSkillManagementAccess()) {
+            const selectedSkills = resolveSkillMentions(input.prompt, input.skills, input.selectedSkillIds).slice(0, SKILL_RUNTIME_PROFILES[input.profile].maxSkills).map(skillNameReference);
+            const result = linkedResult(normalizeSkillTokens(input.prompt, input.skills), selectedSkills, { skillIds: selectedSkills.map((skill) => skill.skillId), skillVersions: [], skillFiles: [] });
+            if (selectedSkills.length) result.metadata.skillContextDelivery = "server";
+            return result;
+        }
         const result = await administratorSkillRuntime.prepare(input);
         return isSkillLibraryAccessCurrent(access) ? result : linkedResult(input.prompt, [], EMPTY_PROVENANCE);
     },

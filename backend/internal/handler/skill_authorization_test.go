@@ -85,7 +85,6 @@ func TestSkillRoutesRejectNonAdminsBeforeReadingInput(t *testing.T) {
 		"PUT /api/skills/:id/files":                false,
 		"POST /api/skills/:id/sync":                false,
 		"GET /api/admin/skills":                    false,
-		"GET /api/skills/curation":                 false,
 		"GET /api/skills/presets":                  false,
 		"GET /api/agent/skills/usage":              false,
 		"POST /api/ecommerce/skills/prompt":        false,
@@ -105,6 +104,9 @@ func TestSkillRoutesRejectNonAdminsBeforeReadingInput(t *testing.T) {
 			status int
 		}{{"", http.StatusUnauthorized}, {"skill-member", http.StatusForbidden}} {
 			t.Run(key+"/"+actor.id, func(t *testing.T) {
+				if actor.id == "skill-member" && skillUseRoute(route.Method, route.Path) {
+					return
+				}
 				probe := &skillBodyReadProbe{}
 				out := skillAuthorizationRequest(router, route.Method, target, actor.id, probe)
 				if out.Code != actor.status {
@@ -146,7 +148,7 @@ func TestSkillRoutesAllowAdminAndRejectSameSessionAfterDemotion(t *testing.T) {
 	}
 }
 
-func TestAgentCapabilitiesDoNotAdvertiseSkillToolsToMembers(t *testing.T) {
+func TestAgentCapabilitiesAdvertiseSkillUseToActiveMembers(t *testing.T) {
 	router, _ := skillAuthorizationFixture(t)
 	for _, actor := range []string{"skill-admin", "skill-member"} {
 		out := skillAuthorizationRequest(router, http.MethodGet, "/api/agent/capabilities", actor, nil)
@@ -162,8 +164,8 @@ func TestAgentCapabilitiesDoNotAdvertiseSkillToolsToMembers(t *testing.T) {
 		if err := json.Unmarshal(out.Body.Bytes(), &result); err != nil {
 			t.Fatal(err)
 		}
-		admin := actor == "skill-admin"
-		if result.Data.Skills != admin || len(result.Data.Tools) == 0 {
+		allowed := true
+		if result.Data.Skills != allowed || len(result.Data.Tools) == 0 {
 			t.Fatalf("unexpected agent capabilities: %#v", result.Data)
 		}
 		foundSkill := false
@@ -172,8 +174,57 @@ func TestAgentCapabilitiesDoNotAdvertiseSkillToolsToMembers(t *testing.T) {
 				foundSkill = true
 			}
 		}
-		if foundSkill != admin {
+		if foundSkill != allowed {
 			t.Fatalf("skill tools for %s: %v", actor, result.Data.Tools)
 		}
+	}
+}
+
+func TestSkillMemberHTTPNamesOnlyAndUploadClosed(t *testing.T) {
+	router, db := skillAuthorizationFixture(t)
+	if err := db.AutoMigrate(&model.Skill{}, &model.UserSkillState{}, &model.SkillLibraryCategory{}, &model.SkillCurationSetting{}, &model.SkillCurationRoot{}, &model.SkillCurationRootAssignment{}, &model.SkillCurationCategory{}, &model.SkillCurationAssignment{}); err != nil {
+		t.Fatal(err)
+	}
+	skill := model.Skill{ID: "public-method", OwnerID: "skill-admin", Name: "商品策划", Status: 1, Description: "PRIVATE_DESCRIPTION", Instruction: "PRIVATE_SKILL_BODY", SourceURL: "https://private.example/internal", Tag: "others", InitialLikeCount: 3, InitialAddedCount: 4}
+	if err := db.Create(&skill).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, request := range []struct{ method, path, body string }{
+		{"GET", "/api/skills", ""}, {"GET", "/api/skills/public-method", ""},
+		{"POST", "/api/skills/public-method/add", ""}, {"POST", "/api/skills/public-method/like", ""},
+		{"GET", "/api/skills/added", ""}, {"PATCH", "/api/skills/public-method/agent-mode", `{"mode":"manual"}`},
+	} {
+		out := skillAuthorizationRequest(router, request.method, request.path, "skill-member", strings.NewReader(request.body))
+		if out.Code != http.StatusOK || !strings.Contains(out.Body.String(), "商品策划") {
+			t.Fatalf("member use %s %s: %d %s", request.method, request.path, out.Code, out.Body.String())
+		}
+		if request.path == "/api/skills/public-method" {
+			var result struct {
+				Data struct {
+					Skill service.SkillItem `json:"skill"`
+				} `json:"data"`
+			}
+			if err := json.Unmarshal(out.Body.Bytes(), &result); err != nil {
+				t.Fatal(err)
+			}
+			if result.Data.Skill.Tag != "others" || result.Data.Skill.LikeCount != 3 || result.Data.Skill.AddedCount != 4 {
+				t.Fatalf("public metadata missing: %#v", result.Data.Skill)
+			}
+		}
+		for _, hidden := range []string{"PRIVATE_DESCRIPTION", "PRIVATE_SKILL_BODY", "private.example"} {
+			if strings.Contains(out.Body.String(), hidden) {
+				t.Fatalf("member response leaked %s", hidden)
+			}
+		}
+	}
+	for _, target := range []string{"/api/skills/public-method/files", "/api/skills/public-method/file?path=SKILL.md", "/api/skills/public-method/file/raw?path=SKILL.md", "/api/skills/public-method/bundle", "/api/skills/public-method/search?q=PRIVATE"} {
+		out := skillAuthorizationRequest(router, "GET", target, "skill-member", nil)
+		if out.Code != http.StatusForbidden {
+			t.Fatalf("content reader open: %s %d", target, out.Code)
+		}
+	}
+	admin := skillAuthorizationRequest(router, "GET", "/api/skills/public-method", "skill-admin", nil)
+	if admin.Code != http.StatusOK || !strings.Contains(admin.Body.String(), "PRIVATE_SKILL_BODY") {
+		t.Fatal("admin lost source visibility")
 	}
 }

@@ -87,7 +87,7 @@ H3 固定输出带声音的 MP4（H.264 + AAC，24帧/秒），没有 `params.au
   "apiVersion": "yingce.plugin/v2",
   "id": "wenew-h3-video",
   "name": "WeNew API H3 Video",
-  "version": "1.0.0",
+  "version": "1.0.1-kivao.1",
   "author": "WeNew API / 影策",
   "description": "适配 WeNew API MiniMax H3 视频任务接口的声明式协议插件。",
   "permissions": [
@@ -108,6 +108,10 @@ H3 固定输出带声音的 MP4（H.264 + AAC，24帧/秒），没有 `params.au
     "providers": [
       {
         "id": "wenew-h3-video",
+        "videoReferences": {
+          "layout": "inputs-images",
+          "token": "<Picture {n}>"
+        },
         "label": "WeNew API H3 Video",
         "capabilities": [
           "video"

@@ -1,0 +1,408 @@
+.ec-video-planner {
+    display: grid;
+    gap: var(--space-3);
+    min-width: 0;
+    margin: 0;
+}
+.ec-video-planner-head h2 {
+    font-size: clamp(18px, 1.6vw, 24px);
+    line-height: 1.3;
+}
+.ec-video-planner .app-segmented {
+    justify-self: start;
+    max-width: 100%;
+}
+.ec-video-approaches {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: clamp(6px, 1vw, 14px);
+}
+.ec-video-approaches label {
+    position: relative;
+    display: grid;
+    align-content: start;
+    overflow: hidden;
+    cursor: pointer;
+    color: var(--user-ink);
+    background: var(--user-surface);
+    border: 1px solid var(--user-border);
+    border-radius: var(--ant-border-radius-lg);
+}
+.ec-video-approaches input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+}
+.ec-video-approaches label:has(:checked) {
+    border-color: var(--user-ink);
+    box-shadow: 0 0 0 1px var(--user-ink);
+}
+.ec-video-approaches label:has(:focus-visible) {
+    outline: 2px solid var(--ring);
+    outline-offset: 3px;
+}
+.ec-video-approaches label:has(:disabled) {
+    cursor: default;
+}
+.ec-video-approaches img {
+    display: block;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 8 / 5;
+    object-fit: cover;
+}
+.ec-video-card-title {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 4px;
+    min-height: 38px;
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--fs-ui);
+    line-height: 1.3;
+}
+.ec-video-choice-mark {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 17px;
+    height: 17px;
+    border-radius: 50%;
+    border: 1px solid var(--user-border);
+}
+.ec-video-approaches label:has(:checked) .ec-video-choice-mark {
+    background: var(--user-ink);
+    color: var(--user-surface);
+    border-color: transparent;
+}
+@media (hover: hover) {
+    .ec-video-approaches label:has(:enabled):hover {
+        border-color: var(--user-ink-soft);
+    }
+    .ec-shot-timeline button:hover,
+    .ec-shot-deck-head button:hover {
+        background: var(--user-surface-hover);
+    }
+}
+.ec-shot-deck {
+    display: grid;
+    gap: var(--space-3);
+    padding: clamp(12px, 1.5vw, 22px);
+    min-width: 0;
+    border: 1px solid var(--user-border);
+    border-radius: var(--ant-border-radius-lg);
+    background: var(--user-surface);
+}
+.ec-shot-deck-head,
+.ec-shot-deck-head > div,
+.ec-shot-deck-head button,
+.ec-shot-notes > strong {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+.ec-shot-deck-head {
+    justify-content: space-between;
+}
+.ec-shot-deck-head h3,
+.ec-shot-notes p {
+    margin: 0;
+}
+.ec-shot-deck-head h3 {
+    color: var(--user-ink);
+    font-size: var(--fs-body);
+    font-weight: 650;
+}
+.ec-shot-deck-head button {
+    border: 1px solid var(--user-border);
+    border-radius: var(--ant-border-radius);
+    padding: 5px 9px;
+    min-height: 32px;
+    font-size: var(--fs-caption);
+    color: var(--user-ink);
+}
+.ec-shot-content {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+    align-items: center;
+    gap: clamp(10px, 1.6vw, 24px);
+}
+.ec-shot-monitor {
+    position: relative;
+    overflow: hidden;
+    display: grid;
+    place-items: center;
+    margin: 0;
+    width: 100%;
+    aspect-ratio: 8 / 5;
+    background: var(--user-surface-muted);
+    color: var(--user-ink-muted);
+    border-radius: var(--ant-border-radius);
+}
+.ec-shot-monitor > img,
+.ec-shot-monitor > .cached-resource-image-shell,
+.ec-shot-monitor .cached-resource-image-shell img {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    object-fit: cover;
+}
+.ec-shot-monitor .cached-resource-image-shell img {
+    object-fit: contain;
+}
+.ec-shot-monitor figcaption {
+    position: absolute;
+    inset: auto auto 7px 7px;
+    padding: 3px 7px;
+    border-radius: var(--ant-border-radius-sm);
+    background: rgb(20 17 13 / 76%);
+    color: white;
+    font-size: var(--fs-caption);
+    line-height: 1.45;
+}
+.ec-shot-notes {
+    display: grid;
+    gap: var(--space-2);
+    min-width: 0;
+}
+.ec-shot-notes > strong {
+    flex-wrap: wrap;
+    color: var(--user-ink);
+    font-size: var(--fs-heading);
+}
+.ec-shot-notes > strong span {
+    font-weight: 450;
+    font-size: var(--fs-caption);
+    color: var(--user-ink-muted);
+    font-variant-numeric: tabular-nums;
+}
+.ec-shot-notes p {
+    color: var(--user-ink);
+    line-height: 1.65;
+    font-size: var(--fs-ui);
+    overflow-wrap: anywhere;
+}
+.ec-shot-timeline {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+}
+.ec-shot-timeline button {
+    display: flex;
+    flex-wrap: wrap;
+    align-content: center;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0 4px;
+    min-height: 42px;
+    padding: 4px var(--space-2);
+    border-top: 3px solid var(--user-border);
+    color: var(--user-ink-muted);
+    font-size: var(--fs-ui);
+    text-align: start;
+}
+.ec-shot-timeline button[aria-pressed="true"] {
+    border-color: var(--user-ink);
+    color: var(--user-ink);
+    background: var(--user-surface-muted);
+}
+.ec-shot-timeline small {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+.ec-board-strip {
+    gap: clamp(4px, 1vw, 12px);
+    align-items: stretch;
+}
+.ec-board-strip button {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-content: start;
+    gap: 3px var(--space-1);
+    padding: var(--space-1);
+    min-width: 0;
+    border: 1px solid var(--user-border);
+    border-radius: var(--ant-border-radius);
+}
+.ec-board-strip button[aria-pressed="true"] {
+    box-shadow: 0 0 0 1px var(--user-ink);
+}
+.ec-board-thumb {
+    position: relative;
+    display: grid;
+    place-items: center;
+    grid-column: 1 / -1;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    overflow: hidden;
+    background: var(--user-surface-muted);
+    border-radius: var(--ant-border-radius-sm);
+}
+.ec-board-thumb > img,
+.ec-board-thumb > .cached-resource-image-shell,
+.ec-board-thumb .cached-resource-image-shell img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    object-fit: cover;
+}
+.ec-board-thumb .cached-resource-image-shell img {
+    object-fit: contain;
+}
+.ec-board-thumb > small:last-child {
+    position: absolute;
+    bottom: 4px;
+    inset-inline-start: 4px;
+    padding: 1px 5px;
+    color: var(--user-surface);
+    background: var(--user-ink);
+    border-radius: var(--ant-border-radius-sm);
+    font-size: var(--fs-micro, 10px);
+}
+.ec-board-direction {
+    grid-column: 1 / -1;
+    overflow: hidden;
+    color: var(--user-ink-muted);
+    font-size: var(--fs-caption);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.ec-board-controls {
+    display: grid;
+    gap: var(--space-3);
+    min-width: 0;
+    padding: 0;
+    margin: 0;
+    border: 0;
+}
+.ec-board-controls legend {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+}
+.ec-board-optics,
+.ec-board-frame-actions {
+    display: grid;
+    gap: var(--space-2);
+}
+.ec-board-optics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.ec-board-pick,
+.ec-board-optics label {
+    display: grid;
+    gap: var(--space-1);
+    min-width: 0;
+}
+.ec-board-controls label {
+    color: var(--user-ink);
+    font-size: var(--fs-ui);
+}
+.ec-board-pick label small {
+    margin-inline-start: var(--space-1);
+    color: var(--user-ink-muted);
+}
+.ec-board-frame-actions {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+}
+.ec-board-frame-actions:not(:has(button + button)) {
+    grid-template-columns: minmax(0, 1fr) auto;
+}
+.ec-board-controls select,
+.ec-board-frame-actions button {
+    min-width: 0;
+    min-height: 36px;
+    padding-inline: var(--space-2);
+    color: var(--user-ink);
+    background: var(--user-surface);
+    border: 1px solid var(--user-border);
+    border-radius: var(--ant-border-radius);
+    font: inherit;
+    font-size: var(--fs-ui);
+}
+.ec-board-frame-actions button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-1);
+}
+.ec-board-controls :disabled {
+    opacity: 0.65;
+}
+.ec-board-controls :focus-visible,
+.ec-board-strip button:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+}
+.ec-video-replace {
+    padding: var(--space-4);
+    border: 1px solid var(--user-border);
+    border-radius: var(--ant-border-radius-lg);
+}
+.ec-video-replace p {
+    margin-block: var(--space-3);
+}
+.ec-video-replace button + button {
+    margin-inline-start: var(--space-2);
+}
+.ec-video .ec-video-footer {
+    justify-content: center;
+}
+.ec-video .ec-video-footer .ant-btn {
+    min-height: 40px;
+}
+.ec-video .ec-video-footer > [role="status"] {
+    color: var(--user-ink-muted);
+}
+.ec-video:has(.ec-studio-grid[data-step="script"] .ec-video-replace) .ec-video-footer {
+    visibility: hidden;
+}
+@container ecommerce-studio (max-width: 720px) {
+    .ec-video .ec-video-footer {
+        justify-content: start;
+        padding-inline-end: min(18vw, 72px);
+    }
+    .ec-video-planner .app-segmented-item {
+        padding-inline: var(--space-2);
+    }
+    .ec-video-card-title {
+        padding: 6px;
+        min-height: 34px;
+        font-size: var(--fs-caption);
+    }
+    .ec-video-card-title .ec-video-choice-mark {
+        width: 14px;
+        height: 14px;
+    }
+    .ec-shot-content {
+        grid-template-columns: minmax(0, 0.95fr) minmax(0, 1fr);
+    }
+    .ec-shot-content:has(textarea) {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .ec-shot-content:has(textarea) .ec-shot-monitor {
+        max-height: 152px;
+    }
+    .ec-shot-deck {
+        gap: var(--space-2);
+    }
+    .ec-shot-timeline button {
+        min-height: 44px;
+    }
+    .ec-board-strip button {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 1px;
+    }
+    .ec-board-controls select,
+    .ec-board-frame-actions button {
+        min-height: 44px;
+    }
+    .ec-board-frame-actions button {
+        min-width: 44px;
+    }
+}

@@ -24,7 +24,7 @@ import { queryGenerationTask, waitForGenerationTask, type GenerationTask } from 
 import { resourceFileUrl, resourceIdFromStorageKey } from "./api/resources";
 import type { ResponseInputMessage, ResponseToolCall } from "./api/image";
 import { listAddedSkills } from "./api/skills";
-import { hasSkillLibraryAccess } from "@/lib/skill-access";
+import { hasSkillLibraryAccess, hasSkillManagementAccess } from "@/lib/skill-access";
 import { skillRuntime } from "./skill-runtime";
 import { ensureCanvasNodeAsset } from "./project-asset-sync";
 import { withRemoteUserDataSyncExclusive } from "./user-data-sync";
@@ -346,7 +346,7 @@ export class CreativeAgentController {
             },
         ];
         const itemKey = `planning:${nanoid()}`;
-        this.state = { ...this.state, planning: { itemKey, protocol, model: config.model, prompt }, pendingPayment: undefined };
+        this.state = { ...this.state, planning: { itemKey, protocol, model: config.model, prompt, serverSkillIds: hasSkillManagementAccess() ? undefined : prepared.provenance.skillIds }, pendingPayment: undefined };
         await this.save("running");
         await this.ensurePlanningSubmission();
     }
@@ -357,8 +357,11 @@ export class CreativeAgentController {
         if (!submission) {
             const config = this.requestConfig(planning.model);
             const request = prepareBackendToolGenerationTask({ prompt: planning.prompt || "继续创作", config: { ...config, systemPrompt: "" }, messages: planning.protocol, tools: CREATIVE_AGENT_TOOLS, toolChoice: "auto", signal: this.abort.signal });
+            const originalInput = request.input;
+            if (!originalInput) throw new Error("规划请求缺少执行输入");
             request.input = {
-                ...request.input,
+                ...originalInput,
+                ...(planning.serverSkillIds?.length ? { metadata: { ...(originalInput.metadata as Record<string, unknown>), skillIds: planning.serverSkillIds, skillContextDelivery: "server" } } : {}),
                 referenceImages: this.state.references.filter((reference) => reference.kind === "image" && reference.storageKey).map((reference) => ({ id: reference.id, name: reference.title, storageKey: reference.storageKey })),
             };
             submission = await this.api.prepare(this.run!.id, { ...this.guard(), itemKey: planning.itemKey, request }, this.abort.signal);

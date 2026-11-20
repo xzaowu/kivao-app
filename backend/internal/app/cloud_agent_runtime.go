@@ -127,7 +127,7 @@ type cloudAgentRuntime struct {
 	Skills         []cloudAgentSkill        `json:"skills"`
 	// SkillVersions 是本轮可读技能（自动发现 + 固定）的冻结版本；SkillHints / Memory 是每次
 	// 模型请求前重新插入的冻结数据消息。
-	SkillVersions      map[string]string                     `json:"skillVersions,omitempty"`
+	SkillVersions      map[string]string                     `json:"skillVersions"`
 	SkillHints         string                                `json:"skillHints,omitempty"`
 	Memory             cloudAgentMemorySnapshot              `json:"memory,omitempty"`
 	Profile            cloudAgentProfileSnapshot             `json:"profile"`
@@ -273,17 +273,12 @@ func (s *Service) ensureCloudAgentExecution(task *model.Task, initial cloudAgent
 		state.ActiveTaskID = task.ID
 		state.Step = 1
 	}
-	if len(initial.SkillVersions) > 0 {
-		// skillIds 只列用户固定的技能，便于使用统计归因；availableCount 是本轮可自动发现的技能总数。
+	if len(initial.Skills) > 0 {
 		skillIDs := make([]string, 0, len(initial.Skills))
 		for _, skill := range initial.Skills {
 			skillIDs = append(skillIDs, skill.ID)
 		}
-		text := fmt.Sprintf("可自动发现 %d 个已安装技能，正文按需读取", len(initial.SkillVersions))
-		if len(skillIDs) > 0 {
-			text = fmt.Sprintf("可自动发现 %d 个已安装技能（固定 %d 个），正文按需读取", len(initial.SkillVersions), len(skillIDs))
-		}
-		state.event(task.ID, "tool_completed", map[string]any{"toolName": "skills_load", "skillIds": skillIDs, "availableCount": len(initial.SkillVersions), "text": text})
+		state.event(task.ID, "tool_completed", map[string]any{"toolName": "skills_load", "skillIds": skillIDs, "text": fmt.Sprintf("本轮已指定 %d 个技能", len(skillIDs))})
 	}
 	if len(state.Plan) > 0 {
 		// 继承的待办清单必须挂到本轮：前端按 plan-<runId> 展示清单，不发这条事件时

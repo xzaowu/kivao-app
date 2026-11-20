@@ -40,6 +40,7 @@ import {
     Rows3,
     Settings2,
     Shapes,
+    Shirt,
     ShieldAlert,
     ShieldCheck,
     Sparkles,
@@ -58,6 +59,7 @@ import { publishWorkspaceSidebarCollapsed, readWorkspaceSidebarCollapsed, subscr
 import { AppFeedbackProvider } from "@/components/layout/app-feedback";
 import { cn } from "@/lib/utils";
 import { useThemeStore } from "@/stores/use-theme-store";
+import { useGlobalAgentStore } from "@/stores/use-global-agent-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { useAppearanceStore } from "@/stores/use-appearance-store";
 import { getIsolatedAdminAntTheme } from "../theme/admin-ant-theme";
@@ -125,6 +127,7 @@ const adminNavigation: AdminNavigationGroup[] = [
         items: [
             { path: "/admin/workbench-tools", keywords: "工作台 工具 首页", label: "工作台工具", shortLabel: "工具", icon: <Shapes className="size-4" /> },
             { path: "/admin/prompt-templates", keywords: "提示词 模板 分镜 prompt", label: "提示词模板", shortLabel: "模板", icon: <MessageSquareText className="size-4" /> },
+            { path: "/admin/garment-library", keywords: "服装 衣服 换装 garment", label: "服装库", shortLabel: "服装", icon: <Shirt className="size-4" /> },
             { path: "/admin/pose-library", keywords: "姿势 动作 pose", label: "姿势库", shortLabel: "姿势", icon: <PersonStanding className="size-4" /> },
             { path: "/admin/settings/drawing-engine", keywords: "绘图 画板 引擎", label: "绘图工具", shortLabel: "绘图", icon: <Paintbrush className="size-4" /> },
             { path: "/admin/plugins", keywords: "插件 扩展 协议 plugin", label: "插件管理", shortLabel: "插件", icon: <PlugZap className="size-4" /> },
@@ -141,6 +144,7 @@ const adminNavigation: AdminNavigationGroup[] = [
         label: "电商 Agent",
         items: [
             { path: "/admin/ecommerce/agent", keywords: "电商 Agent 模型 配置", label: "电商 Agent 配置", shortLabel: "配置", icon: <Bot className="size-4" /> },
+            { path: "/admin/ecommerce/features", keywords: "电商 换装 功能 开关", label: "功能开放", shortLabel: "功能", icon: <Settings2 className="size-4" /> },
             { path: "/admin/ecommerce/library", keywords: "电商 知识 技能 品类", label: "知识与技能", shortLabel: "知识", icon: <Database className="size-4" /> },
         ],
     },
@@ -407,6 +411,9 @@ function MobileAdminNavigation() {
                 </button>
             </Dropdown>
             <div className="flex shrink-0 items-center gap-1">
+                <button type="button" className="admin-mobile-navigation-action admin-mobile-agent-entry" aria-label="打开 Agent 助手" title="打开 Agent 助手" onClick={() => useGlobalAgentStore.getState().openAgent()}>
+                    <Bot className="size-4" />
+                </button>
                 <AdminTooltip title="返回创作台">
                     <Link to="/" className="admin-mobile-navigation-action" aria-label="返回创作台">
                         <Home className="size-4" aria-hidden="true" />

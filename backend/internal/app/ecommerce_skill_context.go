@@ -42,7 +42,7 @@ func (s *Service) ecommerceSkillContext(userID, id string, entry *SkillPackageFi
 		return "", BadAuthRequest("技能缺少可读取的 SKILL.md")
 	}
 	queue := []string{"SKILL.md"}
-	listing, err := s.SkillPackageFiles(userID, id)
+	listing, err := s.skillDomain().RuntimeSkillPackageFiles(userID, id)
 	if err != nil {
 		return "", err
 	}
@@ -59,7 +59,7 @@ func (s *Service) ecommerceSkillContext(userID, id string, entry *SkillPackageFi
 		file := entry
 		if name != "SKILL.md" {
 			var err error
-			file, err = s.SkillPackageFile(userID, id, name)
+			file, err = s.skillDomain().RuntimeSkillPackageFile(userID, id, name)
 			if err != nil {
 				return "", BadAuthRequest("Skill 引用的文本无法读取：" + name + "，请检查技能包")
 			}

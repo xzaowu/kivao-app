@@ -23,7 +23,6 @@ for (const [key, value] of Object.entries({
     MutationObserver: dom.MutationObserver,
     Element: dom.Element,
     Node: dom.Node,
-    SVGElement: dom.SVGElement,
     ShadowRoot: dom.ShadowRoot,
     Event: dom.Event,
     MouseEvent: dom.MouseEvent,
@@ -42,7 +41,13 @@ for (const [key, value] of Object.entries({
 (globalThis as Record<string, unknown>).__APP_CHANGELOG__ = "";
 const { act } = await import("react");
 const { createRoot } = await import("react-dom/client");
+const { App } = await import("antd");
+const { MemoryRouter } = await import("react-router");
+const { apiClient } = await import("../src/services/api/request");
+const { useUserStore, defaultFeatureAvailability } = await import("../src/stores/use-user-store");
+const { default: EcommerceFeaturesPage } = await import("../src/pages/admin/ecommerce-features-page");
 const { PoseLibrarySystems } = await import("../src/pages/admin/pose-library/pose-library-page");
+const { previewPoseLibraryPack } = await import("../src/services/api/pose-library");
 type BulkAction = "enable" | "disable" | "resync" | "delete";
 
 const systems = Array.from({ length: 13 }, (_, index) => ({
@@ -57,14 +62,26 @@ const sourceName = new Map(systems.map((item) => [item.sourceKey, `来源 ${item
 let root: ReturnType<typeof createRoot> | undefined;
 let host: HTMLDivElement;
 const bulkCalls: Array<[BulkAction, string]> = [];
+const categoryCalls: Array<[BulkAction, string, string, string]> = [];
 
-async function render() {
+async function render(withCategories = false) {
     bulkCalls.length = 0;
+    categoryCalls.length = 0;
     host = document.createElement("div");
     document.body.append(host);
     root = createRoot(host);
     await act(async () => {
-        root!.render(<PoseLibrarySystems systems={systems} sourceName={sourceName} onBulk={(action, target) => bulkCalls.push([action, target.system])} />);
+        root!.render(
+            <PoseLibrarySystems
+                systems={systems}
+                sourceName={sourceName}
+                categories={withCategories ? [{ sourceKey: "source-1", system: "体系 1", category: "站姿", total: 5, enabled: 0 }] : []}
+                onBulk={(action, target) => {
+                    bulkCalls.push([action, target.system]);
+                    if ("category" in target) categoryCalls.push([action, target.sourceKey, target.system, target.category]);
+                }}
+            />,
+        );
     });
 }
 
@@ -87,7 +104,57 @@ afterAll(() => {
     }
 });
 
+test("电商后台只提交正在切换的换装功能，并使用服务端回读的最新配置", async () => {
+    const adapter = apiClient.defaults.adapter;
+    const originalFeatures = useUserStore.getState().features;
+    const features = { ...defaultFeatureAvailability, ecommerceEnabled: true, imageWorkbenchEnabled: true, ecommerceTryOnFunctions: { outfit: false, pose: true } };
+    const patches: unknown[] = [];
+    apiClient.defaults.adapter = async (config) => {
+        if (config.method === "patch") {
+            patches.push(JSON.parse(config.data));
+            features.ecommerceTryOnFunctions = { outfit: true, pose: false };
+        }
+        return { config, status: 200, statusText: "OK", headers: {}, data: { code: 0, data: { features } } };
+    };
+    host = document.createElement("div");
+    document.body.append(host);
+    root = createRoot(host);
+    try {
+        await act(async () => {
+            root!.render(
+                <MemoryRouter initialEntries={["/admin/ecommerce/features"]}>
+                    <App>
+                        <EcommerceFeaturesPage />
+                    </App>
+                </MemoryRouter>,
+            );
+        });
+        const toggle = host.querySelector<HTMLButtonElement>('[aria-label="设置模特换装，切换后立即保存"]')!;
+        expect(toggle.getAttribute("aria-checked")).toBe("false");
+        await act(async () => toggle.click());
+        expect(patches).toEqual([{ ecommerceTryOnFunctions: { outfit: true } }]);
+        expect(useUserStore.getState().features.ecommerceTryOnFunctions).toEqual({ outfit: true, pose: false });
+        expect(host.querySelector('[aria-label="设置姿势参考，切换后立即保存"]')?.getAttribute("aria-checked")).toBe("false");
+    } finally {
+        apiClient.defaults.adapter = adapter;
+        useUserStore.getState().setFeatures(originalFeatures);
+    }
+});
+
 describe("姿势库按体系管理", () => {
+    test("导入预览区分姿势与服装，拒绝未知库类型", () => {
+        const pack = { format: "yingce-pose-library", items: [{ system: "女装" }] };
+        expect(previewPoseLibraryPack(JSON.stringify(pack)).library).toBe("pose");
+        expect(previewPoseLibraryPack(JSON.stringify({ ...pack, library: "garment" }))).toMatchObject({ library: "garment", sourceName: "自定义服装包" });
+        expect(() => previewPoseLibraryPack(JSON.stringify({ ...pack, library: "unknown" }))).toThrow("素材库类型无效");
+    });
+    test("分类开关保留来源与体系，不修改其他体系的同名分类", async () => {
+        await render(true);
+        const toggle = document.querySelector<HTMLButtonElement>('[aria-label="向用户展示分类 站姿"]')!;
+        expect(toggle).not.toBeNull();
+        await act(async () => toggle.click());
+        expect(categoryCalls).toEqual([["enable", "source-1", "体系 1", "站姿"]]);
+    });
     test("默认折叠，摘要展示体系数量与统计", async () => {
         await render();
         expect(details().open).toBe(false);

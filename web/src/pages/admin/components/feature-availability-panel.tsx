@@ -16,6 +16,7 @@ type FeatureKey =
     | "shortDramaEnabled"
     | "taskCenterEnabled"
     | "creditsEnabled"
+    | "teamsEnabled"
     | "customChannelsEnabled"
     | "inspirationSourcesVisible"
     | "frontendModelsEnabled"
@@ -54,6 +55,7 @@ const editableFeatureKeys: FeatureKey[] = [
     "shortDramaEnabled",
     "taskCenterEnabled",
     "creditsEnabled",
+    "teamsEnabled",
     "customChannelsEnabled",
     "inspirationSourcesVisible",
     "imageWorkbenchEnabled",
@@ -72,6 +74,14 @@ const featureGroups: FeatureGroup[] = [
         description: "决定前台侧栏出现哪些创作入口",
         icon: <MonitorCog className="size-4" aria-hidden="true" />,
         rows: [
+            {
+                key: "teamsEnabled",
+                title: "团队空间",
+                location: "工作台 · 空间切换",
+                description: "开放公司、小组、成员邀请与素材共享。关闭后保留成员、积分和作品，重新开启即可继续使用。",
+                icon: <Boxes className="size-4" aria-hidden="true" />,
+                requires: [{ key: "creditsEnabled", effect: "空间积分和收费生成不可用" }],
+            },
             {
                 key: "shortDramaEnabled",
                 title: "短剧创作",
@@ -276,9 +286,9 @@ export default function FeatureAvailabilityPanel() {
         setSavingKey(key);
         setSaveError("");
         try {
-            const result = await updateAdminFeatureAvailability(toEditablePayload(expected));
+            const result = await updateAdminFeatureAvailability({ [key]: enabled });
             const value = parseFeatureAvailability(result.features);
-            if (!sameEditableFeatures(value, expected)) throw new Error("服务端返回的功能状态与本次保存内容不一致，请重新读取后核对");
+            if (value[key] !== enabled) throw new Error("服务端返回的功能状态与本次保存内容不一致，请重新读取后核对");
             setSavedFeatures(value);
             setDraftFeatures(value);
             setGlobalFeatures(value);
@@ -521,28 +531,7 @@ function ModelSourceRow({ draft, saving, onChange }: { draft: FeatureAvailabilit
     );
 }
 
-function toEditablePayload(features: FeatureAvailability) {
-    return {
-        shortDramaEnabled: features.shortDramaEnabled,
-        taskCenterEnabled: features.taskCenterEnabled,
-        creditsEnabled: features.creditsEnabled,
-        customChannelsEnabled: features.customChannelsEnabled,
-        inspirationSourcesVisible: features.inspirationSourcesVisible,
-        imageWorkbenchEnabled: features.imageWorkbenchEnabled,
-        videoWorkbenchEnabled: features.videoWorkbenchEnabled,
-        ecommerceEnabled: features.ecommerceEnabled,
-        ecommerceVideoEnabled: features.ecommerceVideoEnabled,
-        frontendModelsEnabled: features.frontendModelsEnabled,
-        pluginCenterEnabled: features.pluginCenterEnabled,
-        systemPluginsVisibleToUsers: features.systemPluginsVisibleToUsers,
-    };
-}
-
-function sameEditableFeatures(left: FeatureAvailability, right: FeatureAvailability) {
-    return editableFeatureKeys.every((key) => left[key] === right[key]);
-}
-
-function parseFeatureAvailability(value: unknown): FeatureAvailability {
+export function parseFeatureAvailability(value: unknown): FeatureAvailability {
     if (!value || typeof value !== "object") throw new Error("功能开放配置响应格式无效");
     const record = value as Record<string, unknown>;
     for (const key of editableFeatureKeys) {
@@ -553,12 +542,18 @@ function parseFeatureAvailability(value: unknown): FeatureAvailability {
         shortDramaEnabled: record.shortDramaEnabled as boolean,
         taskCenterEnabled: record.taskCenterEnabled as boolean,
         creditsEnabled: record.creditsEnabled as boolean,
+        teamsEnabled: record.teamsEnabled as boolean,
         customChannelsEnabled: record.customChannelsEnabled as boolean,
         inspirationSourcesVisible: record.inspirationSourcesVisible as boolean,
         imageWorkbenchEnabled: record.imageWorkbenchEnabled as boolean,
         videoWorkbenchEnabled: record.videoWorkbenchEnabled as boolean,
         ecommerceEnabled: record.ecommerceEnabled as boolean,
         ecommerceVideoEnabled: record.ecommerceVideoEnabled as boolean,
+        ecommerceTryOnFunctions: Object.fromEntries(
+            Object.entries((record.ecommerceTryOnFunctions && typeof record.ecommerceTryOnFunctions === "object" ? record.ecommerceTryOnFunctions : {}) as Record<string, unknown>).filter(
+                (entry): entry is [string, boolean] => typeof entry[1] === "boolean",
+            ),
+        ),
         frontendModelsEnabled: record.frontendModelsEnabled as boolean,
         pluginCenterEnabled: record.pluginCenterEnabled as boolean,
         systemPluginsVisibleToUsers: record.systemPluginsVisibleToUsers as boolean,

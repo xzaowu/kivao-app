@@ -6,6 +6,7 @@ import { AlertTriangle, ArrowDownToLine, ArrowUpToLine, BookOpen, BookOpenText, 
 
 import { averageShotSeconds, normalizeStoryboard, PACING_LABEL, TRANSITION_LABEL } from "@/lib/drama/storyboard";
 import { getDramaChapter, type DramaDialogueCheck, type DramaEpisodeDetail, type DramaShot, type DramaShotPatch, type DramaStoryboardSettings } from "@/services/api/drama";
+import { useCanvasAgentName } from "@/stores/use-appearance-store";
 
 import { formatCount, SOURCE_FORMAT_LABEL, sourceFormatOf } from "../drama-shared";
 import { SourceEditModal } from "./episode-source";
@@ -73,6 +74,7 @@ export function ScriptView({
     onSourceSaved: (rescript: boolean) => void;
     empty: EpisodeEmpty;
 }) {
+    const agentName = useCanvasAgentName();
     const [processOpen, setProcessOpen] = useState(false);
     const [editingChapterId, setEditingChapterId] = useState("");
     const { modal } = App.useApp();
@@ -213,7 +215,7 @@ export function ScriptView({
                                                             在后面插入镜头
                                                         </Button>
                                                         <Button size="small" type="text" icon={<MessageCircle className="size-3.5" />} disabled={busy} onClick={() => onDiscussShot(shot)}>
-                                                            与小影讨论
+                                                            与 {agentName} 讨论
                                                         </Button>
                                                         <span className="flex-1" />
                                                         <Tooltip title={(segmentSizes.get(shot.segmentIndex) || 0) <= 1 ? "这是本剧情段唯一的镜头，删除会改变分段；可以改写内容或重新改编本集" : ""}>

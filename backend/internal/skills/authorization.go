@@ -28,7 +28,13 @@ func (s *Service) IsAdministrator(userID string) (bool, error) {
 	return user.Role == model.UserRoleAdmin, nil
 }
 
-// RequireAdministrator is the shared boundary for skill content and management.
+// RequireUser permits a current active account to select and execute visible skills.
+func (s *Service) RequireUser(userID string) error {
+	_, err := s.IsAdministrator(userID)
+	return err
+}
+
+// RequireAdministrator protects skill source content and management.
 func (s *Service) RequireAdministrator(userID string) error {
 	admin, err := s.IsAdministrator(userID)
 	if err != nil {

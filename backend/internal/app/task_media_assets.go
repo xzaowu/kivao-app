@@ -85,7 +85,7 @@ func generationMediaAssetTitle(task model.Task, kind string, index, count int) s
 		}
 	}
 	if title == "" {
-		title = map[string]string{"image": "生成图片", "video": "生成视频", "audio": "生成音频"}[kind] + " · " + task.ID[:min(len(task.ID), 8)]
+		title = map[string]string{"text": "生成文本", "image": "生成图片", "video": "生成视频", "audio": "生成音频"}[kind] + " · " + task.ID[:min(len(task.ID), 8)]
 	}
 	if count > 1 {
 		title += fmt.Sprintf(" · %d", index+1)
@@ -93,14 +93,31 @@ func generationMediaAssetTitle(task model.Task, kind string, index, count int) s
 	return title
 }
 
-// Uses the same effect key and ID as browser materialization, so reconnecting
-// the canvas cannot create a second asset for a server-delivered output.
+func isProductVideoCastingTask(task model.Task) bool {
+	if task.Type != "canvas_image" || task.Operation != "text_to_image" || task.ProjectID == "" {
+		return false
+	}
+	var info struct {
+		Metadata struct{ Source, Stage, EcommerceProjectID string }
+	}
+	return json.Unmarshal([]byte(task.InputJSON), &info) == nil && info.Metadata.Source == "ecommerce-agent" && info.Metadata.Stage == ecommerceVideoCastingStage && info.Metadata.EcommerceProjectID == task.ProjectID
+}
+
 func (s *Service) registerRecoveredMediaAssets(task model.Task) error {
-	projectID, err := s.mediaTaskProject(&task)
+	checkpoint, err := s.decodeMediaCheckpoint(&task)
 	if err != nil {
 		return err
 	}
-	checkpoint, err := s.decodeMediaCheckpoint(&task)
+	return s.registerGeneratedMediaAssets(task, checkpoint.Mode, checkpoint.Items, isProductVideoCastingTask(task))
+}
+
+// Direct image results and recovered outputs share the browser materializer's
+// effect key, so reopening the portrait never creates a second library asset.
+func (s *Service) registerGeneratedMediaAssets(task model.Task, mode string, items []mediaCheckpointItem, casting bool) error {
+	if casting && (mode != "image" || len(items) != 1) {
+		return errors.New("模特生成任务需要一张可保存的人物图")
+	}
+	projectID, err := s.mediaTaskProject(&task)
 	if err != nil {
 		return err
 	}
@@ -112,7 +129,7 @@ func (s *Service) registerRecoveredMediaAssets(task model.Task) error {
 	if err != nil {
 		return err
 	}
-	for index, item := range checkpoint.Items {
+	for index, item := range items {
 		registered := false
 		for _, representation := range representations {
 			if representation.ResourceID == item.ResourceID && representation.AssetVersionID != "" {
@@ -130,6 +147,9 @@ func (s *Service) registerRecoveredMediaAssets(task model.Task) error {
 		if resource.Status != model.ResourceStatusReady {
 			return errors.New("作品文件尚未保存完成")
 		}
+		if casting && (resource.Kind != "image" || !strings.HasPrefix(resource.MimeType, "image/")) {
+			return errors.New("模特生成结果需要图片文件")
+		}
 		effectKey := fmt.Sprintf("materialize:%s:%d", task.ID, index)
 		assetID := generationMediaAssetID(task.ID, index)
 		// Preserve existing user edits on replay; the deterministic key is unique.
@@ -141,17 +161,22 @@ func (s *Service) registerRecoveredMediaAssets(task model.Task) error {
 		now := time.Now()
 		url := resourceFileURL(resource.ID)
 		data := map[string]any{"storageKey": "resource:" + resource.ID, "mimeType": resource.MimeType, "bytes": resource.Size, "width": resource.Width, "height": resource.Height, "durationMs": resource.DurationMs}
-		if checkpoint.Mode == "image" {
+		if mode == "image" {
 			data["dataUrl"] = url
 		} else {
 			data["url"] = url
 		}
-		title := generationMediaAssetTitle(task, checkpoint.Mode, index, len(checkpoint.Items))
+		title := generationMediaAssetTitle(task, mode, index, len(items))
 		metadata := map[string]any{"source": "generation-task", "generationEffectKey": effectKey, "taskId": task.ID, "outputIndex": index}
+		tags := []string{"生成"}
+		if casting {
+			tags = append(tags, "AI 模特")
+			metadata["ecommerceStage"] = ecommerceVideoCastingStage
+		}
 		if projectID != "" {
 			metadata["projectIds"] = []string{projectID}
 		}
-		payload, err := json.Marshal(map[string]any{"id": assetID, "kind": checkpoint.Mode, "category": model.AssetCategoryMaterial, "status": model.AssetVersionStatusConfirmed, "source": "生成任务", "title": title, "coverUrl": url, "tags": []string{"生成"}, "createdAt": now.UTC().Format(time.RFC3339Nano), "updatedAt": now.UTC().Format(time.RFC3339Nano), "data": data, "metadata": metadata})
+		payload, err := json.Marshal(map[string]any{"id": assetID, "kind": mode, "category": model.AssetCategoryMaterial, "status": model.AssetVersionStatusConfirmed, "source": "生成任务", "title": title, "coverUrl": url, "tags": tags, "createdAt": now.UTC().Format(time.RFC3339Nano), "updatedAt": now.UTC().Format(time.RFC3339Nano), "data": data, "metadata": metadata})
 		if err != nil {
 			return err
 		}
@@ -162,7 +187,7 @@ func (s *Service) registerRecoveredMediaAssets(task model.Task) error {
 		if err := validateStructuredStorageQuotaWithPolicy(usage, "asset", true, int64(len(payload)), policy.Resource); err != nil {
 			return err
 		}
-		asset := &model.Asset{ID: assetID, UserID: task.UserID, Kind: checkpoint.Mode, Category: model.AssetCategoryMaterial, Status: model.AssetVersionStatusConfirmed, Title: title, PayloadJSON: string(payload), CreatedAt: now, UpdatedAt: now}
+		asset := &model.Asset{ID: assetID, UserID: task.UserID, Kind: mode, Category: model.AssetCategoryMaterial, Status: model.AssetVersionStatusConfirmed, Title: title, PayloadJSON: string(payload), CreatedAt: now, UpdatedAt: now}
 		if err := s.repo.UpsertAsset(asset); err != nil {
 			return err
 		}

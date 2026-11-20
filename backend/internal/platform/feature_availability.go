@@ -18,6 +18,7 @@ const (
 	FeatureShortDrama            = "shortDrama"
 	FeatureTaskCenter            = "taskCenter"
 	FeatureCredits               = "credits"
+	FeatureTeams                 = "teams"
 	FeatureCustomChannels        = "customChannels"
 	FeatureFrontendModels        = "frontendModels"
 	FeaturePluginCenter          = "pluginCenter"
@@ -31,20 +32,28 @@ const (
 )
 
 type FeatureAvailability struct {
-	WelcomeEnabled               bool `json:"welcomeEnabled"`
-	ShortDramaEnabled            bool `json:"shortDramaEnabled"`
-	TaskCenterEnabled            bool `json:"taskCenterEnabled"`
-	CreditsEnabled               bool `json:"creditsEnabled"`
-	CustomChannelsEnabled        bool `json:"customChannelsEnabled"`
-	FrontendModelsEnabled        bool `json:"frontendModelsEnabled"`
-	PluginCenterEnabled          bool `json:"pluginCenterEnabled"`
-	SystemPluginsVisibleToUsers  bool `json:"systemPluginsVisibleToUsers"`
-	InspirationSourcesVisible    bool `json:"inspirationSourcesVisible"`
-	TimelineTranscriptionEnabled bool `json:"timelineTranscriptionEnabled"`
-	ImageWorkbenchEnabled        bool `json:"imageWorkbenchEnabled"`
-	VideoWorkbenchEnabled        bool `json:"videoWorkbenchEnabled"`
-	EcommerceEnabled             bool `json:"ecommerceEnabled"`
-	EcommerceVideoEnabled        bool `json:"ecommerceVideoEnabled"`
+	WelcomeEnabled               bool            `json:"welcomeEnabled"`
+	ShortDramaEnabled            bool            `json:"shortDramaEnabled"`
+	TaskCenterEnabled            bool            `json:"taskCenterEnabled"`
+	CreditsEnabled               bool            `json:"creditsEnabled"`
+	TeamsEnabled                 bool            `json:"teamsEnabled"`
+	CustomChannelsEnabled        bool            `json:"customChannelsEnabled"`
+	FrontendModelsEnabled        bool            `json:"frontendModelsEnabled"`
+	PluginCenterEnabled          bool            `json:"pluginCenterEnabled"`
+	SystemPluginsVisibleToUsers  bool            `json:"systemPluginsVisibleToUsers"`
+	InspirationSourcesVisible    bool            `json:"inspirationSourcesVisible"`
+	TimelineTranscriptionEnabled bool            `json:"timelineTranscriptionEnabled"`
+	ImageWorkbenchEnabled        bool            `json:"imageWorkbenchEnabled"`
+	VideoWorkbenchEnabled        bool            `json:"videoWorkbenchEnabled"`
+	EcommerceEnabled             bool            `json:"ecommerceEnabled"`
+	EcommerceVideoEnabled        bool            `json:"ecommerceVideoEnabled"`
+	EcommerceTryOnFunctions      map[string]bool `json:"ecommerceTryOnFunctions"`
+}
+
+// TryOnFunctionEnabled leaves newly registered functions open unless explicitly disabled.
+func (f FeatureAvailability) TryOnFunctionEnabled(id string) bool {
+	enabled, exists := f.EcommerceTryOnFunctions[id]
+	return !exists || enabled
 }
 
 type PublicFeatureAvailability struct {
@@ -55,12 +64,13 @@ type PublicFeatureAvailability struct {
 }
 
 func DefaultFeatureAvailability() FeatureAvailability {
-	// 缺少配置代表尚未由运维接管；前台模型需要明确配置后才开放。
+	// 缺少配置时沿用产品默认值。团队空间须由管理员明确开启。
 	return FeatureAvailability{
 		WelcomeEnabled:               true,
 		ShortDramaEnabled:            true,
 		TaskCenterEnabled:            true,
 		CreditsEnabled:               true,
+		TeamsEnabled:                 false,
 		CustomChannelsEnabled:        true,
 		FrontendModelsEnabled:        false,
 		PluginCenterEnabled:          true,
@@ -71,6 +81,7 @@ func DefaultFeatureAvailability() FeatureAvailability {
 		VideoWorkbenchEnabled:        false,
 		EcommerceEnabled:             false,
 		EcommerceVideoEnabled:        false,
+		EcommerceTryOnFunctions:      map[string]bool{},
 	}
 }
 
@@ -96,6 +107,9 @@ func (s *Service) UpdateFeatureAvailability(actor *model.User, value FeatureAvai
 	current, before, err := s.readFeatureAvailability()
 	if err != nil {
 		return nil, err
+	}
+	if value.EcommerceTryOnFunctions == nil {
+		value.EcommerceTryOnFunctions = before.EcommerceTryOnFunctions
 	}
 	encoded, err := json.Marshal(value)
 	if err != nil {
@@ -126,6 +140,8 @@ func (s *Service) FeatureEnabled(feature string) (bool, error) {
 		return value.TaskCenterEnabled, nil
 	case FeatureCredits:
 		return value.CreditsEnabled, nil
+	case FeatureTeams:
+		return value.TeamsEnabled, nil
 	case FeatureCustomChannels:
 		return value.CustomChannelsEnabled, nil
 	case FeatureFrontendModels:
@@ -151,6 +167,14 @@ func (s *Service) FeatureEnabled(feature string) (bool, error) {
 	}
 }
 
+func (s *Service) TryOnFunctionEnabled(id string) (bool, error) {
+	_, value, err := s.readFeatureAvailability()
+	if err != nil {
+		return false, err
+	}
+	return value.TryOnFunctionEnabled(id), nil
+}
+
 func (s *Service) RequireFeature(feature string) error {
 	enabled, err := s.FeatureEnabled(feature)
 	if err != nil {
@@ -166,6 +190,10 @@ func (s *Service) RequireFeature(feature string) error {
 		return kernel.Forbidden("任务中心暂未开放")
 	case FeatureCredits:
 		return kernel.Forbidden("积分功能暂未开放")
+	case FeatureTeams:
+		err := kernel.Forbidden("团队空间暂未开放")
+		err.Reason = "team_feature_disabled"
+		return err
 	case FeatureCustomChannels:
 		return kernel.Forbidden("自定义渠道暂未开放")
 	case FeatureFrontendModels:
@@ -199,10 +227,13 @@ func (s *Service) readFeatureAvailability() (*model.SystemSetting, FeatureAvaila
 	if err != nil {
 		return nil, FeatureAvailability{}, err
 	}
-	// 以全开放默认值为基底，避免已有三字段配置在升级后因缺少新字段而意外关闭功能。
+	// 升级时缺少的字段沿用各自的产品默认值。
 	value := DefaultFeatureAvailability()
 	if strings.TrimSpace(setting.ValueJSON) == "" || json.Unmarshal([]byte(setting.ValueJSON), &value) != nil {
 		return nil, FeatureAvailability{}, errors.New("功能开放配置格式无效")
+	}
+	if value.EcommerceTryOnFunctions == nil {
+		value.EcommerceTryOnFunctions = map[string]bool{}
 	}
 	return setting, value, nil
 }

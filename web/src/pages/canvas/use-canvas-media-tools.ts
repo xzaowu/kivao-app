@@ -43,7 +43,7 @@ import { imageLayerBackgroundPatch, imageLayerExtractionTargets, resolveImageLay
 import { buildAngleLabel, buildAnglePrompt, createCanvasNode } from "@/lib/canvas/canvas-project-domain";
 import { validateVideoSegmentBatch } from "@/lib/canvas/canvas-video-regeneration";
 import { videoEnhanceTaskInput, type VideoEnhanceParams } from "@/lib/canvas/canvas-video-enhance";
-import { videoDepthTaskInput, type VideoDepthParams } from "@/lib/canvas/canvas-video-depth";
+import { canvasVideoDepthMetadata, videoDepthSourceError, videoDepthTaskInput, type VideoDepthParams } from "@/lib/canvas/canvas-video-depth";
 import { listVideoProcessingModels, videoProcessingSourceReference, type VideoProcessingOperation } from "@/lib/canvas/canvas-video-processing";
 import { resolveCanvasStyleExecution } from "@/lib/canvas/canvas-style-execution";
 import { buildGenerationConfig, buildImageGenerationMetadata, nodeReferenceImage, isGenerationCanceled, runBackendCanvasGenerationTask, runCanvasGenerationTaskToConsumer } from "@/lib/canvas/canvas-project-generation";
@@ -57,7 +57,7 @@ import { captureVideoFrames } from "@/lib/canvas/canvas-video-frame";
 import { buildVideoFrameNodes } from "@/lib/canvas/canvas-video-frame-nodes";
 import { extractVideoAudio, trimVideoSegment } from "@/lib/canvas/canvas-video-segment";
 import { generationErrorMessage } from "@/lib/generation-error";
-import { modelCapabilityConfigFor } from "@/lib/model-capabilities";
+import { MEDIAKIT_DEPTH_MAX_SOURCE_SECONDS, modelCapabilityConfigFor } from "@/lib/model-capabilities";
 import { defaultImageParamsForModel, modelCompatibilityError } from "@/lib/model-selection";
 import { navigateToSettings } from "@/lib/settings-navigation";
 import { storeGeneratedVideo } from "@/services/api/video";
@@ -1995,6 +1995,37 @@ export function useCanvasMediaTools({
         ],
     );
 
+    const createVideoDepthNode = useCallback(
+        (node: CanvasNodeData) => {
+            const source = nodesRef.current.find((item) => item.id === node.id);
+            if (!source || (!source.metadata?.storageKey && !source.metadata?.content)) {
+                message.warning("源视频已删除或不可用");
+                return;
+            }
+            const id = nanoid();
+            const model = listVideoProcessingModels(effectiveConfig, "depth")[0] || "";
+            const size = fitNodeSize(source.metadata?.naturalWidth || source.width, source.metadata?.naturalHeight || source.height, 320, 420);
+            setNodes((current) => [
+                ...current,
+                {
+                    id,
+                    type: CanvasNodeType.Video,
+                    title: `深度动作捕捉 · ${source.title || "视频"}`,
+                    position: { x: source.position.x + source.width + 96, y: source.position.y },
+                    ...size,
+                    metadata: { status: NODE_STATUS_IDLE, generationMode: "video", prompt: "深度动作捕捉", model, videoEditOperation: "depth", videoDepth: { sourceNodeId: source.id, model } },
+                },
+            ]);
+            setConnections((current) => [...current, { id: nanoid(), fromNodeId: source.id, toNodeId: id }]);
+            setSelectedNodeIds(new Set([id]));
+            setSelectedConnectionId(null);
+            setHoveredNodeId(null);
+            setToolbarNodeId(null);
+            setDialogNodeId(id);
+        },
+        [effectiveConfig, message, nodesRef, setConnections, setDialogNodeId, setHoveredNodeId, setNodes, setSelectedConnectionId, setSelectedNodeIds, setToolbarNodeId],
+    );
+
     const openVideoProcessing = useCallback(
         (node: CanvasNodeData, operation: VideoProcessingOperation) => {
             if (!node.metadata?.storageKey && !node.metadata?.content) {
@@ -2012,10 +2043,10 @@ export function useCanvasMediaTools({
         [effectiveConfig, message, setHoveredNodeId, setToolbarNodeId],
     );
 
-    // 确认处理后才创建结果节点、连线与任务，统一结果回写保留原视频。
+    // 深度草稿复用已有节点；其余处理在确认后创建结果节点。
     const processingNodeIds = useRef(new Set<string>());
     const processVideoNode = useCallback(
-        async (node: CanvasNodeData, request: { operation: "enhance"; params: VideoEnhanceParams } | { operation: "depth"; params: VideoDepthParams }) => {
+        async (node: CanvasNodeData, request: { operation: "enhance"; params: VideoEnhanceParams } | { operation: "depth"; params: VideoDepthParams }, targetNodeId?: string) => {
             const submissionKey = `${node.id}:${request.operation}`;
             if (processingNodeIds.current.has(submissionKey)) return;
             const currentSource = nodesRef.current.find((item) => item.id === node.id);
@@ -2023,11 +2054,30 @@ export function useCanvasMediaTools({
                 message.warning("源视频已变化，请重新打开处理设置");
                 return;
             }
+            const target = targetNodeId ? nodesRef.current.find((item) => item.id === targetNodeId) : undefined;
+            if (
+                targetNodeId &&
+                (request.operation !== "depth" ||
+                    !target ||
+                    canvasVideoDepthMetadata(target)?.sourceNodeId !== node.id ||
+                    target.metadata?.taskId ||
+                    target.metadata?.content ||
+                    target.metadata?.storageKey ||
+                    target.metadata?.status === NODE_STATUS_LOADING)
+            )
+                return;
+            if (request.operation === "depth") {
+                const error = videoDepthSourceError(currentSource, modelCapabilityConfigFor(effectiveConfig, request.params.model).video?.processing?.maxSourceSeconds || MEDIAKIT_DEPTH_MAX_SOURCE_SECONDS);
+                if (error || !listVideoProcessingModels(effectiveConfig, "depth").includes(request.params.model)) {
+                    message.warning(error || "深度动作捕捉模型不可用，请重新选择");
+                    return;
+                }
+            }
             setVideoProcessingDialog(null);
             const { operation, params } = request;
             const source = videoProcessingSourceReference(node);
             const spec = NODE_DEFAULT_SIZE[CanvasNodeType.Video];
-            const childId = nanoid();
+            const childId = targetNodeId || nanoid();
             const inputOptions = { config: effectiveConfig, source, sourceNodeId: node.id, projectId, nodeId: childId };
             const input = request.operation === "depth" ? videoDepthTaskInput({ ...inputOptions, params: request.params }) : videoEnhanceTaskInput({ ...inputOptions, params: request.params });
             const processingMetadata = request.operation === "depth" ? { videoDepth: { sourceNodeId: node.id, ...request.params } } : { videoEnhance: { sourceNodeId: node.id, ...request.params }, vquality: request.params.resolution };
@@ -2037,27 +2087,40 @@ export function useCanvasMediaTools({
                     : translate("canvasPage.mediaTools.titleEnhance", { title: node.title || translate("canvasPage.common.video"), resolution: request.params.resolution.toUpperCase() });
             processingNodeIds.current.add(submissionKey);
             setRunningNodeId(childId);
-            setNodes((current) => [
-                ...current,
-                {
-                    id: childId,
-                    type: CanvasNodeType.Video,
-                    title,
-                    position: { x: node.position.x + node.width + 96, y: node.position.y },
-                    width: spec.width,
-                    height: spec.height,
-                    metadata: {
-                        prompt: input.prompt,
-                        status: NODE_STATUS_LOADING,
-                        generationMode: "video",
-                        model: params.model,
-                        videoEditOperation: operation,
-                        ...processingMetadata,
-                        taskCreatedAt: new Date().toISOString(),
+            if (target) {
+                setNodes((current) =>
+                    current.map((item) =>
+                        item.id === childId
+                            ? {
+                                  ...item,
+                                  metadata: { ...resetGenerationTaskMetadata(item.metadata, NODE_STATUS_LOADING), prompt: input.prompt, model: params.model, videoEditOperation: operation, ...processingMetadata, taskCreatedAt: new Date().toISOString() },
+                              }
+                            : item,
+                    ),
+                );
+            } else {
+                setNodes((current) => [
+                    ...current,
+                    {
+                        id: childId,
+                        type: CanvasNodeType.Video,
+                        title,
+                        position: { x: node.position.x + node.width + 96, y: node.position.y },
+                        width: spec.width,
+                        height: spec.height,
+                        metadata: {
+                            prompt: input.prompt,
+                            status: NODE_STATUS_LOADING,
+                            generationMode: "video",
+                            model: params.model,
+                            videoEditOperation: operation,
+                            ...processingMetadata,
+                            taskCreatedAt: new Date().toISOString(),
+                        },
                     },
-                },
-            ]);
-            setConnections((current) => [...current, { id: nanoid(), fromNodeId: node.id, toNodeId: childId }]);
+                ]);
+                setConnections((current) => [...current, { id: nanoid(), fromNodeId: node.id, toNodeId: childId }]);
+            }
             setSelectedNodeIds(new Set([childId]));
             setSelectedConnectionId(null);
             const controller = startGenerationRequest(childId, node.id, childId);
@@ -2094,6 +2157,7 @@ export function useCanvasMediaTools({
         setVideoProcessingDialog,
         openVideoProcessing,
         processVideoNode,
+        createVideoDepthNode,
         angleNodeId,
         lightingNodeId,
         emotionNodeId,

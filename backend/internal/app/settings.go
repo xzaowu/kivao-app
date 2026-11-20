@@ -26,7 +26,7 @@ import (
 
 const ossSettingKey = "oss"
 const encryptedSettingPrefix = "enc:v1:"
-const defaultOSSPathPrefix = "open-ai-canvas"
+const defaultOSSPathPrefix = storage.DefaultOSSPathPrefix
 
 const (
 	aliyunOSSProvider     = "aliyun"

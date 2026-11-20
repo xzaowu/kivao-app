@@ -1,6 +1,8 @@
 package model
 
 import (
+	"encoding/json"
+	"errors"
 	"time"
 
 	"gorm.io/gorm"
@@ -20,6 +22,7 @@ type Task struct {
 	CancellationActorID          string                   `json:"cancellationActorId,omitempty" gorm:"size:36"`
 	CancellationRequestedAt      *time.Time               `json:"cancellationRequestedAt,omitempty"`
 	CreationSubmissionID         *string                  `json:"creationSubmissionId,omitempty" gorm:"size:36;uniqueIndex"`
+	SubmissionHash               string                   `json:"-" gorm:"size:64"`
 	WorkbenchKind                string                   `json:"workbenchKind,omitempty" gorm:"size:16;index"`
 	ID                           string                   `json:"id" gorm:"primaryKey;size:36"`
 	UserID                       string                   `json:"userId" gorm:"index;size:36;index:idx_tasks_user_created,priority:1;index:idx_tasks_user_project_created,priority:1"`
@@ -38,6 +41,7 @@ type Task struct {
 	LogicalModelRevisionID       string                   `json:"logicalModelRevisionId,omitempty" gorm:"size:36;index"`
 	RouteID                      string                   `json:"routeId,omitempty" gorm:"size:36;index"`
 	ChannelModelID               string                   `json:"channelModelId,omitempty" gorm:"size:36;index"`
+	ProtocolBindingJSON          string                   `json:"-" gorm:"type:text"`
 	// RouteRun 只在用户主动重试时递增；worker 租约恢复不应创建新的路由选择世代。
 	RouteRun                  int                  `json:"-" gorm:"index"`
 	BillingOrderID            string               `json:"billingOrderId,omitempty" gorm:"index;size:36"`
@@ -55,17 +59,118 @@ type Task struct {
 	InputJSON                 string               `json:"inputJson" gorm:"type:text"`
 	ResultJSON                string               `json:"resultJson" gorm:"type:text"`
 	// MediaRecoveryJSON is an encrypted server-only checkpoint, never a public result.
-	MediaRecoveryJSON string     `json:"-" gorm:"type:text"`
-	MediaStage        string     `json:"mediaStage,omitempty" gorm:"size:24"`
-	CanRecoverMedia   bool       `json:"canRecoverMedia,omitempty" gorm:"-"`
-	TextDraft         string     `json:"textDraft,omitempty" gorm:"type:text"`
-	Error             string     `json:"error"`
-	Attempts          int        `json:"attempts"`
-	StartedAt         *time.Time `json:"startedAt"`
-	CompletedAt       *time.Time `json:"completedAt"`
-	CreatedAt         time.Time  `json:"createdAt" gorm:"index:idx_tasks_user_created,priority:2;index:idx_tasks_status_created,priority:2;index:idx_tasks_claim,priority:3;index:idx_tasks_user_project_created,priority:3"`
-	CreatedAtEpoch    int64      `json:"-" gorm:"index:idx_tasks_created_epoch"`
-	UpdatedAt         time.Time  `json:"updatedAt"`
+	MediaRecoveryJSON string             `json:"-" gorm:"type:text"`
+	MediaStage        string             `json:"mediaStage,omitempty" gorm:"size:24"`
+	CanRecoverMedia   bool               `json:"canRecoverMedia,omitempty" gorm:"-"`
+	ClientContext     *TaskClientContext `json:"clientContext,omitempty" gorm:"-"`
+	ClientOperationID string             `json:"clientOperationId,omitempty" gorm:"-"`
+	TextDraft         string             `json:"textDraft,omitempty" gorm:"type:text"`
+	Error             string             `json:"error"`
+	Attempts          int                `json:"attempts"`
+	StartedAt         *time.Time         `json:"startedAt"`
+	CompletedAt       *time.Time         `json:"completedAt"`
+	CreatedAt         time.Time          `json:"createdAt" gorm:"index:idx_tasks_user_created,priority:2;index:idx_tasks_status_created,priority:2;index:idx_tasks_claim,priority:3;index:idx_tasks_user_project_created,priority:3"`
+	CreatedAtEpoch    int64              `json:"-" gorm:"index:idx_tasks_created_epoch"`
+	UpdatedAt         time.Time          `json:"updatedAt"`
+}
+
+type TaskClientContext struct {
+	NodeID                string                 `json:"nodeId,omitempty"`
+	AssetTitle            string                 `json:"assetTitle,omitempty"`
+	ConversationID        string                 `json:"conversationId,omitempty"`
+	MessageID             string                 `json:"messageId,omitempty"`
+	BatchID               string                 `json:"batchId,omitempty"`
+	BatchIndex            int                    `json:"batchIndex,omitempty"`
+	BatchSlotKey          string                 `json:"batchSlotKey,omitempty"`
+	BatchCount            int                    `json:"batchCount,omitempty"`
+	DomainProjectID       string                 `json:"domainProjectId,omitempty"`
+	ChapterID             string                 `json:"chapterId,omitempty"`
+	ChapterOperation      string                 `json:"chapterOperation,omitempty"`
+	ShotID                string                 `json:"shotId,omitempty"`
+	WorkflowStepID        string                 `json:"workflowStepId,omitempty"`
+	ArtifactType          string                 `json:"artifactType,omitempty"`
+	EcommerceVideoVersion *EcommerceVideoVersion `json:"ecommerceVideoVersion,omitempty"`
+}
+
+type EcommerceVideoReference struct {
+	ResourceID  string   `json:"resourceId"`
+	Name        string   `json:"name"`
+	DurationMs  int64    `json:"durationMs"`
+	Aspects     []string `json:"aspects,omitempty"`
+	Instruction string   `json:"instruction,omitempty"`
+}
+
+type EcommerceVideoPresenter struct {
+	FrameResourceID string `json:"frameResourceId"`
+	Delivery        string `json:"delivery"`
+}
+
+type EcommerceVideoBoardShot struct {
+	Frame *struct {
+		ResourceID string `json:"resourceId"`
+		Name       string `json:"name"`
+	} `json:"frame,omitempty"`
+	Framing string `json:"framing,omitempty"`
+	Camera  string `json:"camera,omitempty"`
+}
+
+type EcommerceVideoShootBrief struct {
+	Scene   string `json:"scene,omitempty"`
+	Closing string `json:"closing,omitempty"`
+}
+
+type EcommerceVideoFrameSource string
+
+const (
+	EcommerceVideoFrameLibrary   EcommerceVideoFrameSource = "library"
+	EcommerceVideoFrameComposite EcommerceVideoFrameSource = "composite"
+)
+
+func (s *EcommerceVideoFrameSource) UnmarshalJSON(raw []byte) error {
+	var value string
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return err
+	}
+	if EcommerceVideoFrameSource(value) != EcommerceVideoFrameLibrary && EcommerceVideoFrameSource(value) != EcommerceVideoFrameComposite {
+		return errors.New("未知的商品视频素材来源")
+	}
+	*s = EcommerceVideoFrameSource(value)
+	return nil
+}
+
+type EcommerceVideoFrame struct {
+	ResourceID string                    `json:"resourceId"`
+	Name       string                    `json:"name"`
+	Source     EcommerceVideoFrameSource `json:"source,omitempty"`
+}
+
+// EcommerceVideoVersion contains editable creation inputs, never the provider configuration.
+type EcommerceVideoVersion struct {
+	Schema         int                        `json:"schema"`
+	Frame          EcommerceVideoFrame        `json:"frame"`
+	ProductImages  []EcommerceVideoFrame      `json:"productImages,omitempty"`
+	ReferenceVideo *EcommerceVideoReference   `json:"referenceVideo,omitempty"`
+	Presenter      *EcommerceVideoPresenter   `json:"presenter,omitempty"`
+	Model          string                     `json:"model"`
+	Facts          string                     `json:"facts"`
+	Purpose        string                     `json:"purpose"`
+	ApproachID     string                     `json:"approachId,omitempty"`
+	Shots          []string                   `json:"shots"`
+	Boards         []*EcommerceVideoBoardShot `json:"boards,omitempty"`
+	BoardInputs    bool                       `json:"boardInputs,omitempty"`
+	ShootBrief     *EcommerceVideoShootBrief  `json:"shootBrief,omitempty"`
+	Voice          string                     `json:"voice"`
+	ProductName    string                     `json:"productName"`
+	Audience       string                     `json:"audience"`
+	Language       string                     `json:"language"`
+	Region         string                     `json:"region,omitempty"`
+	Settings       struct {
+		Seconds       int    `json:"seconds"`
+		Ratio         string `json:"ratio"`
+		Resolution    string `json:"resolution"`
+		GenerateAudio bool   `json:"generateAudio"`
+	} `json:"settings"`
+	ParentTaskID string `json:"parentTaskId,omitempty"`
 }
 
 func (t *Task) BeforeCreate(tx *gorm.DB) error {

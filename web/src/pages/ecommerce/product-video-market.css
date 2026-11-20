@@ -1,0 +1,88 @@
+.ec-video-market-toggle {
+    display: none;
+}
+.ec-video-market {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-3);
+    margin: 0;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+}
+.ec-video-market legend {
+    margin-bottom: var(--space-2);
+    font-size: var(--fs-ui);
+    font-weight: 650;
+}
+.ec-video-market > div {
+    display: grid;
+    min-width: 0;
+    gap: var(--space-1);
+}
+.ec-video-market label {
+    color: var(--user-ink-soft);
+    font-size: var(--fs-caption);
+}
+.ec-video-market :is(select, input) {
+    width: 100%;
+    min-width: 0;
+    min-height: 38px;
+    padding: var(--space-1) var(--space-2);
+    font: inherit;
+    font-size: var(--fs-ui);
+    color: var(--user-ink);
+    background: var(--user-surface);
+    border: 1px solid var(--user-border);
+    border-radius: var(--ant-border-radius);
+}
+.ec-video-market-custom,
+.ec-video-market > .ec-video-ratio-field {
+    grid-column: 1 / -1;
+}
+.ec-video-market :is(select, input):focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+}
+@media (pointer: coarse) {
+    .ec-video-market :is(select, input) {
+        min-height: 48px;
+        font-size: 1rem;
+    }
+}
+@container ecommerce-studio (max-width: 720px) {
+    .ec-video-market-toggle {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+        width: 100%;
+        min-height: 44px;
+        text-align: start;
+    }
+    .ec-video-market-toggle :is(strong, svg) {
+        flex: none;
+    }
+    .ec-video-market-toggle[aria-expanded="false"] > svg {
+        transform: rotate(-90deg);
+    }
+    .ec-video-market-toggle small {
+        min-width: 0;
+        margin-inline-start: auto;
+        color: var(--user-ink-soft);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        text-align: end;
+    }
+    .ec-video-market-toggle[aria-expanded="false"] + .ec-video-market,
+    .ec-studio-grid[data-step="materials"] .ec-film-inspector-title {
+        display: none;
+    }
+    .ec-video-market legend {
+        position: absolute;
+        clip-path: inset(50%);
+        height: 1px;
+        width: 1px;
+        overflow: hidden;
+    }
+}

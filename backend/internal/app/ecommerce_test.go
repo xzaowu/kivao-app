@@ -97,6 +97,55 @@ func TestEcommerceProjectsEnforceOwnerRevisionAndResourceOwnership(t *testing.T)
 	}
 }
 
+func TestEcommerceProductFactsPreserveRevisionScopeAndLegacyDrafts(t *testing.T) {
+	svc, _, _, _ := ecommerceCreationTestService(t)
+	project, err := svc.CreateEcommerceProject("user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft := EcommerceDraft{ProductName: "收纳包", Platform: "taobao", ImageType: "main", Count: 1, Claims: "本轮选用"}
+	save := func(user string, revision int64, facts []string) (*model.EcommerceProject, error) {
+		input := draft
+		input.ProductFacts = facts
+		return svc.SaveEcommerceProject(user, project.ID, SaveEcommerceProjectRequest{Revision: revision, Draft: input})
+	}
+	first, err := save("user", project.Revision, []string{" 双层 ", "拉链闭合"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := save("other", first.Revision, []string{}); err == nil {
+		t.Fatal("another user modified the facts")
+	}
+	if _, err := save("user", project.Revision, []string{}); err == nil {
+		t.Fatal("stale form erased the facts")
+	}
+	for _, invalid := range [][]string{{"a", " a "}, {"a\nb"}, {strings.Repeat("字", 281)}, make([]string, 33)} {
+		if _, err := save("user", first.Revision, invalid); err == nil {
+			t.Fatalf("invalid facts accepted (%d entries)", len(invalid))
+		}
+	}
+	legacy, err := save("user", first.Revision, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertStored := func(want string) {
+		t.Helper()
+		project, err := svc.EcommerceProject("user", project.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var stored EcommerceDraft
+		if err := json.Unmarshal([]byte(project.DraftJSON), &stored); err != nil || strings.Join(stored.ProductFacts, "|") != want || stored.Claims != draft.Claims {
+			t.Fatalf("unexpected project facts or selected claims: %#v %v", stored.ProductFacts, err)
+		}
+	}
+	assertStored("双层|拉链闭合")
+	if _, err := save("user", legacy.Revision, []string{}); err != nil {
+		t.Fatal(err)
+	}
+	assertStored("")
+}
+
 func TestEcommerceDirectionsReceiptUsesMetadataWithNormalizedProviderConfig(t *testing.T) {
 	svc, db, _, _ := ecommerceCreationTestService(t)
 	project, err := svc.CreateEcommerceProject("user")

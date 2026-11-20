@@ -1,5 +1,6 @@
 import { App, Modal } from "antd";
 import { ArrowUpRight, Check, ChevronLeft, ChevronRight, FolderOpen, Images, Trash2, X } from "lucide-react";
+import { useReducedMotion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AppModal } from "@/components/ui/product/app-modal";
 import { deleteEcommerceProjects, listEcommerceProjectPage, projectDraft, projectPlan, type EcommerceProject } from "@/services/api/ecommerce";
@@ -141,6 +142,7 @@ export function EcommerceProjectHistory({
     onDeleted: (ids: string[], all: boolean) => void;
 }) {
     const { message } = App.useApp();
+    const reducedMotion = useReducedMotion();
     const [projects, setProjects] = useState<EcommerceProject[]>([]);
     const [total, setTotal] = useState(0);
     const [page, setPage] = useState(1);
@@ -241,8 +243,8 @@ export function EcommerceProjectHistory({
             width="min(1120px, calc(100vw - 32px))"
             rootClassName="ecommerce-history-root"
             className="ecommerce-history-modal"
-            transitionName="ecommerce-history-motion"
-            maskTransitionName="ecommerce-history-mask"
+            transitionName={reducedMotion ? "" : "ecommerce-history-motion"}
+            maskTransitionName={reducedMotion ? "" : "ecommerce-history-mask"}
             aria-label="历史项目"
         >
             <section className="ecommerce-history" aria-label="我的电商项目">

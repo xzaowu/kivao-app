@@ -10,13 +10,15 @@ import { Select } from "@/components/ui/base/select";
 export function useSkillRuntimeCatalog() {
     const allowed = useSkillLibraryAccess();
     const userId = useUserStore((state) => state.user?.id);
+    const role = useUserStore((state) => state.user?.role);
+    const owner = `${userId || ""}:${role || ""}`;
     const [ownerId, setOwnerId] = useState<string>();
     const [skills, setSkills] = useState<Skill[]>([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         setSkills([]);
-        setOwnerId(userId);
+        setOwnerId(owner);
         setLoading(allowed);
         if (!allowed) return;
         let cancelled = false;
@@ -33,9 +35,9 @@ export function useSkillRuntimeCatalog() {
         return () => {
             cancelled = true;
         };
-    }, [allowed, userId]);
+    }, [allowed, owner]);
 
-    return { skills: allowed && ownerId === userId ? skills : [], loading: allowed && loading };
+    return { skills: allowed && ownerId === owner ? skills : [], loading: allowed && loading };
 }
 
 export function SkillRuntimePicker({

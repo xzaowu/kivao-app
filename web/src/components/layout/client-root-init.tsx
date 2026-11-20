@@ -69,9 +69,9 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
             if (event.pointerType === "mouse" && event.button !== 0) return;
             const target = event.target instanceof Element ? event.target.closest<HTMLElement>(interactiveSelector) : null;
             if (!target || target.hasAttribute("disabled") || target.getAttribute("aria-disabled") === "true") return;
-            // 浏览器可能把鼠标点击误判为 :focus-visible；下一帧只清掉这次指针点击产生的焦点。
+            // 同一帧内可能已经按 Esc 把焦点还给触发器，键盘焦点应予保留。
             window.requestAnimationFrame(() => {
-                if (document.activeElement === target) target.blur();
+                if (document.activeElement === target && document.documentElement.hasAttribute("data-pointer-focus")) target.blur();
             });
         };
         document.addEventListener("pointerdown", blurPointerFocus, true);

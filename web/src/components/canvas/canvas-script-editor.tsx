@@ -7,6 +7,7 @@ import { Checkbox, CheckboxGroup } from "@/components/ui/base/checkbox";
 import { Select } from "@/components/ui/base/select";
 import { AppModal } from "@/components/ui/product/app-modal";
 import { createStoryboardRow } from "@/lib/canvas/canvas-project-domain";
+import { useCanvasAgentName } from "@/stores/use-appearance-store";
 import { useGlobalAgentStore } from "@/stores/use-global-agent-store";
 import type { CanvasConnection, CanvasGenerationBatch, CanvasNodeData, StoryboardColumn, StoryboardRow, StoryboardVideoInputMode } from "@/types/canvas";
 import { AssetThumbnail, STORYBOARD_ASSET_ROLE_LABELS } from "./storyboard-assets-cell";
@@ -55,6 +56,7 @@ export function CanvasScriptEditor({
     onRetryBatchItem?: (batchId: string, itemId: string) => void;
     onStopBatch?: (batchId: string) => void;
 }) {
+    const agentName = useCanvasAgentName();
     const [query, setQuery] = useState("");
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [onlySelected, setOnlySelected] = useState(false);
@@ -629,8 +631,8 @@ export function CanvasScriptEditor({
                                     )}
                                 </div>
                                 <div className="canvas-script-editor-detail-footer">
-                                    <Button type="text" icon={<MessageSquare size={16} />} disabled={writeDisabled} onClick={discussRow} aria-label={`与小影讨论镜头 ${activeRow.shotNumber}`}>
-                                        与小影讨论
+                                    <Button type="text" icon={<MessageSquare size={16} />} disabled={writeDisabled} onClick={discussRow} aria-label={`与 ${agentName} 讨论镜头 ${activeRow.shotNumber}`}>
+                                        与 {agentName} 讨论
                                     </Button>
                                     <Dropdown
                                         trigger={["click"]}

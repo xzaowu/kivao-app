@@ -434,7 +434,7 @@ test("locked scripts allow browsing and output navigation while guarding every e
     expect(detail().querySelector<HTMLTextAreaElement>('[aria-label="镜头 2 台词/旁白"]')?.disabled).toBe(true);
     await typeValue("镜头 2 台词/旁白", "不应写入");
     expect(latest.metadata!.storyboard!.rows[1].dialogue).toBe("台词 2");
-    expect(button("与小影讨论镜头 2").disabled).toBe(true);
+    expect(button("与 KIVAO 讨论镜头 2").disabled).toBe(true);
     expect(button("删除镜头 2").disabled).toBe(true);
     await selectTab("生成提示");
     expect(detail().querySelector<HTMLTextAreaElement>('[aria-label="镜头 2 视频提示词"]')?.disabled).toBe(true);
@@ -517,7 +517,8 @@ test("discussion closes the editor then opens the assistant with stable node and
     });
     try {
         await click("编辑镜头 2");
-        await click("与小影讨论镜头 2");
+        expect(button("与 KIVAO 讨论镜头 2").textContent).toBe("与 KIVAO 讨论");
+        await click("与 KIVAO 讨论镜头 2");
         expect(calls).toEqual(["close", "prefill"]);
         const store = useGlobalAgentStore.getState();
         expect(store.open).toBe(true);

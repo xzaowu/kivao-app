@@ -135,17 +135,19 @@ type CreateTaskRequest struct {
 	workbenchKind   string
 	// callerHoldsStorageMu 只给已经持有 Service.storageMu 的内部调用设置。
 	// 文件容量检查不能再锁一次，否则审批改参数会自锁。
-	callerHoldsStorageMu bool
-	ProjectID            string         `json:"projectId"`
-	Type                 string         `json:"type"`
-	Operation            string         `json:"operation"`
-	Prompt               string         `json:"prompt"`
-	Provider             string         `json:"provider"`
-	Model                string         `json:"model"`
-	LogicalModelID       string         `json:"logicalModelId"`
-	Input                map[string]any `json:"input"`
-	TraceID              string         `json:"-"`
-	RequestID            string         `json:"-"`
+	callerHoldsStorageMu  bool
+	ProjectID             string         `json:"projectId"`
+	Type                  string         `json:"type"`
+	Operation             string         `json:"operation"`
+	Prompt                string         `json:"prompt"`
+	Provider              string         `json:"provider"`
+	Model                 string         `json:"model"`
+	LogicalModelID        string         `json:"logicalModelId"`
+	MaxChargeMicrocredits *int64         `json:"maxChargeMicrocredits,omitempty"`
+	IdempotencyKey        string         `json:"idempotencyKey,omitempty"`
+	Input                 map[string]any `json:"input"`
+	TraceID               string         `json:"-"`
+	RequestID             string         `json:"-"`
 }
 
 type TaskListOptions struct {
@@ -285,6 +287,10 @@ func (s *Service) TasksWithOptions(userID string, options TaskListOptions) ([]Ta
 	if err != nil {
 		return nil, err
 	}
+	return s.taskSummariesForUser(userID, tasks)
+}
+
+func (s *Service) taskSummariesForUser(userID string, tasks []model.Task) ([]TaskSummary, error) {
 	orders, err := s.repo.BillingOrdersByTaskIDs(userID, taskBillingTaskIDs(tasks))
 	if err != nil {
 		return nil, err
@@ -362,8 +368,8 @@ func (s *Service) refreshTaskProviderState(task *model.Task) error {
 	return nil
 }
 
-func (s *Service) RetryTask(userID string, id string) (*model.Task, error) {
-	return s.taskLifecycle().retryTask(userID, id)
+func (s *Service) RetryTask(userID string, id string, expectedUpdatedAt ...time.Time) (*model.Task, error) {
+	return s.taskLifecycle().retryTask(userID, id, expectedUpdatedAt...)
 }
 
 func (s *Service) CancelTask(ctx context.Context, userID string, id string) (*model.Task, error) {

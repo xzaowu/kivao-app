@@ -2,7 +2,7 @@ export type OSSProvider = "aliyun" | "tencent" | "qiniu" | "volcengine" | "s3";
 
 export type S3Preset = "aws" | "r2" | "b2" | "rustfs" | "custom";
 
-export const DEFAULT_OSS_PATH_PREFIX = "open-ai-canvas";
+export const DEFAULT_OSS_PATH_PREFIX = "kivao";
 
 export type OSSConnectionTestInput = {
     provider: OSSProvider;

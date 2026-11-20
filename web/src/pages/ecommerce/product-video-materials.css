@@ -1,0 +1,248 @@
+.ec-video-source {
+    align-self: start;
+    gap: var(--space-3);
+}
+.ec-video-source-heading {
+    min-height: 28px;
+    justify-content: flex-start;
+    column-gap: var(--space-4);
+}
+.ec-video-source-heading h2 {
+    font-size: var(--fs-heading);
+}
+.ec-video-frame-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1);
+}
+.ec-video-frame.ec-video-frame-empty {
+    height: auto;
+    max-width: 34rem;
+    border: 1px dashed var(--user-border-strong, var(--user-border));
+    background: var(--user-surface);
+}
+.ec-video-frame-empty > button {
+    display: grid;
+    grid-template-columns: clamp(76px, 29%, 106px) minmax(0, 1fr);
+    align-items: center;
+    justify-items: stretch;
+    gap: var(--space-4);
+    min-height: 138px;
+    padding: var(--space-4);
+    text-align: start;
+}
+.ec-video-sample-photo {
+    position: relative;
+    aspect-ratio: 4 / 5;
+    overflow: hidden;
+    border-radius: var(--ant-border-radius);
+}
+.ec-video-sample-photo img {
+    display: block;
+    object-fit: cover;
+}
+.ec-video-sample-photo > span,
+.ec-video-selected-caption {
+    position: absolute;
+    inset: auto auto var(--space-1) var(--space-1);
+    padding: 2px 6px;
+    border-radius: var(--ant-border-radius-sm);
+    background: color-mix(in srgb, var(--user-surface) 90%, transparent);
+    color: var(--user-ink);
+    font-size: var(--fs-caption);
+    white-space: nowrap;
+}
+.ec-video-upload-copy {
+    display: grid;
+    justify-items: start;
+    gap: var(--space-1);
+    overflow-wrap: anywhere;
+    font-size: var(--fs-ui);
+    line-height: 1.45;
+    color: var(--user-ink-soft);
+}
+.ec-video-upload-copy strong {
+    color: var(--user-ink);
+    font-size: var(--fs-body);
+}
+.ec-video-upload-action,
+.ec-video-selected-caption,
+.ec-video-voice-label {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+}
+.ec-video-upload-action {
+    padding: 4px var(--space-2);
+    margin-top: var(--space-1);
+    border: 1px solid var(--user-border);
+    border-radius: var(--ant-border-radius);
+    background: var(--user-surface);
+    color: var(--user-ink);
+    font-weight: 600;
+}
+@media (hover: hover) {
+    .ec-video-frame-empty:has(button:enabled:hover) {
+        border-color: var(--user-ink-muted);
+    }
+}
+.ec-video-frame.ec-video-frame-ready {
+    position: relative;
+    width: fit-content;
+    min-width: min(13rem, 100%);
+    max-width: 100%;
+    height: auto;
+    border-color: var(--user-border);
+    background: var(--user-surface);
+}
+.ec-video-frame-ready .cached-resource-image-shell {
+    min-height: 0;
+    display: grid;
+    place-items: center;
+    max-width: 100%;
+}
+.ec-video-frame.ec-video-frame-ready img {
+    display: block;
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: clamp(220px, 33dvh, 420px);
+    object-fit: contain;
+}
+.ec-video-frame-ready:not(:has(img)) {
+    min-height: 12rem;
+}
+.ec-video-frame-ready > .ec-video-enlarge {
+    position: absolute;
+    inset: var(--space-2) var(--space-2) auto auto;
+    width: 36px;
+    height: 36px;
+    border: 1px solid var(--user-border);
+    border-radius: 50%;
+    background: var(--user-surface);
+    color: var(--user-ink);
+    cursor: zoom-in;
+}
+.ec-film-material-source {
+    max-width: 43rem;
+}
+.ec-video-selected-caption {
+    inset: auto auto var(--space-2) var(--space-2);
+    max-width: calc(100% - 2 * var(--space-2));
+}
+.ec-video-selected-caption > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding-inline-start: var(--space-1);
+    border-inline-start: 1px solid var(--user-border);
+}
+.ec-video-source-facts,
+.ec-video-source .ec-video-settings {
+    margin: 0;
+    padding: 0;
+    border-top: 1px solid var(--user-border);
+}
+.ec-video-source-facts summary {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: 44px;
+    cursor: pointer;
+    list-style: none;
+}
+.ec-video-source-facts summary small {
+    margin-inline-start: auto;
+}
+.ec-video-source-editor {
+    display: grid;
+    gap: var(--space-2);
+    padding-block-end: var(--space-1);
+}
+.ec-video-source-editor .ec-video-claims {
+    align-items: start;
+    gap: var(--space-1);
+}
+.ec-video-voice-label {
+    gap: var(--space-2);
+}
+.ec-presenter-confirm {
+    display: grid;
+    justify-items: start;
+    gap: var(--space-2);
+}
+.ec-presenter-confirm p {
+    margin: 0;
+    font-size: var(--fs-ui);
+    color: var(--user-ink-soft);
+}
+.ec-presenter-empty-icon {
+    width: 100%;
+    height: 100%;
+    padding: var(--space-2);
+    color: var(--user-ink-muted);
+}
+.ec-presenter-delivery {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    padding: 0;
+    margin: 0;
+    border: 0;
+}
+.ec-presenter-delivery legend {
+    margin-block-end: var(--space-2);
+    font-weight: 600;
+    font-size: var(--fs-heading);
+}
+.ec-presenter-delivery label {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2);
+    border: 1px solid var(--user-border);
+    border-radius: var(--ant-border-radius);
+    cursor: pointer;
+}
+.ec-presenter-delivery input {
+    accent-color: var(--user-ink);
+}
+@media (pointer: coarse) {
+    .ec-presenter-delivery label,
+    .ec-presenter-confirm button {
+        min-height: 48px;
+    }
+}
+@container ecommerce-studio (max-width: 720px) {
+    .ec-video-source {
+        gap: var(--space-1);
+    }
+    .ec-video-source .ec-video-materials {
+        gap: var(--space-1);
+    }
+    .ec-video-frame-empty > button {
+        grid-template-columns: 51px minmax(0, 1fr);
+        gap: var(--space-3);
+        padding: var(--space-2);
+        min-height: 74px;
+    }
+    .ec-video-sample-photo > span {
+        padding: 1px 3px;
+    }
+    .ec-video-upload-copy {
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        column-gap: var(--space-2);
+    }
+    .ec-video-upload-copy > span:not(.ec-video-upload-action) {
+        grid-column: 1 / -1;
+    }
+    .ec-video-upload-action {
+        grid-area: 1 / 2;
+        margin-top: 0;
+    }
+    .ec-video-source-facts summary,
+    .ec-video-source .ec-video-settings summary {
+        min-height: 40px;
+    }
+}

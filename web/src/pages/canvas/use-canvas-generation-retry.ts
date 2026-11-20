@@ -41,7 +41,7 @@ import { resolveCanvasStyleExecution } from "@/lib/canvas/canvas-style-execution
 import { generationFailureMetadata, unchangedModeratedPrompt } from "@/lib/generation-error";
 import { modelCapabilityConfigFor } from "@/lib/model-capabilities";
 import { videoEnhanceTaskInput } from "@/lib/canvas/canvas-video-enhance";
-import { videoDepthTaskInput } from "@/lib/canvas/canvas-video-depth";
+import { canvasVideoDepthMetadata, videoDepthTaskInput } from "@/lib/canvas/canvas-video-depth";
 import { videoProcessingSourceReference } from "@/lib/canvas/canvas-video-processing";
 import { navigateToSettings } from "@/lib/settings-navigation";
 import type { Skill } from "@/services/api/skills";
@@ -294,7 +294,7 @@ export function useCanvasGenerationRetry({
             }
             // 处理节点按保存的参数重建请求，不能落入普通视频生成。
             const videoEnhance = node.metadata?.videoEnhance;
-            const videoDepth = node.metadata?.videoDepth;
+            const videoDepth = canvasVideoDepthMetadata(node);
             const videoProcessing = videoDepth || videoEnhance;
             if (videoProcessing) {
                 if (processingRetries.current.has(node.id)) return;
@@ -363,7 +363,7 @@ export function useCanvasGenerationRetry({
                 message.warning(translate("canvasPage.retry.notRetryable"));
                 return;
             }
-            const sourceNode = findRetrySourceNode(node.id, nodesRef.current, connectionsRef.current) || node;
+            const sourceNode = node.type === CanvasNodeType.Video && node.metadata?.videoReferenceMode ? node : findRetrySourceNode(node.id, nodesRef.current, connectionsRef.current) || node;
             const batchRoot = node.metadata?.batchRootId ? nodesRef.current.find((item) => item.id === node.metadata?.batchRootId) : null;
             const savedImageMetadata = node.type === CanvasNodeType.Image ? { ...batchRoot?.metadata, ...node.metadata } : undefined;
             const hasSavedImageMetadata = Boolean(savedImageMetadata?.generationType);
@@ -489,7 +489,7 @@ export function useCanvasGenerationRetry({
                     return;
                 }
             }
-            const storedVideoImages = node.type === CanvasNodeType.Video && !context?.referenceImages.length ? await resolveStoredReferenceImages(node.metadata?.references) : [];
+            const storedVideoImages = node.type === CanvasNodeType.Video && !node.metadata?.videoReferenceMode && !context?.referenceImages.length ? await resolveStoredReferenceImages(node.metadata?.references) : [];
             if (storedVideoImages === null) {
                 markMissingReferences(node.id, setNodes);
                 message.error(translate("canvasPage.retry.referenceLost"));

@@ -11,7 +11,7 @@ const (
 	qiniuKodoProvider     = "qiniu"
 	volcengineTOSProvider = "volcengine"
 	s3Provider            = "s3"
-	defaultOSSPathPrefix  = "open-ai-canvas"
+	DefaultOSSPathPrefix  = "kivao"
 	resourceAccessURLTTL  = 4 * time.Hour
 )
 
@@ -85,7 +85,7 @@ func NormalizeSettings(value Settings) Settings {
 	value.PublicBaseURL = strings.TrimRight(strings.TrimSpace(value.PublicBaseURL), "/")
 	value.PathPrefix = strings.Trim(strings.TrimSpace(value.PathPrefix), "/")
 	if value.PathPrefix == "" {
-		value.PathPrefix = defaultOSSPathPrefix
+		value.PathPrefix = DefaultOSSPathPrefix
 	}
 	value.S3Preset = strings.ToLower(strings.TrimSpace(value.S3Preset))
 	if value.S3Preset == "" {

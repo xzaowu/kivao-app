@@ -5,6 +5,11 @@ import type { ReferenceVideo } from "@/types/media";
 
 export type VideoDepthParams = { model: string };
 
+/** Read earlier KIVAO drafts without rewriting stored canvases. */
+export function canvasVideoDepthMetadata(node?: CanvasNodeData) {
+    return node?.metadata?.videoDepth ?? node?.metadata?.videoDepthCapture;
+}
+
 export function videoDepthSourceError(node: CanvasNodeData, maxSourceSeconds: number) {
     if (!node.metadata?.storageKey && !node.metadata?.content) return "视频节点为空，无法生成相对深度视频";
     if ((node.metadata.durationMs || 0) > maxSourceSeconds * 1000) return `源视频时长超过 ${maxSourceSeconds} 秒上限，请先截取片段`;

@@ -34,8 +34,8 @@ func TestEcommerceAgentTaskRejectsStalePlanningModel(t *testing.T) {
 	if err != nil || setting.LogicalModelID != "admin-selected-model" {
 		t.Fatalf("setting = %#v, %v", setting, err)
 	}
-	for _, stage := range []string{"planning", "product-understanding", "creative-directions"} {
-		_, err := svc.CreateTask("user", CreateTaskRequest{Type: "canvas_text", Prompt: "plan", LogicalModelID: "outdated-model", Input: map[string]any{
+	for _, stage := range []string{"planning", ecommerceVideoStoryboardStage, "product-understanding", "creative-directions"} {
+		_, err := svc.CreateTask("user", CreateTaskRequest{ProjectID: project.ID, Type: "canvas_text", Prompt: "plan", LogicalModelID: "outdated-model", Input: map[string]any{
 			"mode": "text", "prompt": "plan", "metadata": map[string]any{"source": "ecommerce-agent", "stage": stage, "ecommerceProjectId": project.ID},
 		}})
 		if err == nil || !strings.Contains(err.Error(), "管理员更新") {

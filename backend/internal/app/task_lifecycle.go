@@ -30,7 +30,7 @@ func (s *Service) taskLifecycle() *taskLifecycleCoordinator {
 	return newTaskLifecycleCoordinator(s)
 }
 
-func (w *taskLifecycleCoordinator) retryTask(userID string, id string) (*model.Task, error) {
+func (w *taskLifecycleCoordinator) retryTask(userID string, id string, observed ...time.Time) (*model.Task, error) {
 	s := w.service
 	if s.IsDraining() {
 		return nil, &AppError{Status: 503, Code: 503, Message: "服务正在维护，暂不接受任务重试", Retryable: true}
@@ -38,6 +38,13 @@ func (w *taskLifecycleCoordinator) retryTask(userID string, id string) (*model.T
 	task, err := s.repo.TaskForUser(userID, id)
 	if err != nil {
 		return nil, err
+	}
+	var expected time.Time
+	if len(observed) > 0 {
+		expected = observed[0]
+		if !expected.IsZero() && !task.UpdatedAt.Equal(expected) {
+			return taskForOutput(*task), nil
+		}
 	}
 	if task.MediaRecoveryJSON != "" {
 		return nil, BadAuthRequest("作品已生成，请使用重试保存，不要重复生成")
@@ -74,6 +81,11 @@ func (w *taskLifecycleCoordinator) retryTask(userID string, id string) (*model.T
 	if err := s.requireTaskGenerationFeatures(userID, task.ProjectID, task.Type, task.Operation, task.WorkbenchKind, billingInput); err != nil {
 		return nil, err
 	}
+	if metadata, _ := billingInput["metadata"].(map[string]any); metadata["stage"] == ecommerceVideoFrameStage {
+		return nil, BadAuthRequest("请回到商品视频核对同框图素材与新报价后再合成")
+	} else if metadata["stage"] == ecommerceVideoCastingStage {
+		return nil, BadAuthRequest("请回到选模特核对描述和新报价后再生成")
+	}
 	if err := s.prepareLogicalTaskRetry(task, billingInput); err != nil {
 		return nil, err
 	}
@@ -91,7 +103,10 @@ func (w *taskLifecycleCoordinator) retryTask(userID string, id string) (*model.T
 	if err := s.ensureTaskProjectActive(userID, task.ProjectID); err != nil {
 		return nil, err
 	}
-	task, err = s.repo.RetryTaskWithBilling(userID, task, billingOrder, policy.Task.ActiveTaskLimit, authorizeRetryBillingRelease)
+	task, err = s.repo.RetryTaskAtVersionWithBilling(userID, task, billingOrder, policy.Task.ActiveTaskLimit, expected, authorizeRetryBillingRelease)
+	if errors.Is(err, repository.ErrTaskRevisionChanged) {
+		return s.Task(userID, id)
+	}
 	if errors.Is(err, repository.ErrTaskBillingReview) {
 		return nil, BadAuthRequest("上一次调用费用仍在核对中，处理完成前不能重复提交")
 	}

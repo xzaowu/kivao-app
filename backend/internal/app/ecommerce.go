@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"gorm.io/gorm"
 	"yingce/backend/internal/ecommerceagent"
@@ -39,6 +40,7 @@ type EcommerceDraft struct {
 	Brand                    string                    `json:"brand"`
 	Description              string                    `json:"description"`
 	Claims                   string                    `json:"claims"`
+	ProductFacts             []string                  `json:"productFacts,omitempty"`
 	Materials                string                    `json:"materials"`
 	Colors                   string                    `json:"colors"`
 	Specifications           string                    `json:"specifications"`
@@ -100,7 +102,7 @@ type DeleteEcommerceProjectsRequest struct {
 // EcommerceSkillPrompt reads only installed, active skills owned by this user.
 func (s *Service) EcommerceSkillPrompt(userID string, ids []string) (string, error) {
 	if len(ids) > 0 {
-		if err := s.RequireSkillAdministrator(userID); err != nil {
+		if err := s.RequireSkillUser(userID); err != nil {
 			return "", err
 		}
 	}
@@ -116,14 +118,14 @@ func (s *Service) EcommerceSkillPrompt(userID string, ids []string) (string, err
 			return "", BadAuthRequest("技能 ID 不能为空或重复")
 		}
 		seen[id] = true
-		skill, err := s.SkillDetail(userID, id)
+		skill, err := s.skillDomain().RuntimeSkillDetail(userID, id)
 		if err != nil {
 			return "", err
 		}
 		if !skill.IsAdded || skill.Status != 1 {
 			return "", BadAuthRequest("只能使用已安装且启用的技能")
 		}
-		file, err := s.SkillPackageFile(userID, id, "SKILL.md")
+		file, err := s.skillDomain().RuntimeSkillPackageFile(userID, id, "SKILL.md")
 		if err != nil {
 			return "", err
 		}
@@ -131,7 +133,7 @@ func (s *Service) EcommerceSkillPrompt(userID string, ids []string) (string, err
 		if err != nil {
 			return "", err
 		}
-		latest, err := s.SkillDetail(userID, id)
+		latest, err := s.skillDomain().RuntimeSkillDetail(userID, id)
 		if err != nil {
 			return "", err
 		}
@@ -184,6 +186,8 @@ func (s *Service) EcommerceProjectView(userID, id string, activeOnly bool) (*mod
 						source.DirectionsTaskID, source.PlanningTaskID = "", ""
 						current := draft
 						current.DirectionsTaskID, current.PlanningTaskID = "", ""
+						// 项目资料只供商家按需取用，整理它不改变已提交的策划输入。
+						source.ProductFacts, current.ProductFacts = nil, nil
 						a, _ := json.Marshal(source)
 						b, _ := json.Marshal(current)
 						if string(a) == string(b) {
@@ -345,6 +349,28 @@ func (s *Service) SaveEcommerceProject(userID, id string, req SaveEcommerceProje
 	}
 	if req.Revision != project.Revision {
 		return nil, BadAuthRequest("项目已在其他窗口更新，请刷新后重试")
+	}
+	if req.Draft.ProductFacts == nil && strings.TrimSpace(project.DraftJSON) != "" {
+		// 老客户端保存整份草稿时会省略资料。明确传空数组才会清空。
+		var previous struct {
+			ProductFacts []string `json:"productFacts"`
+		}
+		if err := json.Unmarshal([]byte(project.DraftJSON), &previous); err != nil {
+			return nil, err
+		}
+		req.Draft.ProductFacts = previous.ProductFacts
+	}
+	if len(req.Draft.ProductFacts) > 32 {
+		return nil, BadAuthRequest("每个商品项目最多保存 32 条卖点")
+	}
+	seenFacts := make(map[string]bool, len(req.Draft.ProductFacts))
+	for i, fact := range req.Draft.ProductFacts {
+		fact = strings.TrimSpace(fact)
+		if fact == "" || utf8.RuneCountInString(fact) > 280 || strings.ContainsAny(fact, "\r\n") || seenFacts[fact] {
+			return nil, BadAuthRequest("每条商品卖点须为单行且不重复，最多 280 字")
+		}
+		req.Draft.ProductFacts[i] = fact
+		seenFacts[fact] = true
 	}
 	if req.Draft.Count < 1 || req.Draft.Count > 30 {
 		return nil, BadAuthRequest("生成数量须为1到30张")

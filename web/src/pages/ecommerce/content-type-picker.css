@@ -1,0 +1,20 @@
+.ec-content-type-trigger.app-unified-select {
+    min-width: 7rem;
+    max-width: 100%;
+}
+
+.ec-content-type-menu .ant-select-item-option {
+    display: flex;
+    align-items: center;
+    min-height: 38px;
+}
+
+.ec-content-type-option {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.ec-content-type-option svg {
+    color: var(--user-ink-muted);
+}

@@ -131,6 +131,9 @@ func (s *Service) readSkillPackageSnapshotFile(snapshot *skillPackageSnapshot, f
 }
 
 func (s *Service) loadSkillPackageSnapshot(userID string, skillID string) (*skillPackageSnapshot, error) {
+	if err := s.RequireAdministrator(userID); err != nil {
+		return nil, err
+	}
 	skill, err := s.visibleSkill(userID, skillID)
 	if err != nil {
 		return nil, err

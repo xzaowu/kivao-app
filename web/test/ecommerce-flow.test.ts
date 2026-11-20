@@ -9,6 +9,7 @@ const base: CommerceFlowInput = {
     directionsReady: false,
     directionChosen: false,
     planningPending: false,
+    automaticImages: false,
     planReady: false,
     planCount: 0,
     submitted: 0,
@@ -18,16 +19,18 @@ const base: CommerceFlowInput = {
 };
 const current = (input: Partial<CommerceFlowInput>) => resolveCommerceFlow({ ...base, ...input }).find((step) => step.status === "current");
 
-test("walks the five steps from material to delivery", () => {
+test("one-click creation skips directions unless the user requests them", () => {
     expect(current({})?.key).toBe("material");
-    expect(current({ hasProduct: true, hasInstruction: true })?.key).toBe("direction");
+    expect(current({ hasProduct: true })?.key).toBe("plan");
+    expect(current({ hasInstruction: true })?.key).toBe("plan");
     expect(current({ hasProduct: true, hasInstruction: true, directionsLoading: true })).toMatchObject({ key: "direction", running: true });
     expect(current({ hasProduct: true, hasInstruction: true, directionsReady: true })?.detail).toContain("选一套视觉方向");
     expect(current({ hasProduct: true, directionChosen: true, planningPending: true })).toMatchObject({ key: "plan", running: true });
     expect(current({ hasProduct: true, planReady: true, planCount: 8 })?.detail).toContain("方案共 8 张");
     expect(current({ hasProduct: true, planReady: true, planCount: 8, submitted: 8, completed: 3, active: 5, failed: 0 })).toMatchObject({ key: "generate", running: true, detail: "已完成 3 / 8 张" });
     const delivered = resolveCommerceFlow({ ...base, hasProduct: true, planReady: true, planCount: 8, submitted: 8, completed: 8 });
-    expect(delivered.map((step) => step.status)).toEqual(["done", "done", "done", "done", "current"]);
+    expect(delivered.map((step) => step.status)).toEqual(["done", "done", "done", "current"]);
+    expect(current({ hasProduct: true, planningPending: true, automaticImages: true })?.detail).toContain("自动出图");
 });
 
 test("a follow-up round goes back to directions while the delivered round stays visible", () => {

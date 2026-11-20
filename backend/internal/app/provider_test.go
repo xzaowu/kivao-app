@@ -161,12 +161,17 @@ func TestRunVideoTaskUsesDeclarativeAgnesJSONProtocol(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newPluginRuntime() error = %v", err)
 	}
-	adapter, ok := center.registrySnapshot().Resolve("agnes-video")
+	registry := center.registrySnapshot()
+	adapter, ok := registry.Resolve("agnes-video")
 	if !ok {
 		t.Fatal("declarative Agnes adapter is missing")
 	}
-	if metadata := adapter.Metadata(); metadata.Version != "2.0.0" || metadata.Execution != "declarative" || !metadata.RequiresPublicMediaURLs {
-		t.Fatalf("Agnes runtime metadata = %#v", metadata)
+	releases := registry.Releases("agnes-video")
+	if len(releases) != 1 || releases[0].PluginID != "agnes-video-25" || !releases[0].Current || !releases[0].Selectable || releases[0].SHA256 == "" {
+		t.Fatal("missing current Agnes 2.5 package release")
+	}
+	if metadata := adapter.Metadata(); metadata.Version != releases[0].Version || metadata.Execution != "declarative" || !metadata.RequiresPublicMediaURLs {
+		t.Fatalf("Agnes adapter has version %q, execution %q, public media URLs %t", metadata.Version, metadata.Execution, metadata.RequiresPublicMediaURLs)
 	}
 
 	paths := make([]string, 0, 3)
@@ -542,7 +547,7 @@ func TestCanonicalAgentBodiesPreserveAssistantToolCalls(t *testing.T) {
 		t.Fatalf("responses input = %#v", responseInput)
 	}
 	functionCall, _ := responseInput[2].(map[string]interface{})
-	if functionCall["type"] != "function_call" || functionCall["name"] != "canvas_get_state" || functionCall["id"] != "fc-5" || functionCall["item_reference"] != "fc-5" {
+	if functionCall["type"] != "function_call" || functionCall["name"] != "canvas_get_state" || functionCall["id"] != "fc-5" || functionCall["item_reference"] != nil {
 		t.Fatalf("responses function call = %#v", functionCall)
 	}
 }

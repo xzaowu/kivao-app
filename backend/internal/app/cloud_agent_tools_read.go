@@ -20,6 +20,7 @@ import (
 
 	"yingce/backend/internal/model"
 	"yingce/backend/internal/repository"
+	"yingce/backend/internal/skills"
 )
 
 // 工具分类统一由 internal/agent/tool 注册表推导，这里只保留 app 内的薄封装。
@@ -121,6 +122,26 @@ func cloudAgentReadToolCached(repo *repository.Repository, userID string, state 
 		}
 		state.ReadToolCalls++
 		return cloudAgentReadTool(repo, userID, state, call, services...)
+	}
+	if call.Function.Name == "skill_read_file" {
+		var args struct {
+			SkillID string `json:"skillId"`
+		}
+		if json.Unmarshal([]byte(call.Function.Arguments), &args) == nil && args.SkillID != "" {
+			domain := skills.New(repo, "", nil)
+			if service := cloudAgentToolService(services); service != nil {
+				domain = service.skillDomain()
+			}
+			{
+				detail, err := domain.RuntimeSkillDetail(userID, args.SkillID)
+				if err != nil {
+					return nil, err
+				}
+				if detail.VersionID != state.SkillVersions[args.SkillID] {
+					return nil, creationConflict("技能已更新，请重新开始本轮任务")
+				}
+			}
+		}
 	}
 	key := cloudAgentReadCacheKeyForState(repo, userID, state, call)
 	if state.ToolReadResults != nil {

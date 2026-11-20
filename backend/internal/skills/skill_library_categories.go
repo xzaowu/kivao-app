@@ -39,7 +39,7 @@ type SkillLibraryCategoryAssignmentRequest struct {
 }
 
 func (s *Service) SkillLibraryCategories(userID string, scope string) (*SkillLibraryCategoryList, error) {
-	if err := s.RequireAdministrator(userID); err != nil {
+	if err := s.RequireUser(userID); err != nil {
 		return nil, err
 	}
 	scope = normalizeSkillLibraryCategoryListScope(scope)
@@ -119,6 +119,9 @@ func (s *Service) DeleteSkillLibraryCategory(actor *model.User, id string) error
 }
 
 func (s *Service) SetSkillLibraryCategory(userID string, skillID string, categoryID string) (*SkillItem, error) {
+	if err := s.RequireAdministrator(userID); err != nil {
+		return nil, err
+	}
 	skill, err := s.visibleSkill(userID, skillID)
 	if err != nil {
 		return nil, err

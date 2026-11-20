@@ -24,6 +24,7 @@ export type BackendGenerationMode = "text" | "image" | "video" | "audio";
 
 export type BackendGenerationResult = {
     projectAssetImageStatus?: "bound" | "stale";
+    assetId?: string;
     mode?: BackendGenerationMode;
     images?: Array<{ dataUrl: string; storageKey?: string; width?: number; height?: number; bytes?: number; mimeType?: string }>;
     video?: { dataUrl: string; storageKey?: string; width?: number; height?: number; durationMs?: number; bytes?: number; mimeType?: string };
@@ -214,6 +215,7 @@ function generationOperation(options: BackendGenerationTaskOptions) {
         {
             textCount: 0,
             imageCount: options.referenceImages?.length ?? 0,
+            referenceImageCount: options.metadata?.videoEditOperation === "reference_to_video" ? options.referenceImages?.filter((image) => image.role === "reference").length : undefined,
             videoCount: options.referenceVideos?.length ?? 0,
             audioCount: options.referenceAudios?.length ?? 0,
             characterCount: 0,
@@ -322,6 +324,7 @@ function backendGenerationTaskInput(options: BackendGenerationTaskOptions, prepa
             referenceAudios: prepared.referenceAudios,
             mask: prepared.mask,
             metadata: generationMetadata(config, {
+                ...(mode === "video" ? { videoEditOperation: videoOperation } : {}),
                 ...metadata,
                 ...(options.clientOperationId ? { clientOperationId: options.clientOperationId } : {}),
                 ...(options.retryOf ? { retryOf: options.retryOf } : {}),

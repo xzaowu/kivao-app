@@ -45,3 +45,33 @@ func TestOpenAIImageLocalReferencesWithoutPublicURL(t *testing.T) {
 		t.Fatal("another user's reference resource was accepted")
 	}
 }
+
+func TestOpenAIVideoFirstFrameUsesLocalFile(t *testing.T) {
+	service, _, imageBytes := cloudAgentVisionFixture(t)
+	t.Setenv("CANVAS_PUBLIC_BASE_URL", "")
+	input := canvasGenerationInput{
+		Mode: "video", Prompt: "Show the product",
+		Config:          providerConfig{InterfaceType: string(model.ChannelInterfaceNewAPIVideo), Model: "test-video", VideoSeconds: "15"},
+		ReferenceImages: []providerMedia{{ID: "product", Role: "first_frame", StorageKey: "resource:ref-one"}},
+	}
+	ctx := ensureOfficialProtocolAdapter(context.Background(), input.Config.InterfaceType)
+	policy := providerMediaHydrationPolicyFor(ctx, input)
+	if policy.requireURL || policy.preferURL {
+		t.Fatal("multipart video input should read the first frame as a file")
+	}
+	if err := service.hydrateGenerationMedia("user", &input, policy); err != nil {
+		t.Fatal(err)
+	}
+	adapter, ok := declarativeProtocolAdapterForContext(ctx, input.Config.InterfaceType)
+	if !ok {
+		t.Fatal("official OpenAI Videos adapter missing")
+	}
+	request, err := adapter.BuildCreate(ctx, protocol.RequestContext{Request: protocolRequestFromInput(input)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "data:image/png;base64," + base64.StdEncoding.EncodeToString(imageBytes)
+	if request.Path != "/v1/videos" || len(request.Files) != 1 || request.Files[0].Name != "input_reference" || request.Files[0].Reference.DataURL != want {
+		t.Fatal("multipart request did not include the selected first-frame file")
+	}
+}

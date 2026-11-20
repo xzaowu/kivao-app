@@ -1,4 +1,4 @@
-/* 电商创作页（/ecommerce）：左侧方案与作品，右侧创作面板。
+/* 电商工作台：图片与视频共用模式导航、素材与创作双栏、提交栏。
    与 /toolbox/image 同一套面板规则：面板只有一层表面，区块之间用细分隔线，不套卡片；
    字号只用 --fs-label / --fs-caption / --fs-ui / --fs-body / --fs-heading 五档。
    旧 workspace/studio/agent-theme 仍服务历史弹窗、方向卡片与风格库；这里出现的同名类都在 .ecs-* 作用域内覆盖。 */
@@ -7,6 +7,7 @@
     min-width: 0;
     min-height: 0;
     overflow: hidden;
+    padding: 0;
 }
 .ecs-page > div:first-child {
     display: flex;
@@ -15,79 +16,94 @@
     min-height: 0;
 }
 .ecs-shell {
+    --ec-studio-media-height: clamp(180px, 30vh, 320px);
     --ecs-motion: var(--motion-dur-base) var(--motion-ease-out);
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(380px, 420px);
-    gap: var(--space-4);
+    display: flex;
+    flex-direction: column;
+    container: ecommerce-studio / inline-size;
     width: 100%;
+    max-width: 106rem;
+    margin-inline: auto;
     height: 100%;
     min-width: 0;
     min-height: 0;
-    padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
-    background: var(--user-page-bg);
+    padding: var(--space-2) clamp(12px, 1.6vw, 28px) 0;
     color: var(--user-ink);
 }
-.ecs-mobile-tabs {
+.ec-studio-head {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-1) 0 var(--space-2);
+    border-bottom: 1px solid var(--user-border);
+}
+.ec-studio-head > .app-segmented {
+    flex-shrink: 0;
+}
+.ec-studio-project {
+    flex: 1;
+    min-width: 0;
+    color: var(--user-ink-muted);
+    font-size: var(--fs-ui);
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    text-align: end;
+}
+.ec-studio-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+}
+.ec-studio-panel[hidden] {
     display: none;
+}
+.ec-studio-grid {
+    display: grid;
+    grid-template-columns: minmax(210px, 0.8fr) minmax(0, 1.45fr);
+    align-items: start;
+    align-content: start;
+    gap: clamp(14px, 2cqi, 32px);
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    padding: clamp(12px, 1.45cqi, 22px) 2px;
+}
+.ec-studio-column {
+    min-width: 0;
+}
+.ec-studio-column > .ecs-block:first-child {
+    padding-top: 0;
+}
+.ec-studio-column > .ecs-block > header h3 {
+    font-size: var(--fs-heading);
 }
 .ecs-shell :is(button, a, summary, [role="tab"]):focus-visible {
     outline: var(--focus-ring-width, 2px) solid var(--ring);
     outline-offset: 2px;
 }
 
-/* ---------- 右侧创作面板 ---------- */
-.ecs-composer {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    min-height: 0;
-    height: 100%;
-    overflow: hidden;
-    border-radius: var(--r-2xl);
-    background: var(--user-surface);
-}
-.ecs-composer-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-3);
-    padding: var(--space-3) var(--space-3) 0 var(--space-4);
-}
-.ecs-kind-switch {
-    display: inline-flex;
-    flex: 0 0 auto;
-    gap: 2px;
-    padding: var(--space-1);
-    border-radius: var(--r-lg);
-    background: var(--user-surface-muted);
-}
-.ecs-kind-switch button {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    height: 28px;
-    padding: 0 var(--space-3);
-    border: 0;
-    border-radius: var(--r-md);
-    background: transparent;
-    color: var(--user-ink-muted);
-    font-size: var(--fs-ui);
-    font-weight: 500;
-    white-space: nowrap;
-    cursor: pointer;
-}
-.ecs-kind-switch button.is-active {
-    background: var(--user-surface);
-    color: var(--user-ink);
-    box-shadow: 0 1px 2px color-mix(in srgb, var(--user-ink) 10%, transparent);
-}
-.ecs-kind-switch button:disabled {
-    color: var(--user-ink-soft);
-    cursor: not-allowed;
-}
 .ecs-head-actions {
     display: flex;
-    gap: 2px;
+    flex-shrink: 0;
+    gap: var(--space-1);
+}
+.ecs-head-actions .ecs-icon-button {
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    gap: var(--space-1);
+    width: auto;
+    padding-inline: var(--space-2);
+    font-size: var(--fs-ui);
+}
+.ec-studio-views {
+    margin-inline-start: var(--space-2);
 }
 .ecs-icon-button {
     display: inline-grid;
@@ -112,26 +128,6 @@
     cursor: not-allowed;
     opacity: 0.42;
 }
-.ecs-project-line {
-    display: flex;
-    align-items: baseline;
-    gap: var(--space-2);
-    min-width: 0;
-    padding: var(--space-3) var(--space-4) 0;
-}
-.ecs-project-line strong {
-    overflow: hidden;
-    font-size: var(--fs-heading);
-    font-weight: 600;
-    line-height: var(--lh-heading);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-.ecs-project-line span {
-    flex: none;
-    color: var(--user-ink-soft);
-    font-size: var(--fs-caption);
-}
 .ecs-paused {
     margin: var(--space-3) var(--space-4) 0;
     padding: var(--space-2) var(--space-3);
@@ -140,16 +136,6 @@
     color: var(--user-ink);
     font-size: var(--fs-caption);
     line-height: var(--lh-body);
-}
-.ecs-composer-scroll {
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow-x: hidden;
-    overflow-y: auto;
-    padding: 0 var(--space-4) var(--space-2);
-    scrollbar-gutter: stable;
-    scrollbar-width: thin;
-    scrollbar-color: color-mix(in srgb, var(--user-ink) 18%, transparent) transparent;
 }
 .ecs-block {
     display: grid;
@@ -338,6 +324,15 @@
 .ecs-product-slot .commerce-reference-item {
     border: 0;
     background: var(--user-surface-muted);
+}
+.ecs-product-slot .commerce-reference-list > :first-child {
+    width: 100%;
+    height: var(--ec-studio-media-height);
+    background: var(--user-surface-muted);
+    border-radius: var(--ant-border-radius-lg);
+}
+.ecs-product-slot .commerce-reference-item:first-child img {
+    object-fit: contain;
 }
 .ecs-product-slot .commerce-reference-thumb,
 .ecs-product-slot .commerce-reference-item img {
@@ -743,19 +738,25 @@
 }
 
 /* 底部提交栏 */
-.ecs-footer {
+.ec-studio-footer {
     display: flex;
     flex: none;
     align-items: center;
     gap: var(--space-2);
-    padding: var(--space-3) var(--space-4) var(--space-4);
+    min-height: 60px;
+    padding-block: var(--space-3) max(var(--space-3), env(safe-area-inset-bottom));
     border-top: 1px solid var(--user-border);
 }
 .ecs-estimate {
     display: grid;
-    flex: 1 1 auto;
     gap: 2px;
     min-width: 0;
+    margin-inline-end: auto;
+}
+@container ecommerce-studio (min-width: 721px) {
+    body:has(.canvas-agent-launcher:not([aria-hidden="true"])) .ec-studio-footer {
+        padding-inline-end: 7.5rem;
+    }
 }
 .ecs-estimate strong {
     display: flex;
@@ -780,6 +781,10 @@
     font-size: var(--fs-caption);
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+.ec-studio-footer > [role="status"] {
+    min-width: 0;
+    font-size: var(--fs-ui);
 }
 .ecs-submit.ant-btn {
     min-width: 96px;
@@ -979,39 +984,59 @@
 }
 
 /* ---------- 窄屏 ---------- */
-@media (max-width: 1180px) {
+@media (max-width: 720px) {
     .ecs-shell {
-        grid-template-columns: minmax(0, 1fr) minmax(340px, 380px);
-        gap: var(--space-3);
+        --ec-studio-media-height: clamp(128px, 22dvh, 190px);
+        padding: 4px var(--space-3) 0;
     }
 }
-@media (max-width: 760px) {
-    .ecs-shell {
+@container ecommerce-studio (max-width: 720px) {
+    .ec-studio-grid {
         grid-template-columns: minmax(0, 1fr);
-        grid-template-rows: auto minmax(0, 1fr);
-        gap: var(--space-2);
-        padding: var(--space-2);
+        gap: var(--space-4);
     }
-    .ecs-mobile-tabs {
-        display: block;
-    }
-    .ecs-composer-head {
-        flex-wrap: wrap;
-        gap: var(--space-2);
-    }
-    .ecs-kind-switch {
-        max-width: 100%;
-    }
-    .ecs-head-actions {
-        flex-shrink: 0;
-        margin-inline-start: auto;
-    }
-    .ecs-shell[data-mobile-view="create"] .commerce-output-gallery,
-    .ecs-shell[data-mobile-view="works"] .ecs-composer {
-        display: none;
+    .ec-studio-footer > :first-child {
+        flex: 1;
+        min-width: 0;
     }
     .ecs-scene-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+@media (hover: none) {
+    .ecs-product-slot .commerce-reference-remove {
+        opacity: 1;
+    }
+}
+@container ecommerce-studio (max-width: 560px) {
+    .ec-studio-head {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        padding: var(--space-1) 0 var(--space-2);
+    }
+    .ec-studio-head .ecs-head-actions {
+        margin-inline-start: auto;
+    }
+    .ec-studio-project,
+    .ec-studio-action-text {
+        display: none;
+    }
+    .ec-studio-views {
+        margin-inline-start: 0;
+    }
+    .ec-studio-head .app-segmented {
+        justify-self: start;
+        max-width: 100%;
+    }
+    .ec-studio-head .app-segmented-item {
+        padding-inline: 6px;
+    }
+    .ec-studio-head .app-segmented-item svg {
+        display: none;
+    }
+    .ec-studio-head .ecs-icon-button {
+        width: 28px;
     }
 }
 @media (prefers-reduced-motion: reduce) {

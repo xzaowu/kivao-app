@@ -1959,15 +1959,6 @@
         transition: none;
         animation: none;
     }
-    .ecommerce-history-root .ecommerce-history-motion-enter-active,
-    .ecommerce-history-root .ecommerce-history-motion-appear-active,
-    .ecommerce-history-root .ecommerce-history-motion-leave-active,
-    .ecommerce-history-root .ecommerce-history-mask-enter-active,
-    .ecommerce-history-root .ecommerce-history-mask-appear-active,
-    .ecommerce-history-root .ecommerce-history-mask-leave-active {
-        transition: none;
-        filter: none;
-    }
 }
 @media (max-width: 1200px) {
     .ecommerce-page {

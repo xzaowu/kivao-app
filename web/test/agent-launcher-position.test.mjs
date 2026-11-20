@@ -27,6 +27,14 @@ test("launcher stays within all four edges and clamps after a viewport shrink", 
     expect(clampAgentLauncherPosition(start, { width: 90, height: 90 })).toEqual({ right: 7, bottom: 7 });
 });
 
+test("the default workspace anchor clears pagination without moving an editor or a manually positioned launcher", () => {
+    const mobile = { width: 390, height: 844 };
+    expect(restoreAgentLauncherPosition(null, viewport, undefined, false).bottom).toBe(120);
+    expect(restoreAgentLauncherPosition(null, mobile, undefined, false).bottom).toBe(184);
+    expect(restoreAgentLauncherPosition(null, mobile, undefined, true)).toEqual(start);
+    expect(restoreAgentLauncherPosition(JSON.stringify(start), mobile, undefined, false)).toEqual(start);
+});
+
 test("small pointer jitter remains a click, but dragging back to the origin remains a drag", () => {
     const gesture = { start, x: 500, y: 500, dragged: false };
     expect(moveAgentLauncher(gesture, 502, 503, viewport)).toEqual({ dragged: false, position: start });
@@ -158,17 +166,25 @@ test("touch taps open once even without a compatibility click after dragging", (
     const h = harness();
     h.fire("onPointerDown", { pointerType: "touch" });
     h.fire("onPointerUp", { pointerType: "touch" });
+    // The launcher must still be mounted when touchend cancels the browser click,
+    // or the newly opened panel receives the same tap on its own controls.
+    expect(h.opens).toBe(0);
+    let clickCancelled = false;
+    h.fire("onTouchEnd", { touches: [], preventDefault: () => (clickCancelled = true) });
+    expect(clickCancelled).toBe(true);
     expect(h.opens).toBe(1);
     h.fire("onClick");
     expect(h.opens).toBe(1);
     h.fire("onPointerDown", { pointerType: "touch" });
     h.fire("onPointerMove", { pointerType: "touch", clientX: 400 });
     h.fire("onPointerUp", { pointerType: "touch", clientX: 400 });
+    h.fire("onTouchEnd", { touches: [] });
     expect(h.opens).toBe(1);
     h.fire("onClick");
     expect(h.opens).toBe(1);
     h.fire("onPointerDown", { pointerType: "touch" });
     h.fire("onPointerUp", { pointerType: "touch" });
+    h.fire("onTouchEnd", { touches: [] });
     expect(h.opens).toBe(2);
 });
 

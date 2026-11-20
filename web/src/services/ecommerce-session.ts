@@ -1,7 +1,7 @@
 import { createClientUUID } from "@/lib/client-id";
 import { localForageStorageForScope } from "@/lib/localforage-storage";
 import { getActiveUserScope, scopedStorageKey } from "@/lib/user-scope";
-import { createEcommerceProject, saveEcommerceProject, type EcommerceDraft, type EcommercePlan, type EcommerceProject, type EcommerceSaveOptions } from "@/services/api/ecommerce";
+import { createEcommerceProject, projectDraft, projectPlan, saveEcommerceProject, type EcommerceDraft, type EcommercePlan, type EcommerceProject, type EcommerceSaveOptions } from "@/services/api/ecommerce";
 
 export type EcommerceWorkspaceCheckpoint = {
     sessionId: string;
@@ -146,23 +146,29 @@ export function getEcommercePlanningReceipt(scope: string, projectId: string): s
     return readSmallValue(scope, `ecommerce-planning-task:${projectId}`);
 }
 
+export function getEcommerceOneClickPlanningReceipt(scope: string, projectId: string): string | null {
+    return readSmallValue(scope, `ecommerce-one-click-planning:${projectId}`);
+}
+
 export function getEcommerceDirectionsReceipt(scope: string, projectId: string): string | null {
     return readSmallValue(scope, `ecommerce-directions-task:${projectId}`);
 }
 
-export function setEcommerceDirectionsReceipt(scope: string, projectId: string, taskId: string): boolean {
+export function setEcommerceDirectionsReceipt(scope: string, projectId: string, taskId: string | null): boolean {
     return writeSmallValue(scope, `ecommerce-directions-task:${projectId}`, taskId);
 }
 
-export function setEcommercePlanningReceipt(scope: string, projectId: string, taskId: string): boolean {
+export function setEcommercePlanningReceipt(scope: string, projectId: string, taskId: string, oneClick = false): boolean {
+    writeSmallValue(scope, `ecommerce-one-click-planning:${projectId}`, oneClick ? taskId : null);
     return writeSmallValue(scope, `ecommerce-planning-task:${projectId}`, taskId);
 }
 
 export function clearEcommercePlanningReceipt(scope: string, projectId: string): boolean {
+    writeSmallValue(scope, `ecommerce-one-click-planning:${projectId}`, null);
     return writeSmallValue(scope, `ecommerce-planning-task:${projectId}`, null);
 }
 
-type SessionState = { project: EcommerceProject | null; tail: Promise<void>; submitting: boolean };
+type SessionState = { project: EcommerceProject | null; tail: Promise<void>; submitting: false | "manual" | "one-click" };
 export type EcommerceSessionDependencies = {
     createProject: typeof createEcommerceProject;
     saveProject: typeof saveEcommerceProject;
@@ -180,7 +186,7 @@ export function createEcommerceSession(scope: string, initialProject?: Ecommerce
     if (!scope || scope === "guest") throw new Error("请先登录后恢复电商项目");
     const sessionKey = scopedStorageKey(`ecommerce-session:${sessionId}`, scope);
     const projectKey = (id: string) => scopedStorageKey(`ecommerce-project:${id}`, scope);
-    const state = (initialProject ? projectSessions.get(projectKey(initialProject.id)) : undefined) || sessions.get(sessionKey) || { project: null, tail: Promise.resolve(), submitting: false };
+    const state: SessionState = (initialProject ? projectSessions.get(projectKey(initialProject.id)) : undefined) || sessions.get(sessionKey) || { project: null, tail: Promise.resolve(), submitting: false };
     sessions.set(sessionKey, state);
     const adopt = (project: EcommerceProject) => {
         if (state.project && state.project.id !== project.id) throw new Error("电商项目已切换，请使用对应项目会话");
@@ -191,6 +197,25 @@ export function createEcommerceSession(scope: string, initialProject?: Ecommerce
     const assertScope = () => {
         if (dependencies.activeScope() !== scope) throw new Error("登录账号已切换，已停止保存原账号电商项目");
     };
+    function enqueueSave(write: (project: EcommerceProject, firstSave: boolean) => Promise<EcommerceProject>) {
+        const operation = state.tail
+            .catch(() => undefined)
+            .then(async () => {
+                assertScope();
+                const firstSave = !state.project;
+                if (!state.project) adopt(await dependencies.createProject());
+                assertScope();
+                const saved = await write(state.project!, firstSave);
+                adopt(saved);
+                assertScope();
+                return copy(saved);
+            });
+        state.tail = operation.then(
+            () => undefined,
+            () => undefined,
+        );
+        return operation;
+    }
     return {
         id: sessionId,
         scope,
@@ -198,12 +223,15 @@ export function createEcommerceSession(scope: string, initialProject?: Ecommerce
             return copy(state.project);
         },
         get submitting(): boolean {
-            return state.submitting;
+            return Boolean(state.submitting);
         },
-        beginSubmission(): boolean {
+        get oneClickSubmitting(): boolean {
+            return state.submitting === "one-click";
+        },
+        beginSubmission(oneClick = false): boolean {
             assertScope();
             if (state.submitting) return false;
-            state.submitting = true;
+            state.submitting = oneClick ? "one-click" : "manual";
             workspaceListeners.get(scope)?.forEach((listener) => listener());
             return true;
         },
@@ -215,28 +243,26 @@ export function createEcommerceSession(scope: string, initialProject?: Ecommerce
         adopt,
         save(draft: EcommerceDraft, plan: EcommercePlan | null, options?: EcommerceSaveOptions): Promise<EcommerceProject> {
             const draftSnapshot = copy(draft);
+            // Only the product facts editor changes the shared bank. Old round drafts can contain an older copy.
+            delete draftSnapshot.productFacts;
             const planSnapshot = copy(plan);
             const optionsSnapshot = options ? { ...options } : undefined;
-            const operation = state.tail
-                .catch(() => undefined)
-                .then(async () => {
-                    assertScope();
-                    if (!state.project) {
-                        const created = await dependencies.createProject();
-                        adopt(created);
-                        assertScope();
-                    }
-                    assertScope();
-                    const saved = await dependencies.saveProject(state.project!, draftSnapshot, planSnapshot, optionsSnapshot);
-                    adopt(saved);
-                    assertScope();
-                    return copy(saved);
-                });
-            state.tail = operation.then(
-                () => undefined,
-                () => undefined,
-            );
-            return operation;
+            return enqueueSave((project) => dependencies.saveProject(project, draftSnapshot, planSnapshot, optionsSnapshot));
+        },
+        saveProductFacts(items: string[], expected: string[], initialDraft: EcommerceDraft, initialPlan: EcommercePlan | null) {
+            const firstDraft = copy(initialDraft);
+            const firstPlan = copy(initialPlan);
+            const original = [...expected];
+            const productFacts = [...items];
+            return enqueueSave((project, firstSave) => {
+                // Editing the shared facts must preserve the draft and plan that produced the active round.
+                const persisted = projectDraft(project);
+                if (JSON.stringify(persisted.productFacts || []) !== JSON.stringify(original)) throw new Error("商品资料已更新，请重新载入项目再编辑。");
+                const draft = firstSave ? firstDraft : persisted;
+                const plan = firstSave ? firstPlan : projectPlan(project);
+                const options = project.activeRoundId ? { historyMode: "rounds" as const, activeRoundId: project.activeRoundId } : undefined;
+                return dependencies.saveProject(project, { ...draft, productFacts }, plan, options);
+            });
         },
     };
 }

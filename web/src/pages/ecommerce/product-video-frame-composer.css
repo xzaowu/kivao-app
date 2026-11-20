@@ -1,0 +1,488 @@
+.ec-frame-composer {
+    min-width: 0;
+    padding-block: var(--space-2);
+    border-block-start: 1px solid var(--user-border);
+}
+.ec-frame-composer > summary {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: 36px;
+    cursor: pointer;
+    list-style: none;
+    font-size: var(--fs-ui);
+}
+.ec-frame-composer > summary::-webkit-details-marker {
+    display: none;
+}
+.ec-frame-composer > summary > svg:last-child {
+    margin-inline-start: auto;
+}
+.ec-frame-composer[open] > summary > svg:last-child {
+    transform: rotate(180deg);
+}
+.ec-frame-composer-body {
+    display: grid;
+    container: ec-frame / inline-size;
+    gap: var(--space-3);
+    padding-block: var(--space-2) var(--space-3);
+    font-size: var(--fs-ui);
+}
+.ec-frame-desk {
+    display: grid;
+    align-items: start;
+    gap: var(--space-4);
+    min-inline-size: 0;
+}
+.ec-frame-tools {
+    display: grid;
+    align-items: start;
+    gap: var(--space-4);
+    min-inline-size: 0;
+    border-block-start: 1px solid var(--user-border);
+    padding-block-start: var(--space-4);
+}
+.ec-frame-pose {
+    display: grid;
+    align-content: start;
+    justify-items: start;
+    min-width: 0;
+    gap: var(--space-2);
+}
+.ec-frame-render-options {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    align-content: start;
+    gap: var(--space-2);
+    min-width: 0;
+}
+.ec-frame-tools label {
+    display: grid;
+    gap: var(--space-2);
+    font-weight: 600;
+    max-inline-size: 100%;
+}
+.ec-frame-composer-body > p,
+.ec-frame-render-options > p {
+    margin: 0;
+    overflow-wrap: anywhere;
+    flex-basis: 100%;
+}
+.ec-frame-pose > input,
+.ec-frame-tools select {
+    min-width: 0;
+    max-inline-size: 100%;
+    padding: var(--space-2) var(--space-3);
+    background: var(--user-surface);
+    color: var(--user-ink);
+    border: 1px solid var(--user-border);
+    border-radius: var(--ant-border-radius);
+    font: inherit;
+    font-weight: 400;
+}
+.ec-frame-pose > input {
+    inline-size: min(100%, 32rem);
+    box-sizing: border-box;
+}
+.ec-frame-tools select {
+    inline-size: min(100%, 18rem);
+    text-overflow: ellipsis;
+}
+.ec-frame-tools .ant-btn {
+    max-inline-size: 100%;
+}
+.ec-frame-inputs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+    gap: clamp(8px, 1.4cqi, 18px);
+}
+.ec-frame-inputs fieldset {
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
+.ec-frame-inputs legend {
+    margin-block-end: var(--space-2);
+    padding: 0;
+    font-size: var(--fs-ui);
+    font-weight: 600;
+}
+.ec-frame-photo {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 100%;
+    height: clamp(136px, 30cqi, 360px);
+    overflow: hidden;
+    background: var(--user-surface);
+    color: var(--user-ink);
+    border: 1px solid var(--user-border);
+    border-radius: var(--r-lg);
+    padding: 0;
+    cursor: zoom-in;
+}
+.ec-frame-photo .cached-resource-image-shell,
+.ec-frame-lightbox .cached-resource-image-shell {
+    display: grid;
+    grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+    place-items: center;
+    min-height: 0;
+}
+.ec-frame-photo:not(.ec-frame-photo-empty) {
+    grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+}
+.ec-frame-photo .cached-resource-image-shell,
+.ec-frame-photo img,
+.ec-frame-lightbox img,
+.ec-frame-render-options > .cached-resource-image-shell img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+.ec-frame-zoom {
+    position: absolute;
+    inset: auto var(--space-2) var(--space-2) auto;
+    display: grid;
+    place-items: center;
+    width: 25px;
+    aspect-ratio: 1;
+    color: var(--user-ink);
+    background: color-mix(in srgb, var(--user-surface) 88%, transparent);
+    border: 1px solid var(--user-border);
+    border-radius: 50%;
+}
+.ec-frame-photo-empty {
+    align-content: center;
+    justify-items: center;
+    gap: var(--space-2);
+    border-style: dashed;
+    background: color-mix(in srgb, var(--user-surface-muted) 30%, var(--user-surface));
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+.ec-frame-photo-empty svg {
+    color: var(--user-ink-soft);
+}
+.ec-frame-inputs:not(:has(.ec-casting-name)) .ec-frame-photo-empty {
+    height: clamp(128px, 18cqi, 210px);
+}
+.ec-frame-photo:hover:enabled {
+    border-color: var(--user-ink-soft);
+}
+.ec-frame-lightbox {
+    display: grid;
+    gap: var(--space-2);
+    min-width: 0;
+}
+.ec-frame-lightbox .cached-resource-image-shell {
+    height: min(66dvh, 620px);
+}
+.ec-frame-lightbox small {
+    color: var(--user-ink-muted);
+    overflow-wrap: anywhere;
+}
+.ec-frame-render-options > .cached-resource-image-shell {
+    width: min(100%, 22rem);
+    height: clamp(140px, 28dvh, 280px);
+}
+.ec-frame-source-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1);
+    margin-block-start: var(--space-2);
+}
+.ec-frame-source-actions .ant-btn,
+.ec-frame-upload {
+    min-height: 30px;
+}
+.ec-frame-upload {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: 2px var(--space-2);
+    border-radius: var(--ant-border-radius-sm);
+    cursor: pointer;
+}
+.ec-frame-upload:focus-within {
+    outline: 2px solid var(--user-ink);
+}
+.ec-frame-upload input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    opacity: 0;
+    cursor: pointer;
+}
+.ec-casting-name {
+    display: block;
+    overflow: hidden;
+    margin-block-start: var(--space-1);
+    color: var(--user-ink-soft);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+@container ec-frame (min-width: 545px) {
+    .ec-frame-tools {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: clamp(12px, 2cqi, 24px);
+    }
+}
+@container ec-frame (max-width: 500px) {
+    .ec-frame-source-actions .ant-btn,
+    .ec-frame-upload,
+    .ec-frame-pose > input,
+    .ec-frame-tools select {
+        min-height: 40px;
+    }
+    .ec-frame-source-actions {
+        gap: 2px;
+    }
+    .ec-frame-pose > input,
+    .ec-frame-tools select {
+        font-size: max(1rem, 1em);
+    }
+}
+.ec-casting-picker {
+    display: grid;
+    gap: var(--space-2);
+}
+.ec-casting-picker select {
+    width: 100%;
+    min-width: 0;
+    padding: var(--space-2);
+    color: var(--user-ink);
+    background: var(--user-surface);
+    border: 1px solid var(--user-border);
+    border-radius: var(--ant-border-radius);
+    font: inherit;
+}
+.ec-casting-picker > img,
+.ec-casting-picker > .cached-resource-image-shell {
+    display: block;
+    width: 100%;
+    height: min(36dvh, 270px);
+    background: var(--user-surface-muted);
+    border-radius: var(--ant-border-radius);
+    object-fit: contain;
+}
+.ec-casting-picker .cached-resource-image-shell img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+.ec-casting-picker p {
+    margin: 0;
+    color: var(--user-ink-soft);
+}
+
+.ec-casting-gallery,
+.ec-portrait-generator form {
+    display: grid;
+    gap: var(--space-3);
+    min-width: 0;
+}
+.ec-casting-gallery p,
+.ec-portrait-generator p {
+    margin: 0;
+}
+.ec-casting-tabs,
+.ec-casting-suggestions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+    align-items: center;
+}
+.ec-casting-tabs button,
+.ec-casting-filter select,
+.ec-portrait-generator textarea {
+    color: var(--user-ink);
+    background: var(--user-surface);
+    border: 1px solid var(--user-border);
+    border-radius: var(--ant-border-radius);
+    font: inherit;
+    padding: var(--space-1) var(--space-2);
+}
+.ec-casting-tabs button {
+    cursor: pointer;
+    min-height: 36px;
+}
+.ec-casting-tabs button[aria-pressed="true"] {
+    border-color: var(--user-ink);
+    font-weight: 600;
+    background: var(--user-surface-muted);
+}
+.ec-casting-filter {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    color: var(--user-ink-soft);
+}
+.ec-casting-grid {
+    min-width: 0;
+    min-height: 0;
+    max-height: min(46dvh, 450px);
+    overflow: auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(104px, 100%), 1fr));
+    grid-auto-rows: max-content;
+    align-content: start;
+    align-items: stretch;
+    gap: var(--space-2);
+    margin: 0;
+    padding: var(--space-1);
+    border: 0;
+}
+.ec-casting-card {
+    position: relative;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    min-width: 0;
+    border: 1px solid var(--user-border);
+    border-radius: var(--ant-border-radius);
+    overflow: hidden;
+}
+.ec-casting-card:has(:checked) {
+    outline: 2px solid var(--user-ink);
+    outline-offset: -2px;
+}
+.ec-casting-card:focus-within {
+    outline: 2px solid var(--ant-color-primary);
+    outline-offset: 1px;
+}
+.ec-casting-card input {
+    position: absolute;
+    inset-block-start: var(--space-2);
+    inset-inline-end: var(--space-2);
+    z-index: 1;
+    margin: 0;
+    accent-color: var(--user-ink);
+}
+.ec-casting-card > img,
+.ec-casting-card .cached-resource-image-shell {
+    flex: none;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 3/4;
+    background: var(--user-surface-muted);
+    object-fit: cover;
+    display: block;
+}
+.ec-casting-card .cached-resource-image-shell img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+.ec-casting-card span:not(.cached-resource-image-shell),
+.ec-casting-card small {
+    padding: var(--space-1) var(--space-2);
+    font-size: var(--fs-caption);
+    overflow-wrap: anywhere;
+}
+.ec-casting-footer {
+    border-block-start: 1px solid var(--user-border);
+    padding-block-start: var(--space-2);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--space-2);
+}
+.ec-casting-footer > div {
+    min-width: 0;
+    display: grid;
+}
+.ec-casting-footer small {
+    color: var(--user-ink-soft);
+}
+.ec-portrait-generator fieldset {
+    border: 0;
+    min-inline-size: 0;
+    margin: 0;
+    padding: 0;
+}
+.ec-portrait-generator fieldset legend {
+    margin-block-end: var(--space-2);
+    font-weight: 600;
+}
+.ec-portrait-generator fieldset legend small {
+    margin-inline-start: var(--space-1);
+    color: var(--user-ink-soft);
+    font-weight: 400;
+}
+.ec-portrait-looks {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--space-2);
+}
+.ec-portrait-looks label {
+    position: relative;
+    display: grid;
+    overflow: hidden;
+    border: 1px solid var(--user-border);
+    border-radius: var(--ant-border-radius);
+    cursor: pointer;
+}
+.ec-portrait-looks label img {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 1.6;
+    object-fit: cover;
+    object-position: 50% 9%;
+}
+.ec-portrait-looks label span {
+    padding: var(--space-1);
+    text-align: center;
+    font-size: var(--fs-caption);
+}
+.ec-portrait-looks label:has(:checked) {
+    border-color: var(--user-ink);
+    font-weight: 600;
+    background: var(--user-surface-muted);
+}
+.ec-portrait-looks label:focus-within {
+    outline: 2px solid var(--ant-color-primary);
+    outline-offset: 2px;
+}
+.ec-portrait-looks input {
+    position: absolute;
+    inset-block-start: var(--space-1);
+    inset-inline-end: var(--space-1);
+    accent-color: var(--user-ink);
+}
+.ec-portrait-generator p.ec-portrait-direction {
+    margin-block-start: var(--space-2);
+}
+.ec-portrait-attributes {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-2) var(--space-3);
+}
+.ec-portrait-attributes label,
+.ec-portrait-detail {
+    display: grid;
+    gap: var(--space-1);
+}
+.ec-portrait-generator textarea {
+    width: 100%;
+    resize: vertical;
+}
+@media (max-width: 540px) {
+    .ec-portrait-generator select,
+    .ec-portrait-generator textarea {
+        min-height: 48px;
+        font-size: max(1rem, 1em);
+    }
+    .ec-casting-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .ec-casting-tabs button {
+        min-height: 44px;
+    }
+}

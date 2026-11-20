@@ -15,6 +15,7 @@ import (
 // 渠道模型、供应线路和受保护输入泄露到普通用户接口。
 type TaskSummary struct {
 	ID                        string                     `json:"id"`
+	ClientOperationID         string                     `json:"clientOperationId,omitempty"`
 	ProjectID                 string                     `json:"projectId,omitempty"`
 	Type                      string                     `json:"type"`
 	Status                    model.TaskStatus           `json:"status"`
@@ -45,21 +46,7 @@ type TaskSummary struct {
 	ClientContext             *TaskClientContext         `json:"clientContext,omitempty"`
 }
 
-type TaskClientContext struct {
-	NodeID           string `json:"nodeId,omitempty"`
-	AssetTitle       string `json:"assetTitle,omitempty"`
-	ConversationID   string `json:"conversationId,omitempty"`
-	MessageID        string `json:"messageId,omitempty"`
-	BatchID          string `json:"batchId,omitempty"`
-	BatchIndex       int    `json:"batchIndex,omitempty"`
-	BatchCount       int    `json:"batchCount,omitempty"`
-	DomainProjectID  string `json:"domainProjectId,omitempty"`
-	ChapterID        string `json:"chapterId,omitempty"`
-	ChapterOperation string `json:"chapterOperation,omitempty"`
-	ShotID           string `json:"shotId,omitempty"`
-	WorkflowStepID   string `json:"workflowStepId,omitempty"`
-	ArtifactType     string `json:"artifactType,omitempty"`
-}
+type TaskClientContext = model.TaskClientContext
 
 // TaskBillingSummary 是任务列表展示的计费摘要。冻结额与实收分列：只有已结算订单才有实收。
 type TaskBillingSummary struct {
@@ -126,8 +113,10 @@ func taskSummaryForOutput(task model.Task) TaskSummary {
 		errorCode = contentModerationErrorCode
 	}
 	previewURL, previewKind, previewPosterURL := taskMediaPreviewWithPoster(task.ResultJSON, task.Type)
+	context, operationID := taskOutputContext(task)
 	return TaskSummary{
 		ID:                        task.ID,
+		ClientOperationID:         operationID,
 		ProjectID:                 task.ProjectID,
 		Type:                      task.Type,
 		Status:                    task.Status,
@@ -154,62 +143,100 @@ func taskSummaryForOutput(task model.Task) TaskSummary {
 		CompletedAt:               task.CompletedAt,
 		CreatedAt:                 task.CreatedAt,
 		UpdatedAt:                 task.UpdatedAt,
-		ClientContext:             taskClientContext(task.InputJSON),
+		ClientContext:             context,
 	}
 }
 
-// 列表只暴露页面恢复所需的关联 ID 和素材显示名，不下发完整任务输入或其他 metadata。
 func taskClientContext(raw string) *TaskClientContext {
+	context, _ := taskOutputContext(model.Task{InputJSON: raw})
+	return context
+}
+
+// 只返回所属任务可公开的页面上下文。工作台脚本取自提交时的快照。
+func taskOutputContext(task model.Task) (*TaskClientContext, string) {
 	var input struct {
+		Mode     string `json:"mode"`
 		Metadata struct {
-			Source          string `json:"source"`
-			NodeID          string `json:"nodeId"`
-			AssetTitle      string `json:"assetTitle"`
-			ConversationID  string `json:"conversationId"`
-			MessageID       string `json:"messageId"`
-			BatchIndex      int    `json:"batchIndex"`
-			BatchCount      int    `json:"batchCount"`
-			DomainProjectID string `json:"domainProjectId"`
-			ChapterID       string `json:"chapterId"`
-			Operation       string `json:"operation"`
-			ShotID          string `json:"shotId"`
-			WorkflowStepID  string `json:"workflowStepId"`
-			ArtifactType    string `json:"artifactType"`
-			Workbench       struct {
+			Source                string          `json:"source"`
+			Stage                 string          `json:"stage"`
+			EcommerceProjectID    string          `json:"ecommerceProjectId"`
+			ClientOperationID     string          `json:"clientOperationId"`
+			VideoStartFrameNodeID string          `json:"videoStartFrameNodeId"`
+			VideoEditOperation    string          `json:"videoEditOperation"`
+			EcommerceVideoVersion json.RawMessage `json:"ecommerceVideoVersion"`
+			NodeID                string          `json:"nodeId"`
+			AssetTitle            string          `json:"assetTitle"`
+			ConversationID        string          `json:"conversationId"`
+			MessageID             string          `json:"messageId"`
+			BatchIndex            int             `json:"batchIndex"`
+			TryOnBatchID          string          `json:"tryonBatchId"`
+			BatchCount            int             `json:"batchCount"`
+			DomainProjectID       string          `json:"domainProjectId"`
+			ChapterID             string          `json:"chapterId"`
+			Operation             string          `json:"operation"`
+			ShotID                string          `json:"shotId"`
+			WorkflowStepID        string          `json:"workflowStepId"`
+			ArtifactType          string          `json:"artifactType"`
+			Workbench             struct {
 				Batch struct {
-					ID    string `json:"id"`
-					Index int    `json:"index"`
-					Count int    `json:"count"`
+					ID      string `json:"id"`
+					Index   int    `json:"index"`
+					Count   int    `json:"count"`
+					SlotKey string `json:"slotKey"`
 				} `json:"batch"`
 			} `json:"workbench"`
 		} `json:"metadata"`
 	}
-	if json.Unmarshal([]byte(raw), &input) != nil {
-		return nil
+	if json.Unmarshal([]byte(task.InputJSON), &input) != nil {
+		return nil, ""
 	}
 	metadata := input.Metadata
 	title := []rune(strings.TrimSpace(metadata.AssetTitle))
 	context := &TaskClientContext{NodeID: metadata.NodeID, AssetTitle: string(title[:min(len(title), 200)])}
+	var analysisReceipt string
+	if metadata.Source == "ecommerce-tryon" && metadata.Stage == "tryon-planning" && tryOnFunctionFromBatchID(metadata.TryOnBatchID) != "" {
+		context.BatchID, context.BatchSlotKey = metadata.TryOnBatchID, tryOnPlanningSlot
+		return context, ""
+	}
+	if metadata.Source == "ecommerce-agent" && task.ProjectID != "" && metadata.EcommerceProjectID == task.ProjectID {
+		if task.Type == "canvas_text" && input.Mode == "text" && metadata.Stage == "product-understanding" {
+			analysisReceipt = ecommerceClientOperationID(metadata.ClientOperationID)
+		}
+		video := task.Type == "canvas_video" && input.Mode == "video" && metadata.Stage == "product-video"
+		plan := task.Type == "canvas_text" && input.Mode == "text" && metadata.Stage == ecommerceVideoStoryboardStage
+		videoImage := task.Type == "canvas_image" && input.Mode == "image" && ecommerceVideoImageStage(metadata.Stage)
+		if video || plan || videoImage {
+			if video {
+				context.EcommerceVideoVersion = decodeEcommerceVideoVersion(metadata.EcommerceVideoVersion, metadata.VideoStartFrameNodeID, metadata.VideoEditOperation)
+			}
+			operationID := ecommerceClientOperationID(metadata.ClientOperationID)
+			if context.NodeID == "" && context.AssetTitle == "" && context.EcommerceVideoVersion == nil {
+				return nil, operationID
+			}
+			return context, operationID
+		}
+	}
 	if metadata.Source == "create-page" && metadata.ConversationID != "" && metadata.MessageID != "" {
 		context.ConversationID = metadata.ConversationID
 		context.MessageID = metadata.MessageID
 		context.BatchIndex = metadata.BatchIndex
 		context.BatchCount = metadata.BatchCount
-		return context
+		return context, ""
 	}
 	// 工作台一次提交拆出的多个任务按批次 ID 在页面上归为一组；字段非法时按单任务展示。
 	if batch := metadata.Workbench.Batch; metadata.Source == "workbench" && workbench.ValidTaskBatch(batch.ID, batch.Index, batch.Count) {
 		context.BatchID = batch.ID
 		context.BatchIndex = batch.Index
 		context.BatchCount = batch.Count
-		return context
+		context.BatchSlotKey = batch.SlotKey
+		return context, ""
 	}
 	if metadata.ShotID != "" && metadata.WorkflowStepID != "" {
 		context.DomainProjectID = metadata.DomainProjectID
 		context.ShotID = metadata.ShotID
 		context.WorkflowStepID = metadata.WorkflowStepID
 		context.ArtifactType = metadata.ArtifactType
-		return context
+		return context, analysisReceipt
 	}
 	chapterOperation := ""
 	if metadata.Operation == "chapter_character_breakdown" {
@@ -219,14 +246,14 @@ func taskClientContext(raw string) *TaskClientContext {
 	}
 	if chapterOperation == "" || metadata.DomainProjectID == "" || metadata.ChapterID == "" {
 		if context.NodeID == "" && context.AssetTitle == "" {
-			return nil
+			return nil, analysisReceipt
 		}
-		return context
+		return context, analysisReceipt
 	}
 	context.DomainProjectID = metadata.DomainProjectID
 	context.ChapterID = metadata.ChapterID
 	context.ChapterOperation = chapterOperation
-	return context
+	return context, analysisReceipt
 }
 
 // 列表只暴露首个可访问媒体地址，避免把完整生成结果和内嵌数据带回前端。
@@ -330,6 +357,12 @@ func truncateRunes(value string, limit int) string {
 func taskForOutput(task model.Task) *model.Task {
 	task.CanRecoverMedia = task.MediaRecoveryJSON != "" && task.Status == model.TaskStatusFailed
 	task.Diagnostic = taskExecutionDiagnostic(&task)
+	if (task.Type == "canvas_video" || task.Type == "canvas_text" || task.Type == "canvas_image") && strings.Contains(task.InputJSON, `"ecommerce-agent"`) {
+		context, operationID := taskOutputContext(task)
+		if operationID != "" || (context != nil && context.EcommerceVideoVersion != nil) {
+			task.ClientContext, task.ClientOperationID = context, operationID
+		}
+	}
 	task.InputJSON = publicTaskInputJSON(task.InputJSON)
 	// Task.Error 可能来自历史记录中的“前置原因；上游：原文”。
 	// 普通用户任务接口只返回可行动提示，完整上游诊断留在后台请求日志。
@@ -345,6 +378,12 @@ func taskForOutput(task model.Task) *model.Task {
 }
 
 func publicTaskInputJSON(raw string) string {
+	// HTTP exposes the typed product script through clientContext only.
+	return compactTaskHistoryInput(model.Task{InputJSON: raw})
+}
+
+func compactTaskHistoryInput(task model.Task) string {
+	raw := task.InputJSON
 	if strings.TrimSpace(raw) == "" {
 		return ""
 	}
@@ -361,6 +400,30 @@ func publicTaskInputJSON(raw string) string {
 	}
 	if len(public) == 0 {
 		return ""
+	}
+	if metadata, ok := public["metadata"].(map[string]any); ok {
+		snapshot := metadata["ecommerceVideoVersion"]
+		delete(metadata, "ecommerceVideoVersion")
+		if metadata["source"] == "ecommerce-agent" && (metadata["stage"] == "product-video" || ecommerceVideoImageStage(metadata["stage"])) {
+			safe := map[string]any{}
+			for _, key := range []string{"source", "stage", "ecommerceProjectId", "assetTitle", "videoEditOperation", "videoStartFrameNodeId"} {
+				if value, ok := metadata[key].(string); ok {
+					safe[key] = value
+				}
+			}
+			if operationID := ecommerceClientOperationID(stringValue(metadata["clientOperationId"])); operationID != "" {
+				safe["clientOperationId"] = operationID
+			}
+			// Completion and storage maintenance retain only the typed snapshot on
+			// its own video task, without raw references, URLs or provider options.
+			if task.Type == "canvas_video" && input["mode"] == "video" && task.ProjectID != "" && metadata["ecommerceProjectId"] == task.ProjectID && snapshot != nil {
+				encoded, _ := json.Marshal(snapshot)
+				if version := decodeEcommerceVideoVersion(encoded, stringValue(metadata["videoStartFrameNodeId"]), stringValue(metadata["videoEditOperation"])); version != nil {
+					safe["ecommerceVideoVersion"] = version
+				}
+			}
+			public = map[string]any{"mode": input["mode"], "metadata": safe}
+		}
 	}
 	if workbench := publicWorkbenchInput(input); workbench != nil {
 		public["workbench"] = workbench

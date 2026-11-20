@@ -75,10 +75,25 @@ func (s *Service) cloudAgentExecutionOutput(task *model.Task, initial cloudAgent
 			out.ActiveMessage = map[string]string{"messageId": active.ID, "text": active.TextDraft}
 		}
 	}
+	admin, err := s.skillDomain().IsAdministrator(task.UserID)
+	if err != nil {
+		return nil, err
+	}
+	if !admin {
+		for i, event := range out.Events {
+			if cloudAgentIsSkillTool(stringField(event.Payload, "toolName")) {
+				event.Payload = map[string]any{"toolName": stringField(event.Payload, "toolName"), "text": "技能调用", "skillNames": cloudAgentMemberSkillNames(state.Skills)}
+				out.Events[i] = event
+			}
+		}
+	}
 	out.Skills = make([]cloudAgentSkill, 0, len(state.Skills))
 	for _, skill := range state.Skills {
 		skill.Instruction = ""
 		skill.Files = nil
+		if !admin {
+			skill = cloudAgentSkill{ID: skill.ID, Name: skill.Name}
+		}
 		out.Skills = append(out.Skills, skill)
 	}
 	orders, err := s.repo.BillingOrdersByTaskIDs(task.UserID, state.TaskIDs)

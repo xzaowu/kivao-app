@@ -1,29 +1,22 @@
-/* 投放平台与语言弹窗。单层表面：分组只用标题区分，不再套卡片。
-   选择器统一以 .commerce-market 开头，覆盖旧 studio/agent-theme 中同名的平铺规则。 */
 .commerce-market {
     display: flex;
     flex-direction: column;
-    max-height: min(720px, calc(100vh - 64px));
+    max-height: min(620px, var(--ec-market-room, 100dvh), calc(100dvh - 40px));
     background: var(--user-surface);
     color: var(--user-ink);
 }
 .commerce-market-head {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: space-between;
     gap: var(--space-3);
-    padding: var(--space-5) var(--space-5) var(--space-3);
+    padding: var(--space-3) var(--space-4) var(--space-2);
 }
 .commerce-market-head h2 {
     margin: 0;
-    font-size: var(--fs-heading);
+    font-size: var(--fs-ui);
     font-weight: 600;
     line-height: var(--lh-heading);
-}
-.commerce-market-head p {
-    margin: var(--space-1) 0 0;
-    color: var(--user-ink-soft);
-    font-size: var(--fs-caption);
 }
 .commerce-market .commerce-market-close {
     display: grid;
@@ -44,10 +37,12 @@
 }
 .commerce-market-body {
     display: grid;
-    gap: var(--space-5);
+    grid-auto-rows: max-content;
+    gap: var(--space-3);
     min-height: 0;
     overflow-y: auto;
-    padding: var(--space-2) var(--space-5) var(--space-5);
+    padding: var(--space-2) var(--space-4) var(--space-4);
+    overscroll-behavior: contain;
     scrollbar-width: thin;
 }
 .commerce-market h3 {
@@ -58,31 +53,33 @@
 }
 .commerce-market .commerce-market-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: var(--space-1);
-    padding: 0;
+    padding: var(--space-2);
     border: 0;
-    background: transparent;
+    border-radius: var(--r-lg);
+    background: var(--user-surface-muted);
 }
 .commerce-market .commerce-market-grid > button {
     display: flex;
-    flex-direction: row;
+    flex-direction: column;
+    justify-content: center;
     align-items: center;
-    gap: var(--space-2);
+    gap: var(--space-1);
     min-width: 0;
-    min-height: 44px;
-    padding: 0 var(--space-2);
+    min-height: 64px;
+    padding: var(--space-1);
     border: 0;
     border-radius: var(--r-md);
     background: transparent;
     box-shadow: none;
     color: var(--user-ink);
-    text-align: left;
+    text-align: center;
     cursor: pointer;
     transition: background-color var(--motion-dur-base) var(--motion-ease-out);
 }
 .commerce-market .commerce-market-grid > button:hover {
-    background: var(--user-surface-muted);
+    background: var(--user-surface);
 }
 .commerce-market .commerce-market-grid > button.is-selected {
     background: var(--control-selected-bg);
@@ -99,9 +96,9 @@
     height: 28px;
 }
 .commerce-market .commerce-market-grid > button > .commerce-market-name {
-    flex: 1 1 auto;
-    width: auto;
-    text-align: left;
+    flex: 0 0 auto;
+    width: 100%;
+    text-align: center;
 }
 .commerce-market .commerce-market-logo .commerce-platform-logo {
     width: 36px;
@@ -243,7 +240,7 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--space-3);
-    padding: var(--space-3) var(--space-5);
+    padding: var(--space-2) var(--space-4);
     border-top: 1px solid var(--user-border);
     color: var(--user-ink-muted);
     font-size: var(--fs-caption);
@@ -252,12 +249,14 @@
     outline: var(--focus-ring-width, 2px) solid var(--ring);
     outline-offset: 2px;
 }
-@media (max-width: 560px) {
-    .commerce-market-fields {
-        grid-template-columns: minmax(0, 1fr);
-    }
+@media (max-width: 480px) {
     .commerce-market .commerce-market-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+}
+@media (max-width: 360px) {
+    .commerce-market .commerce-market-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 }
 @media (prefers-reduced-motion: reduce) {

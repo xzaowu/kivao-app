@@ -26,6 +26,7 @@ const (
 	FeatureShortDrama            = platform.FeatureShortDrama
 	FeatureTaskCenter            = platform.FeatureTaskCenter
 	FeatureCredits               = platform.FeatureCredits
+	FeatureTeams                 = platform.FeatureTeams
 	FeatureCustomChannels        = platform.FeatureCustomChannels
 	FeatureFrontendModels        = platform.FeatureFrontendModels
 	FeaturePluginCenter          = platform.FeaturePluginCenter
@@ -129,6 +130,10 @@ func (s *Service) FeatureEnabled(feature string) (bool, error) {
 	return s.platformDomain().FeatureEnabled(feature)
 }
 
+func (s *Service) TryOnFunctionEnabled(id string) (bool, error) {
+	return s.platformDomain().TryOnFunctionEnabled(id)
+}
+
 func (s *Service) RequireFeature(feature string) error {
 	return s.platformDomain().RequireFeature(feature)
 }
@@ -209,7 +214,7 @@ func (s *Service) ValidateRuntime() error {
 
 const (
 	featureAvailabilitySettingKey = "feature_availability"
-	runtimePolicySettingKey       = "runtime_policy"
+	runtimePolicySettingKey       = model.RuntimePolicySettingKey
 )
 
 func defaultFeatureAvailability() FeatureAvailability {

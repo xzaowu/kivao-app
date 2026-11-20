@@ -1,5 +1,5 @@
 import { useUserStore } from "@/stores/use-user-store";
-import { useSkillLibraryAccess } from "@/lib/skill-access";
+import { useSkillLibraryAccess, useSkillManagementAccess } from "@/lib/skill-access";
 import { App, Button, Checkbox, Input, Modal, Segmented } from "antd";
 import { BookOpen, RefreshCw, Search, Upload } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -33,6 +33,7 @@ function AdminEcommerceSkillPicker({ selected, onChange, disabled }: Props) {
     const [hasMore, setHasMore] = useState(false);
     const [loading, setLoading] = useState(false);
     const [installing, setInstalling] = useState("");
+    const canManage = useSkillManagementAccess();
     const [uploading, setUploading] = useState(false);
     const fileInput = useRef<HTMLInputElement>(null);
     const uploadLock = useRef(false);
@@ -133,7 +134,7 @@ function AdminEcommerceSkillPicker({ selected, onChange, disabled }: Props) {
         }
     };
     const upload = async (file: File) => {
-        if (uploadLock.current || disabled || !isCurrent()) return;
+        if (!canManage || uploadLock.current || disabled || !isCurrent()) return;
         if (!/\.(md|markdown|zip)$/i.test(file.name)) {
             message.error("请上传 Markdown 文件或 ZIP 技能包");
             return;
@@ -172,22 +173,26 @@ function AdminEcommerceSkillPicker({ selected, onChange, disabled }: Props) {
             <Button block icon={<BookOpen size={15} />} disabled={disabled} onClick={() => setOpen(true)}>
                 {selected.length ? `已选择 ${selected.length} 个 Skills` : "选择 Skills"}
             </Button>
-            <input
-                ref={fileInput}
-                type="file"
-                accept=".md,.markdown,.zip"
-                hidden
-                aria-label="上传策划 Skill 文件"
-                onChange={(event) => {
-                    const file = event.target.files?.[0];
-                    event.target.value = "";
-                    if (file) void upload(file);
-                }}
-            />
-            <Button block icon={<Upload size={15} />} disabled={disabled || selected.length >= 8} loading={uploading} onClick={() => fileInput.current?.click()}>
-                上传 Skills
-            </Button>
-            <small className="ecommerce-model-note">支持 Markdown / ZIP，保存到个人技能库。Agent 读取所选技能后策划，生成前可逐张修改文案与提示词。</small>
+            {canManage ? (
+                <>
+                    <input
+                        ref={fileInput}
+                        type="file"
+                        accept=".md,.markdown,.zip"
+                        hidden
+                        aria-label="上传策划 Skill 文件"
+                        onChange={(event) => {
+                            const file = event.target.files?.[0];
+                            event.target.value = "";
+                            if (file) void upload(file);
+                        }}
+                    />
+                    <Button block icon={<Upload size={15} />} disabled={disabled || selected.length >= 8} loading={uploading} onClick={() => fileInput.current?.click()}>
+                        上传 Skills
+                    </Button>
+                    <small className="ecommerce-model-note">支持 Markdown / ZIP，保存到个人技能库。Agent 读取所选技能后策划，生成前可逐张修改文案与提示词。</small>
+                </>
+            ) : null}
             {selected.length ? <small className="ecommerce-model-note">策划将按所选技能编写图片方案与提示词；修改后需重新策划。</small> : null}
             <Modal title="选择策划 Skills" open={open} onCancel={() => setOpen(false)} footer={<Button onClick={() => setOpen(false)}>完成</Button>} width={780} destroyOnHidden>
                 <div className="ecommerce-skill-controls">
@@ -260,7 +265,7 @@ function AdminEcommerceSkillPicker({ selected, onChange, disabled }: Props) {
                             <div className="ecommerce-skill-row" key={skill.skillId}>
                                 <div>
                                     <strong>{skill.skillName}</strong>
-                                    <small>{skill.description || "暂无说明"}</small>
+                                    {canManage ? <small>{skill.description || "暂无说明"}</small> : null}
                                 </div>
                                 {installed.some((item) => item.skillId === skill.skillId) ? (
                                     <Checkbox checked={selected.includes(skill.skillId)} disabled={!selected.includes(skill.skillId) && selected.length >= 8} onChange={() => toggle(skill.skillId)}>

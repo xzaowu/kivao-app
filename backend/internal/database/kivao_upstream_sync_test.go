@@ -35,7 +35,7 @@ func TestKivao104LedgerUpgradePreservesExistingRows(t *testing.T) {
 			}
 		}
 	}
-	if err := db.Exec("DELETE FROM schema_migrations WHERE version = 105").Error; err != nil {
+	if err := db.Exec("DELETE FROM schema_migrations WHERE version > ?", 104).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Migrator().DropTable(&yingceSchemaMigration{}); err != nil {
@@ -73,7 +73,7 @@ func TestKivao104LedgerUpgradePreservesExistingRows(t *testing.T) {
 		}
 	}
 	status, err := ReadSchemaStatus(db)
-	if err != nil || !status.Ready || status.Current != 105 || status.YingceCurrent != 4 {
+	if err != nil || !status.Ready || status.Current != CurrentSchemaVersion || status.YingceCurrent != 4 {
 		t.Fatalf("upgrade status=%#v err=%v", status, err)
 	}
 	for _, table := range tables {

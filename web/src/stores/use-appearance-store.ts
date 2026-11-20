@@ -54,6 +54,10 @@ export const useAppearanceStore = create<AppearanceStore>((set) => ({
     setAppearance: (appearance) => set({ appearance, resolved: true }),
 }));
 
+export function useCanvasAgentName() {
+    return useAppearanceStore((state) => state.appearance.canvas?.agentName?.trim() || DEFAULT_CANVAS_APPEARANCE.agentName);
+}
+
 /** 标签页标题 =（后台提醒）+ 页面名称 + 品牌；没有页面名称时用 SEO 标题。 */
 function documentTitleFor(appearance: PublicAppearance) {
     const { pageTitle, attentionCount, attentionLabel } = useDocumentTitleStore.getState();

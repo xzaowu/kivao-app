@@ -3,6 +3,12 @@ import { emptyEcommerceDraft, normalizeEcommerceReferenceGroups, projectDraft, t
 
 const restore = (draft: Partial<EcommerceDraft>) => projectDraft({ draftJson: JSON.stringify(draft) } as EcommerceProject);
 
+test("服务端返回空 SKU 与技能数组时仍可打开历史商品", () => {
+    const draft = projectDraft({ draftJson: JSON.stringify({ productName: "杯子", skus: null, skillIds: null, references: null, productFacts: ["圆形杯口"] }) } as EcommerceProject);
+    expect(draft).toMatchObject({ productName: "杯子", skus: [], skillIds: [], references: [], layoutReferences: [], productFacts: ["圆形杯口"] });
+    expect(restore({}).skus).toEqual([]);
+});
+
 describe("商品素材和借鉴图片的持久化分组", () => {
     test("旧项目只迁移风格与竞品素材，保留资源元数据及商品身份", () => {
         const references: EcommerceDraft["references"] = [

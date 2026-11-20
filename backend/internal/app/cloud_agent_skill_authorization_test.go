@@ -60,46 +60,71 @@ func TestCloudAgentSkillAuthorizationOrdinaryFreshConversation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state.Request.SkillsEnabled || len(state.Skills) != 0 || len(state.SkillVersions) != 0 || state.SkillHints != "" || strings.Contains(state.Canonical.SystemPrompt, cloudAgentSkillCatalogHeader) {
+	if state.Request.SkillsEnabled || len(state.Skills) != 0 || len(state.SkillVersions) != 0 || state.SkillHints != "" {
 		t.Fatalf("ordinary conversation acquired skills: %#v", state.SkillVersions)
 	}
+	advertised := false
 	for _, tool := range state.Canonical.Tools {
 		fn, _ := tool["function"].(map[string]any)
-		if cloudAgentIsSkillTool(stringField(fn, "name")) {
-			t.Fatalf("ordinary conversation exposes %v", fn["name"])
-		}
+		advertised = advertised || cloudAgentIsSkillTool(stringField(fn, "name"))
 	}
-	admin, names, err := s.CloudAgentSkillCapabilities("user")
-	if err != nil || admin {
-		t.Fatalf("capabilities = %v, %v", admin, err)
+	if !advertised {
+		t.Fatal("member lost skill tool use")
 	}
-	for _, name := range names {
-		if cloudAgentIsSkillTool(name) {
-			t.Fatalf("ordinary capabilities contain %s", name)
-		}
+	// A new member with no installed skills can search and receive public
+	// recommendations, but cannot import a file-read result from an old run.
+	session := `{"type":"message","message":{"role":"toolResult","toolName":"skill_market_search","content":[]}}`
+	state.MarketSuggestions = []cloudAgentMarketSuggestion{{ID: "public-skill"}}
+	call := skillFeedbackCall("missing", "SKILL.md")
+	call.Function.Name = "skill_search"
+	state.Calls = []cloudAgentCall{call}
+	if state.SkillVersions == nil {
+		t.Fatal("fresh empty scope was lost in persistence")
+	}
+	if err := s.cloudAgentCheckSkillExecution("user", &state, nil, session); err != nil {
+		t.Fatalf("public skill discovery blocked for a member: %v", err)
+	}
+	assertSkillRuntimeStatus(t, s.cloudAgentCheckSkillExecution("user", &state, nil, strings.Replace(session, "skill_market_search", "skill_read_file", 1)), 403)
+	state.SkillVersions = nil
+	assertSkillRuntimeStatus(t, s.cloudAgentCheckSkillExecution("user", &state, nil, session), 403)
+	allowed, names, err := s.CloudAgentSkillCapabilities("user")
+	if err != nil || !allowed || len(names) == 0 {
+		t.Fatalf("member capabilities: %v %v", allowed, err)
 	}
 	if prompt, err := s.EcommerceSkillPrompt("user", nil); err != nil || prompt != "" {
 		t.Fatalf("ordinary ecommerce without skills failed: %q, %v", prompt, err)
 	}
 }
 
-func TestCloudAgentSkillAuthorizationRejectsExplicitSkills(t *testing.T) {
-	s, _, _, _ := creationTestService(t)
+func TestCloudAgentSkillAuthorizationRejectsUninstalledSkills(t *testing.T) {
+	s, db, _, _ := creationTestService(t)
+	skillAdministratorFixture(t, db, "author")
+	public, err := s.CreateSkill("author", SkillMutationRequest{SkillName: "分镜构图", Description: "分镜构图方法", Instruction: "# 分镜构图\n\n步骤", Tag: "drama"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, test := range []struct {
 		name string
 		ids  []string
 		text string
-	}{{"pinned", []string{"private-skill"}, "hello"}, {"mention", nil, "使用 @[skill:private-skill]"}} {
+	}{{"pinned", []string{public.SkillID}, "hello"}, {"mention", nil, "使用 @[skill:" + public.SkillID + "]"}, {"unknown", []string{"missing-skill"}, "hello"}} {
 		t.Run(test.name, func(t *testing.T) {
 			req := skillAuthorizationRequest()
 			req.PinnedSkillIDs, req.Prompt = test.ids, test.text
 			_, err := s.CreateCloudAgentRun("user", req, "")
-			assertSkillRuntimeStatus(t, err, 403)
-			_, err = s.cloudAgentBuildSkillPool("user", test.text, test.ids, defaultCloudAgentContextBudget())
-			assertSkillRuntimeStatus(t, err, 403)
+			assertSkillRuntimeStatus(t, err, 400)
+			_, err = s.cloudAgentBuildSkillPool("user", test.text, test.ids)
+			assertSkillRuntimeStatus(t, err, 400)
 		})
 	}
-	_, err := s.CloudAgentSkillUsage("user")
+	if _, err := s.SetSkillAdded("user", public.SkillID, true); err != nil {
+		t.Fatal(err)
+	}
+	pool, err := s.cloudAgentBuildSkillPool("user", "使用 @[skill:"+public.SkillID+"]", nil)
+	if err != nil || len(pool.Pinned) != 1 || pool.Versions[public.SkillID] == "" {
+		t.Fatalf("installed public skill unavailable to member: %+v, %v", pool, err)
+	}
+	_, err = s.CloudAgentSkillUsage("user")
 	assertSkillRuntimeStatus(t, err, 403)
 }
 
@@ -110,7 +135,7 @@ func TestCloudAgentSkillAuthorizationCachedReadChecksCurrentRole(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pool, err := s.cloudAgentBuildSkillPool("user", "hello", nil, defaultCloudAgentContextBudget())
+	pool, err := s.cloudAgentBuildSkillPool("user", "hello", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +147,7 @@ func TestCloudAgentSkillAuthorizationCachedReadChecksCurrentRole(t *testing.T) {
 	if len(state.ToolReadResults) == 0 {
 		t.Fatal("fixture did not populate cache")
 	}
-	if err := db.Model(&model.User{}).Where("id = ?", "user").Update("role", model.UserRoleUser).Error; err != nil {
+	if err := db.Model(&model.User{}).Where("id = ?", "user").Update("status", model.UserStatusDisabled).Error; err != nil {
 		t.Fatal(err)
 	}
 	for _, withService := range []bool{true, false} {
@@ -174,7 +199,7 @@ func TestCloudAgentSkillAuthorizationPreservesCleanRuntimeAndRejectsSkillSnapsho
 	if err := s.cloudAgentCheckSkillExecution("user", &cloudAgentRuntime{Skills: []cloudAgentSkill{{ID: "old"}}}, nil, snapshot); err != nil {
 		t.Fatalf("current administrator rejected: %v", err)
 	}
-	if err := db.Model(&model.User{}).Where("id = ?", "user").Update("role", model.UserRoleUser).Error; err != nil {
+	if err := db.Model(&model.User{}).Where("id = ?", "user").Update("status", model.UserStatusDisabled).Error; err != nil {
 		t.Fatal(err)
 	}
 	assertSkillRuntimeStatus(t, s.cloudAgentCheckSkillExecution("user", &cloudAgentRuntime{Skills: []cloudAgentSkill{{ID: "old"}}}, nil, snapshot), 403)
@@ -206,7 +231,7 @@ func TestCloudAgentSkillAuthorizationPiSessionAndCallbacksRejectRevokedRun(t *te
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Model(&model.User{}).Where("id = ?", "user").Update("role", model.UserRoleUser).Error; err != nil {
+	if err := db.Model(&model.User{}).Where("id = ?", "user").Update("status", model.UserStatusDisabled).Error; err != nil {
 		t.Fatal(err)
 	}
 	assertSkillRuntimeStatus(t, s.runCloudAgentPiSession(context.Background(), "user", run.ID), 403)
@@ -261,6 +286,54 @@ func TestCloudAgentSkillAuthorizationContinuationRejectsOldPiSkillSnapshot(t *te
 	}
 }
 
+func TestCloudAgentSkillAuthorizationMemberContinuesAfterUsingInstalledSkill(t *testing.T) {
+	s, db, _, _ := creationTestService(t)
+	s.legacyCloudAgentRootTask = false
+	skillAdministratorFixture(t, db, "author")
+	skill, err := s.CreateSkill("author", SkillMutationRequest{SkillName: "分镜", Description: "分镜构图", Tag: "drama", Instruction: "# 分镜\n\nprivate-workflow"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SetSkillAdded("user", skill.SkillID, true); err != nil {
+		t.Fatal(err)
+	}
+	req := skillAuthorizationRequest()
+	req.PinnedSkillIDs = []string{skill.SkillID}
+	run, err := s.CreateCloudAgentRun("user", req, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&model.Task{}).Where("id = ?", run.ID).Updates(map[string]any{"status": model.TaskStatusSucceeded, "result_json": `{"text":"完成分镜"}`}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&model.CloudAgentExecution{}).Where("id = ?", run.ID).Update("status", "completed").Error; err != nil {
+		t.Fatal(err)
+	}
+	snapshot := `{"type":"message","message":{"role":"toolResult","toolName":"skill_read_file","content":[{"type":"text","text":"private-workflow"}]}}`
+	if err := db.Create(&model.CloudAgentPiSession{RunID: run.ID, UserID: "user", SessionJSONL: snapshot, UpdatedAt: time.Now()}).Error; err != nil {
+		t.Fatal(err)
+	}
+	next := skillAuthorizationRequest()
+	next.IdempotencyKey = "authorized-skill-continuation"
+	child, err := s.CreateCloudAgentRun("user", next, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := s.repo.TaskForUser("user", child.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(task.InputJSON, "完成分镜") || strings.Contains(task.InputJSON, "private-workflow") {
+		t.Fatal("member continuation must keep the reply without carrying private tool results")
+	}
+	if _, err := s.SetSkillAdded("user", skill.SkillID, false); err != nil {
+		t.Fatal(err)
+	}
+	next.IdempotencyKey = "revoked-skill-continuation"
+	_, err = s.CreateCloudAgentRun("user", next, run.ID)
+	assertSkillRuntimeStatus(t, err, 403)
+}
+
 func TestCloudAgentSkillAuthorizationAdministratorEmptyLibraryCanUseMarket(t *testing.T) {
 	s, db, _, _ := creationTestService(t)
 	s.legacyCloudAgentRootTask = false
@@ -293,17 +366,18 @@ func TestCloudAgentSkillAuthorizationAdministratorEmptyLibraryCanUseMarket(t *te
 	}
 	for _, tool := range state.Canonical.Tools {
 		fn, _ := tool["function"].(map[string]any)
-		if cloudAgentIsSkillTool(stringField(fn, "name")) {
-			t.Fatal("market declarations survived role revocation")
+		if stringField(fn, "name") == "skill_market_search" {
+			return
 		}
 	}
+	t.Fatal("ordinary member lost market skill use")
 }
 
 func TestCloudAgentSkillAuthorizationDramaSelectionPreservesForbidden(t *testing.T) {
 	s, db, _, _ := creationTestService(t)
 	ref := &DramaSkillRef{SkillID: "missing-skill", SkillName: "missing", Path: "SKILL.md"}
 	_, err := s.dramaWritingSkill("user", ref, "test")
-	assertSkillRuntimeStatus(t, err, 403)
+	assertSkillRuntimeStatus(t, err, 400)
 	for _, empty := range []*DramaSkillRef{nil, {}} {
 		if got, err := s.dramaWritingSkill("user", empty, "test"); err != nil || got != nil {
 			t.Fatalf("empty selection is not an administrator operation: %v", err)

@@ -357,17 +357,19 @@ describe("创作控制器恢复", () => {
     });
 });
 
-test("普通用户带旧技能选择也能创建规划，不请求受限技能接口", async () => {
+test("普通用户规划仅提交技能 ID，正文交由服务端加载", async () => {
     useUserStore.setState({ hydrated: true, user: { id: "member", username: "member", displayName: "Member", role: "user", status: "active" } });
     const channel = createModelChannel({ id: "system-text", name: "Text", scope: "system", models: ["text"], apiFormat: "openai", interfaceType: "chat-completion", apiKey: "system", baseUrl: "/api/test" });
     const config = { ...defaultConfig, channels: [channel], model: "system-text::text", textModel: "system-text::text" };
-    const h = harness({ ...initialCreativeState(), selectedSkillIds: ["private-skill"] }, "paused", [], undefined, config);
+    const h = harness({ ...initialCreativeState(), selectedSkillIds: ["public-method"] }, "paused", [], undefined, config);
     const request = spyOn(apiClient, "request").mockImplementation(async () => {
-        throw new Error("不得调用技能接口");
+        return { data: { code: 0, data: { skills: [{ skillId: "public-method", skillName: "商品方法", isAdded: true }] }, msg: "" }, status: 200, headers: {} } as never;
     });
     let prepared = 0;
     h.api.prepare = async (_id, input) => {
         prepared += 1;
+        expect(input.request.input.metadata).toMatchObject({ skillIds: ["public-method"], skillContextDelivery: "server" });
+        expect(JSON.stringify(input.request)).not.toContain("skill-context");
         return submission("planning", input.itemKey);
     };
     try {
@@ -375,8 +377,8 @@ test("普通用户带旧技能选择也能创建规划，不请求受限技能�
         await h.controller.send("帮我规划一张图片");
         expect(prepared).toBe(1);
         expect(h.view().run?.status).toBe("waiting_payment");
-        expect(h.view().state.selectedSkillIds).toEqual([]);
-        expect(request).not.toHaveBeenCalled();
+        expect(h.view().state.selectedSkillIds).toEqual(["public-method"]);
+        expect(request.mock.calls.map(([config]) => config.url)).toEqual(["/skills/added"]);
     } finally {
         h.controller.dispose();
         request.mockRestore();

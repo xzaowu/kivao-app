@@ -283,15 +283,18 @@ export function commerceGenerationRatio(config: Config, draft: Pick<EcommerceDra
     return resolveAutoImageSize(image.ratio, sizes, draft.platform, draft.imageType === "set" ? "set" : image.imageType || draft.imageType, draft.typeOptions?.purpose);
 }
 
-export async function quoteCommerce(config: Config, draft: EcommerceDraft, count: number, clone = false, planning = true) {
-    const imageRefs = commerceRequiredImageReferenceCount(draft, clone);
-    const ratio = commerceGenerationRatio(config, draft, draft);
-    const imageRequest = systemModelQuoteRequest(config, draft.imageModel, "image", {
+export function commerceImageQuoteRequest(config: Config, draft: EcommerceDraft, image: { imageModel: string; ratio: string; resolution: string; imageType?: string }, imageRefs: number) {
+    const ratio = commerceGenerationRatio(config, draft, image);
+    return systemModelQuoteRequest(config, image.imageModel, "image", {
         capability: "image",
         input: { textCount: 1, imageCount: imageRefs, referenceImageCount: imageRefs, videoCount: 0, audioCount: 0, characterCount: 0 },
         imageSize: ratio,
-        options: { size: ratio, imageResolution: draft.resolution, count: 1 },
+        options: { size: ratio, imageResolution: image.resolution, count: 1 },
     });
+}
+
+export async function quoteCommerce(config: Config, draft: EcommerceDraft, count: number, clone = false, planning = true) {
+    const imageRequest = commerceImageQuoteRequest(config, draft, draft, commerceRequiredImageReferenceCount(draft, clone));
     const maxAgentRefs = modelCapabilityConfigFor(config, draft.agentModel).text?.references.maxImages || 0;
     const agentRefs = commercePlanningReferenceCount(draft);
     if (planning && agentRefs > maxAgentRefs) throw new Error(`后台指定的策划模型最多读取 ${maxAgentRefs} 张图片，请减少参考图或联系管理员更换模型`);

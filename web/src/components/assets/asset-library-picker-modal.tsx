@@ -5,6 +5,7 @@ import { Check, ChevronDown, FileText, FolderOpen, HardDrive, Image as ImageIcon
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useUserStore } from "@/stores/use-user-store";
+import { workspaceTeamId } from "@/lib/workspace-routes";
 
 import { AssetMediaPreview } from "@/components/asset-media-preview";
 import { AudioPlayButton, AudioWaveArt, CharacterAssetCover } from "@/components/assets/asset-rich-cover";
@@ -618,12 +619,14 @@ export function AssetLibraryPickerModal({
         gridWrapRef.current?.scrollTo({ top: 0 });
     }, [currentPage]);
 
+    const dialogTitle = isRecycleBin ? t("library.picker.recycleBin") : title;
     return (
         <AppModal
             centered
             open={open}
             footer={null}
-            title={null}
+            title={dialogTitle}
+            classNames={{ header: "sr-only" }}
             destroyOnHidden
             closable={!working}
             mask={{ closable: !working }}
@@ -642,7 +645,9 @@ export function AssetLibraryPickerModal({
                     <div className="asset-picker-heading">
                         <div className="asset-picker-heading-copy">
                             <span>{eyebrow}</span>
-                            <strong className="asset-picker-title">{isRecycleBin ? t("library.picker.recycleBin") : title}</strong>
+                            <strong className="asset-picker-title" aria-hidden="true">
+                                {dialogTitle}
+                            </strong>
                         </div>
                     </div>
                     <label className="asset-picker-search">
@@ -652,7 +657,7 @@ export function AssetLibraryPickerModal({
                 </header>
                 <div className="asset-picker-body">
                     <nav className="asset-picker-categories" aria-label={t("library.picker.categories")}>
-                        {!projectId ? (
+                        {!projectId && !workspaceTeamId ? (
                             <div className="asset-picker-source-tabs" role="tablist" aria-label="素材来源">
                                 <button type="button" role="tab" aria-selected={source === "local"} className={cn("asset-picker-source-tab", source === "local" && "is-active")} onClick={() => selectSource("local")}>
                                     <HardDrive aria-hidden="true" />

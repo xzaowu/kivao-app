@@ -2,6 +2,8 @@ package app
 
 import (
 	"encoding/json"
+	"maps"
+	"slices"
 	"strings"
 
 	"yingce/backend/internal/kernel"
@@ -15,19 +17,14 @@ func (s *Service) RequireSkillAdministrator(userID string) error {
 	return s.skillDomain().RequireAdministrator(userID)
 }
 
+func (s *Service) RequireSkillUser(userID string) error { return s.skillDomain().RequireUser(userID) }
+
 // CloudAgentSkillCapabilities never derives skill access from client flags or cached roles.
 func (s *Service) CloudAgentSkillCapabilities(userID string) (bool, []string, error) {
-	admin, err := s.skillDomain().IsAdministrator(userID)
-	if err != nil {
+	if err := s.RequireSkillUser(userID); err != nil {
 		return false, nil, err
 	}
-	names := []string{}
-	for _, name := range CloudAgentSupportedToolNames() {
-		if admin || !cloudAgentIsSkillTool(name) {
-			names = append(names, name)
-		}
-	}
-	return admin, names, nil
+	return true, CloudAgentSupportedToolNames(), nil
 }
 
 func cloudAgentIsSkillTool(name string) bool {
@@ -47,7 +44,7 @@ func cloudAgentRequireSkillToolAdministrator(repo *repository.Repository, userID
 	if repo == nil {
 		return kernel.Forbidden("无法确认管理员技能权限")
 	}
-	return skills.New(repo, "", nil).RequireAdministrator(userID)
+	return skills.New(repo, "", nil).RequireUser(userID)
 }
 
 func cloudAgentToolsWithoutSkills(tools []map[string]any) []map[string]any {
@@ -76,34 +73,59 @@ func (s *Service) cloudAgentCheckSkillExecution(userID string, state *cloudAgent
 	if admin {
 		return nil
 	}
-	if cloudAgentRuntimeHasSkillContext(state) || cloudAgentCanonicalHasSkillContext(canonical) || cloudAgentPiSessionHasSkillContext(sessionJSONL) {
+	var versions map[string]string
+	if state != nil {
+		versions = state.SkillVersions
+	}
+	if len(versions) == 0 {
+		// An explicitly frozen empty scope can search the public market or obtain
+		// zero installed results. Older runs without a snapshot remain fail-closed.
+		discoveryOnly := versions != nil
+		if cloudAgentRuntimeHasSkillContext(state, discoveryOnly) || cloudAgentCanonicalHasSkillContext(canonical, discoveryOnly) || cloudAgentPiSessionHasSkillContext(sessionJSONL, discoveryOnly) {
+			return cloudAgentSkillHistoryError()
+		}
+		return nil
+	}
+	// Recheck the frozen scope in one metadata-only query. File contents are loaded
+	// by skill_read_file only for the skill the model actually requests.
+	entries, err := s.skillDomain().AgentSkillCatalogByIDs(userID, slices.Collect(maps.Keys(versions)))
+	if err != nil {
+		return err
+	}
+	if len(entries) != len(versions) {
 		return cloudAgentSkillHistoryError()
 	}
-	if state != nil {
-		state.Request.SkillsEnabled = false
-		state.Canonical.Tools = cloudAgentToolsWithoutSkills(state.Canonical.Tools)
-	}
-	if canonical != nil {
-		canonical.Tools = cloudAgentToolsWithoutSkills(canonical.Tools)
+	for _, entry := range entries {
+		if !entry.Installed || entry.VersionID == "" || entry.VersionID != versions[entry.SkillID] {
+			return cloudAgentSkillHistoryError()
+		}
 	}
 	return nil
 }
 
-func cloudAgentRuntimeHasSkillContext(state *cloudAgentRuntime) bool {
+func cloudAgentRequiresFrozenSkill(name string, discoveryOnly bool) bool {
+	name = strings.TrimSpace(strings.TrimPrefix(name, "functions."))
+	if discoveryOnly && (name == "skill_search" || name == "skill_market_search" || name == "skill_recommend") {
+		return false
+	}
+	return cloudAgentIsSkillTool(name)
+}
+
+func cloudAgentRuntimeHasSkillContext(state *cloudAgentRuntime, discoveryOnly bool) bool {
 	if state == nil {
 		return false
 	}
-	if state.Request.SkillsEnabled || len(state.Request.PinnedSkillIDs) > 0 || len(cloudAgentPromptSkillMentions(state.Request.Prompt)) > 0 || len(state.Skills) > 0 || len(state.SkillVersions) > 0 || strings.TrimSpace(state.SkillHints) != "" || len(state.MarketSuggestions) > 0 || state.SkillRecommendations > 0 {
+	if state.Request.SkillsEnabled || len(state.Request.PinnedSkillIDs) > 0 || len(cloudAgentPromptSkillMentions(state.Request.Prompt)) > 0 || len(state.Skills) > 0 || len(state.SkillVersions) > 0 || strings.TrimSpace(state.SkillHints) != "" || !discoveryOnly && (len(state.MarketSuggestions) > 0 || state.SkillRecommendations > 0) {
 		return true
 	}
 	for key := range state.ToolReadResults {
 		name, _, _ := strings.Cut(key, ":")
-		if cloudAgentIsSkillTool(name) {
+		if cloudAgentRequiresFrozenSkill(name, discoveryOnly) {
 			return true
 		}
 	}
 	for _, call := range state.Calls {
-		if cloudAgentIsSkillTool(call.Function.Name) {
+		if cloudAgentRequiresFrozenSkill(call.Function.Name, discoveryOnly) {
 			return true
 		}
 	}
@@ -112,7 +134,7 @@ func cloudAgentRuntimeHasSkillContext(state *cloudAgentRuntime) bool {
 			return true
 		}
 	}
-	return cloudAgentCanonicalHasSkillContext(&state.Canonical)
+	return cloudAgentCanonicalHasSkillContext(&state.Canonical, discoveryOnly)
 }
 
 func cloudAgentIsSkillContextSource(source string) bool {
@@ -120,11 +142,12 @@ func cloudAgentIsSkillContextSource(source string) bool {
 }
 
 func cloudAgentSystemHasSkillCatalog(text string) bool {
-	_, catalog, found := strings.Cut(text, cloudAgentSkillCatalogHeader)
+	// Earlier runs embedded the installed skill catalog in their system prompt.
+	_, catalog, found := strings.Cut(text, "## 已安装技能目录\n")
 	return found && !strings.HasPrefix(strings.TrimSpace(catalog), "用户还没有安装可自动使用的技能。")
 }
 
-func cloudAgentCanonicalHasSkillContext(canonical *canonicalAgentRequest) bool {
+func cloudAgentCanonicalHasSkillContext(canonical *canonicalAgentRequest, discoveryOnly bool) bool {
 	if canonical == nil {
 		return false
 	}
@@ -132,7 +155,7 @@ func cloudAgentCanonicalHasSkillContext(canonical *canonicalAgentRequest) bool {
 		return true
 	}
 	for _, message := range canonical.Messages {
-		if cloudAgentValueHasSkillContext(message) {
+		if cloudAgentValueHasSkillContext(message, discoveryOnly) {
 			return true
 		}
 	}
@@ -141,27 +164,27 @@ func cloudAgentCanonicalHasSkillContext(canonical *canonicalAgentRequest) bool {
 
 // Runtime snapshots are structured JSONL; inspect provenance and tool identities,
 // not ordinary prose containing the word "skill".
-func cloudAgentPiSessionHasSkillContext(session string) bool {
+func cloudAgentPiSessionHasSkillContext(session string, discoveryOnly bool) bool {
 	for _, line := range strings.Split(session, "\n") {
 		var entry any
-		if json.Unmarshal([]byte(line), &entry) == nil && cloudAgentValueHasSkillContext(entry) {
+		if json.Unmarshal([]byte(line), &entry) == nil && cloudAgentValueHasSkillContext(entry, discoveryOnly) {
 			return true
 		}
 	}
 	return false
 }
 
-func cloudAgentValueHasSkillContext(value any) bool {
+func cloudAgentValueHasSkillContext(value any, discoveryOnly bool) bool {
 	switch item := value.(type) {
 	case map[string]any:
-		if cloudAgentIsSkillContextSource(stringField(item, cloudAgentContextSourceKey)) || cloudAgentIsSkillTool(stringField(item, "toolName")) {
+		if cloudAgentIsSkillContextSource(stringField(item, cloudAgentContextSourceKey)) || cloudAgentRequiresFrozenSkill(stringField(item, "toolName"), discoveryOnly) {
 			return true
 		}
-		if function, ok := item["function"].(map[string]any); ok && cloudAgentIsSkillTool(stringField(function, "name")) {
+		if function, ok := item["function"].(map[string]any); ok && cloudAgentRequiresFrozenSkill(stringField(function, "name"), discoveryOnly) {
 			return true
 		}
 		kind, role := stringField(item, "type"), stringField(item, "role")
-		if (kind == "toolCall" || role == "toolResult" || role == "tool") && cloudAgentIsSkillTool(stringField(item, "name")) {
+		if (kind == "toolCall" || role == "toolResult" || role == "tool") && cloudAgentRequiresFrozenSkill(stringField(item, "name"), discoveryOnly) {
 			return true
 		}
 		if role == "system" && cloudAgentSystemHasSkillCatalog(stringField(item, "content")) {
@@ -179,13 +202,13 @@ func cloudAgentValueHasSkillContext(value any) bool {
 			}
 		}
 		for _, nested := range item {
-			if cloudAgentValueHasSkillContext(nested) {
+			if cloudAgentValueHasSkillContext(nested, discoveryOnly) {
 				return true
 			}
 		}
 	case []any:
 		for _, nested := range item {
-			if cloudAgentValueHasSkillContext(nested) {
+			if cloudAgentValueHasSkillContext(nested, discoveryOnly) {
 				return true
 			}
 		}
@@ -202,4 +225,12 @@ func (s *Service) cloudAgentDecodeForExecution(run *model.CloudAgentExecution) (
 		return state, err
 	}
 	return state, nil
+}
+
+func cloudAgentMemberSkillNames(skills []cloudAgentSkill) []string {
+	names := make([]string, 0, len(skills))
+	for _, skill := range skills {
+		names = append(names, skill.Name)
+	}
+	return names
 }

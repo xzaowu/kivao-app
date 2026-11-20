@@ -1,5 +1,5 @@
 import { useUserStore } from "@/stores/use-user-store";
-import { useSkillLibraryAccess } from "@/lib/skill-access";
+import { useSkillLibraryAccess, useSkillManagementAccess } from "@/lib/skill-access";
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button, Input } from "antd";
@@ -8,6 +8,8 @@ import { Link } from "react-router";
 
 import { AppModal } from "@/components/ui/product/app-modal";
 import type { DramaSkillRef } from "@/services/api/drama";
+import { Select } from "@/components/ui/base/select";
+import { useSkillRuntimeCatalog } from "@/components/skills/skill-runtime-picker";
 import { getSkillFile, listAddedSkills, listSkillFiles } from "@/services/api/skills";
 
 /** 加载写作技能的文字步骤：资产提取（作品圣经）、分镜拆分（每集剧本）、剧情段视频提示词。 */
@@ -40,12 +42,31 @@ const STEP_COPY: Record<DramaSkillStep, { title: string; detail: string; empty: 
  */
 export function PromptSkillField(props: Parameters<typeof AdminPromptSkillField>[0]) {
     const allowed = useSkillLibraryAccess();
+    const canManage = useSkillManagementAccess();
     const hydrated = useUserStore((state) => state.hydrated);
     const userId = useUserStore((state) => state.user?.id);
     useEffect(() => {
         if (hydrated && !allowed && props.value) props.onChange(undefined);
     }, [allowed, hydrated, props.value, props.onChange]);
-    return allowed ? <AdminPromptSkillField key={userId} {...props} /> : null;
+    return allowed ? canManage ? <AdminPromptSkillField key={userId} {...props} /> : <MemberPromptSkillField key={userId} {...props} /> : null;
+}
+
+function MemberPromptSkillField({ value, onChange }: Parameters<typeof AdminPromptSkillField>[0]) {
+    const { skills, loading } = useSkillRuntimeCatalog();
+    return (
+        <Select
+            aria-label="选择写作技能"
+            allowClear
+            loading={loading}
+            value={value?.skillId}
+            placeholder="选择写作技能"
+            options={skills.map((skill) => ({ value: skill.skillId, label: skill.skillName }))}
+            onChange={(id) => {
+                const skill = skills.find((item) => item.skillId === id);
+                onChange(skill ? { skillId: skill.skillId, skillName: skill.skillName, path: "SKILL.md" } : undefined);
+            }}
+        />
+    );
 }
 
 function AdminPromptSkillField({ value, onChange, step = "prompt", compact }: { value?: DramaSkillRef; onChange: (value?: DramaSkillRef) => void; step?: DramaSkillStep; compact?: boolean }) {

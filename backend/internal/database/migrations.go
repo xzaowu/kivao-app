@@ -13,7 +13,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const CurrentSchemaVersion int64 = 105
+const CurrentSchemaVersion int64 = 109
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -42,6 +42,8 @@ type SchemaStatus struct {
 	Expected       int64 `json:"expected"`
 	YingceCurrent  int64 `json:"yingceCurrent"`
 	YingceExpected int64 `json:"yingceExpected"`
+	KivaoCurrent   int64 `json:"kivaoCurrent"`
+	KivaoExpected  int64 `json:"kivaoExpected"`
 	Ready          bool  `json:"ready"`
 }
 
@@ -370,6 +372,28 @@ var schemaMigrations = []migration{
 	{version: 103, name: "mcp_tenant_boundaries", checksum: "sha256:mcp-tenant-boundaries-v103", apply: migrateMCPTenantBoundaries},
 	{version: 104, name: "agent_storage_limits", checksum: "sha256:agent-storage-limits-v104", apply: migrateAgentStorageLimits},
 	{version: 105, name: "image_usage_billing", checksum: "sha256:image-usage-billing-v105", apply: migrateImageUsageBilling},
+	{version: 106, name: "team_workspaces", checksum: "sha256:team-workspaces-v106", apply: migrateTeamWorkspaces},
+	{version: 107, name: "company_workgroups", checksum: "sha256:company-workgroups-v107", apply: func(tx *gorm.DB) error {
+		return tx.AutoMigrate(&model.Team{})
+	}},
+	{version: 108, name: "shared_workspace_content", checksum: "sha256:shared-workspace-content-v108", apply: migrateSharedWorkspaceContent},
+	{version: 109, name: "model_protocol_releases", checksum: "sha256:model-protocol-releases-v109", apply: func(tx *gorm.DB) error {
+		for _, column := range []struct {
+			entity any
+			name   string
+		}{{&model.ChannelModel{}, "ProtocolRelease"}, {&model.Task{}, "ProtocolBindingJSON"}, {&model.RouteAttempt{}, "ProtocolBindingJSON"}} {
+			if !tx.Migrator().HasTable(column.entity) || tx.Migrator().HasColumn(column.entity, column.name) {
+				continue
+			}
+			if err := tx.Migrator().AddColumn(column.entity, column.name); err != nil {
+				return err
+			}
+		}
+		if !tx.Migrator().HasTable(&model.ChannelModel{}) || tx.Migrator().HasIndex(&model.ChannelModel{}, "ProtocolRelease") {
+			return nil
+		}
+		return tx.Migrator().CreateIndex(&model.ChannelModel{}, "ProtocolRelease")
+	}},
 }
 
 func migrateAPILogGenerationContent(tx *gorm.DB) error {
@@ -1301,6 +1325,9 @@ func MigrateSchema(db *gorm.DB) error {
 				return err
 			}
 		}
+		if err := migrateKivaoSchema(tx); err != nil {
+			return err
+		}
 		return RequireSchemaVersion(tx)
 	})
 }
@@ -1382,7 +1409,7 @@ func relocateLegacyOfficialMigrations(tx *gorm.DB) error {
 }
 
 func ReadSchemaStatus(db *gorm.DB) (SchemaStatus, error) {
-	status := SchemaStatus{Expected: CurrentSchemaVersion, YingceExpected: int64(len(yingceSchemaMigrations))}
+	status := SchemaStatus{Expected: CurrentSchemaVersion, YingceExpected: int64(len(yingceSchemaMigrations)), KivaoExpected: int64(len(kivaoMigrations))}
 	if !db.Migrator().HasTable(&schemaMigration{}) {
 		return status, nil
 	}
@@ -1420,7 +1447,11 @@ func ReadSchemaStatus(db *gorm.DB) (SchemaStatus, error) {
 			return status, err
 		}
 	}
-	status.Ready = true
+	var err error
+	status.KivaoCurrent, status.Ready, err = readKivaoSchema(db)
+	if err != nil {
+		return status, err
+	}
 	return status, nil
 }
 
@@ -1466,6 +1497,9 @@ func RequireSchemaVersion(db *gorm.DB) error {
 		return fmt.Errorf("数据库结构版本 %d 高于程序支持的 %d，拒绝使用旧程序连接新数据库", status.Current, status.Expected)
 	}
 	if !status.Ready {
+		if status.YingceCurrent == status.YingceExpected && status.KivaoCurrent < status.KivaoExpected {
+			return fmt.Errorf("KIVAO 数据库迁移尚未完成，请先执行 migrate-schema up")
+		}
 		return fmt.Errorf("出彩数据库迁移尚未完成，请先执行 migrate-schema up")
 	}
 	return nil

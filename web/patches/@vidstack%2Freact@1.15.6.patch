@@ -1,0 +1,60 @@
+diff --git a/dev/chunks/vidstack-DxAMdmBt.js b/dev/chunks/vidstack-DxAMdmBt.js
+index 30f2afbc74899003a7f410188e62ad5e159bda82..2789212151cf2bc8811aa6efa710cf90513a8f30 100644
+--- a/dev/chunks/vidstack-DxAMdmBt.js
++++ b/dev/chunks/vidstack-DxAMdmBt.js
+@@ -3831,6 +3831,7 @@ var MediaStateManager = class extends MediaPlayerController {
+ 		if (loop()) {
+ 			setTimeout(() => {
+ 				requestAnimationFrame(() => {
++					if (!this.scope) return;
+ 					this.#resetPlaybackIfNeeded(event);
+ 					this.dispatch("media-loop-request", { trigger: event });
+ 				});
+@@ -3840,6 +3841,7 @@ var MediaStateManager = class extends MediaPlayerController {
+ 		setTimeout(() => this.#onEnded(event), 0);
+ 	}
+ 	#onEnded(event) {
++		if (!this.scope) return;
+ 		const { storage } = this.#media, { paused, seeking, ended, duration } = this.$state;
+ 		this.#onEndPrecisionChange(event);
+ 		if (!paused()) this.dispatch("pause", { trigger: event });
+diff --git a/prod/chunks/vidstack-DKRnfION.js b/prod/chunks/vidstack-DKRnfION.js
+index 4ef18e508e7d243282289a0f35b81199d127bf3d..4d273071a779919f3697dbac708ebfbece11f016 100644
+--- a/prod/chunks/vidstack-DKRnfION.js
++++ b/prod/chunks/vidstack-DKRnfION.js
+@@ -3711,6 +3711,7 @@ var MediaStateManager = class extends MediaPlayerController {
+ 		if (loop()) {
+ 			setTimeout(() => {
+ 				requestAnimationFrame(() => {
++					if (!this.scope) return;
+ 					this.#resetPlaybackIfNeeded(event);
+ 					this.dispatch("media-loop-request", { trigger: event });
+ 				});
+@@ -3720,6 +3721,7 @@ var MediaStateManager = class extends MediaPlayerController {
+ 		setTimeout(() => this.#onEnded(event), 0);
+ 	}
+ 	#onEnded(event) {
++		if (!this.scope) return;
+ 		const { storage } = this.#media, { paused, seeking, ended, duration } = this.$state;
+ 		this.#onEndPrecisionChange(event);
+ 		if (!paused()) this.dispatch("pause", { trigger: event });
+diff --git a/server/chunks/vidstack-Dke-J4nH.js b/server/chunks/vidstack-Dke-J4nH.js
+index f8d21d7273e85f4c39382738e4c7ac8e4c2f32bc..f34d21cc0a1c243703f7f0ac1cfa06d6f22761e2 100644
+--- a/server/chunks/vidstack-Dke-J4nH.js
++++ b/server/chunks/vidstack-Dke-J4nH.js
+@@ -3712,6 +3712,7 @@ var MediaStateManager = class extends MediaPlayerController {
+ 		if (loop()) {
+ 			setTimeout(() => {
+ 				requestAnimationFrame(() => {
++					if (!this.scope) return;
+ 					this.#resetPlaybackIfNeeded(event);
+ 					this.dispatch("media-loop-request", { trigger: event });
+ 				});
+@@ -3721,6 +3722,7 @@ var MediaStateManager = class extends MediaPlayerController {
+ 		setTimeout(() => this.#onEnded(event), 0);
+ 	}
+ 	#onEnded(event) {
++		if (!this.scope) return;
+ 		const { storage } = this.#media, { paused, seeking, ended, duration } = this.$state;
+ 		this.#onEndPrecisionChange(event);
+ 		if (!paused()) this.dispatch("pause", { trigger: event });

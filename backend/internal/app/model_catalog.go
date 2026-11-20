@@ -260,6 +260,18 @@ func (s *Service) sanitizeChannelModel(cm *model.ChannelModel) (PublicChannelMod
 		if err != nil {
 			return PublicChannelModel{}, fmt.Errorf("投影渠道模型能力配置失败：%w", err)
 		}
+		if video, ok := capabilityConfig["video"].(map[string]any); ok {
+			if ecommercePresenterCapable(string(cm.Protocol), normalized.Video) {
+				video["presenterFirstFrameAudio"] = true
+			}
+			if supportsEcommerceReferenceImages(string(cm.Protocol), normalized.Video) {
+				video["numberedImageReferences"] = true
+			}
+			if references, audio := ecommerceRemixCapabilities(string(cm.Protocol), normalized.Video); references {
+				video["remixReferences"] = true
+				video["remixGenerateAudio"] = audio
+			}
+		}
 	}
 	var defaultOptions map[string]any
 	if normalized != nil {
@@ -267,7 +279,7 @@ func (s *Service) sanitizeChannelModel(cm *model.ChannelModel) (PublicChannelMod
 		if specErr != nil {
 			return PublicChannelModel{}, fmt.Errorf("投影渠道模型默认参数失败：%w", specErr)
 		}
-		defaultOptions, err = channelModelDefaultOptions(*cm, spec, s.protocolRegistry())
+		defaultOptions, err = channelModelDefaultOptions(*cm, spec, normalized)
 		if err != nil {
 			return PublicChannelModel{}, err
 		}

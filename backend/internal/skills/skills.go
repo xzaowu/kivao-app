@@ -146,7 +146,8 @@ type SkillMutationRequest struct {
 }
 
 func (s *Service) Skills(userID string, req SkillListRequest) (*SkillList, error) {
-	if err := s.RequireAdministrator(userID); err != nil {
+	admin, err := s.IsAdministrator(userID)
+	if err != nil {
 		return nil, err
 	}
 	req = normalizeSkillListRequest(req)
@@ -172,6 +173,7 @@ func (s *Service) Skills(userID string, req SkillListRequest) (*SkillList, error
 		UserID:               userID,
 		Scope:                req.Scope,
 		Search:               req.Search,
+		NameOnlySearch:       !admin,
 		Tag:                  req.Tag,
 		LibraryCategoryID:    req.LibraryCategoryID,
 		LibraryUncategorized: req.LibraryUncategorized,
@@ -202,7 +204,7 @@ func (s *Service) Skills(userID string, req SkillListRequest) (*SkillList, error
 }
 
 func (s *Service) AddedSkills(userID string) ([]AddedSkillReference, error) {
-	if err := s.RequireAdministrator(userID); err != nil {
+	if err := s.RequireUser(userID); err != nil {
 		return nil, err
 	}
 	rows, _, err := s.repo.Skills(repository.SkillListFilter{UserID: userID, Scope: "mine", Sort: "updated", Limit: -1})
@@ -368,7 +370,14 @@ func (s *Service) SetSkillLiked(userID string, id string, liked bool) (*SkillIte
 	return s.SkillDetail(userID, id)
 }
 
-func (s *Service) skillItems(userID string, skills []model.Skill, includeInstruction bool) ([]SkillItem, error) {
+func (s *Service) skillItems(userID string, skills []model.Skill, includeInstruction bool, runtime ...bool) ([]SkillItem, error) {
+	admin, err := s.IsAdministrator(userID)
+	if err != nil {
+		return nil, err
+	}
+	full := admin || (len(runtime) > 0 && runtime[0])
+	// Admin detail and server-only execution can read instructions; member responses never can.
+	includeInstruction = full && includeInstruction
 	ids := make([]string, 0, len(skills))
 	ownerIDs := make([]string, 0, len(skills))
 	for _, skill := range skills {
@@ -397,6 +406,14 @@ func (s *Service) skillItems(userID string, skills []model.Skill, includeInstruc
 	}
 	items := make([]SkillItem, 0, len(skills))
 	for _, skill := range skills {
+		state := stateBySkillID[skill.ID]
+		metric := metrics[skill.ID]
+		metric.LikeCount += skill.InitialLikeCount
+		metric.AddedCount += skill.InitialAddedCount
+		if !full {
+			items = append(items, SkillItem{SkillID: skill.ID, SkillName: skill.Name, Tag: skill.Tag, LikeCount: metric.LikeCount, AddedCount: metric.AddedCount, IsAdded: state.Added || skill.OwnerID == userID, IsLike: state.Liked, AgentMode: NormalizeSkillAgentMode(state.AgentMode)})
+			continue
+		}
 		showcaseMedia, err := parseShowcaseMedia(skill.ShowcaseMediaJSON)
 		if err != nil {
 			return nil, err
@@ -412,10 +429,6 @@ func (s *Service) skillItems(userID string, skills []model.Skill, includeInstruc
 		if ownerAvatars[skill.OwnerID] != "" {
 			ownerAvatarURL = ownerAvatars[skill.OwnerID]
 		}
-		state := stateBySkillID[skill.ID]
-		metric := metrics[skill.ID]
-		metric.LikeCount += skill.InitialLikeCount
-		metric.AddedCount += skill.InitialAddedCount
 		instruction := ""
 		if includeInstruction {
 			instruction = skill.Instruction
@@ -442,7 +455,7 @@ func (s *Service) skillItems(userID string, skills []model.Skill, includeInstruc
 
 // 所有详情和关系写入都先经过同一可见性边界，避免私有技能通过加入、收藏或画布接口泄露正文。
 func (s *Service) visibleSkill(userID string, id string) (*model.Skill, error) {
-	if err := s.RequireAdministrator(userID); err != nil {
+	if err := s.RequireUser(userID); err != nil {
 		return nil, err
 	}
 	id = strings.TrimSpace(id)
@@ -456,13 +469,16 @@ func (s *Service) visibleSkill(userID string, id string) (*model.Skill, error) {
 	if err != nil {
 		return nil, err
 	}
-	if skill.IsPrivate && skill.OwnerID != userID {
+	if (skill.IsPrivate || skill.Status != skillStatusEnabled) && skill.OwnerID != userID {
 		return nil, kernel.Forbidden("该技能未公开")
 	}
 	return skill, nil
 }
 
 func (s *Service) ownedSkill(userID string, id string) (*model.Skill, error) {
+	if err := s.RequireAdministrator(userID); err != nil {
+		return nil, err
+	}
 	skill, err := s.visibleSkill(userID, id)
 	if err != nil {
 		return nil, err

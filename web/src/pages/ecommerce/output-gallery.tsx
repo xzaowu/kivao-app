@@ -2,11 +2,12 @@ import { useState, type ReactNode } from "react";
 import { Button, Checkbox, Typography } from "antd";
 import { ArrowDownToLine, Clapperboard, Image as ImageIcon, RotateCcw, Trash2 } from "lucide-react";
 import { AppModal } from "@/components/ui/product/app-modal/app-modal";
+import { CachedResourceImage } from "@/components/cached-resource-image";
 import type { GenerationTask } from "@/services/api/task-center";
 import type { EcommerceDraft, EcommercePlan, EcommercePlanImage } from "@/services/api/ecommerce";
 import type { AiConfig } from "@/stores/use-config-store";
 import { parseBackendGenerationResult } from "@/services/api/generation-task";
-import { resolveResourceVariantUrl, resourceIdFromStorageKey } from "@/services/api/resources";
+import { resolveResourceVariantUrl, resourceIdFromStorageKey, resourceStorageKey } from "@/services/api/resources";
 import type { EcommerceExportItem } from "./export";
 import { imageTypes, labelOf } from "./catalog";
 import { commerceCanvasAspect } from "./canvas-layout";
@@ -22,6 +23,11 @@ const filters: Array<[OutputFilter, string]> = [
     ["active", "进行中"],
     ["done", "已完成"],
     ["failed", "失败"],
+];
+const exampleImages = [
+    ["/commerce/video-approaches/orbit.webp", "商品主图"],
+    ["/commerce/video-approaches/detail.webp", "材质细节"],
+    ["/commerce/video-examples/adapt.webp", "使用场景"],
 ];
 
 export function EcommerceOutputGallery({
@@ -45,6 +51,9 @@ export function EcommerceOutputGallery({
     onLoadMoreHistory,
     stage,
     stageActive = false,
+    showResultsFirst = false,
+    active = true,
+    onResume,
     nextStep,
     exportCount = 0,
     exportDisabled = false,
@@ -75,6 +84,9 @@ export function EcommerceOutputGallery({
     /** 本轮流程：已发送的需求、视觉方向、方案审阅与进度，显示在作品之上。 */
     stage?: ReactNode;
     stageActive?: boolean;
+    showResultsFirst?: boolean;
+    active?: boolean;
+    onResume?: () => void;
     /** 空态里告诉用户下一步做什么。 */
     nextStep?: string;
     exportCount?: number;
@@ -90,6 +102,7 @@ export function EcommerceOutputGallery({
     const [editing, setEditing] = useState<string | null>(null);
     const [filter, setFilter] = useState<OutputFilter>("all");
     const images = [...(plan?.previousImages || []), ...(plan?.images || [])];
+    const product = draft.references.find((reference) => reference.role === "primary");
     const stateOf = (image: EcommercePlanImage, pending: boolean): OutputFilter => {
         const task = image.taskId ? tasks[image.taskId] : undefined;
         if (task?.status === "succeeded" || (!task && image.deliveryStatus === "delivered")) return "done";
@@ -129,16 +142,19 @@ export function EcommerceOutputGallery({
     );
     const current = (plan?.images || []).map((image, index) => ({ image, index })).filter(({ image }) => visible(image, generationPending));
     const previous = (plan?.previousImages || []).map((image, index) => ({ image, index })).filter(({ image }) => visible(image, false));
+    const stagePanel = stageActive ? <div className="ecs-stage">{stage}</div> : null;
 
     return (
         <section className="commerce-output-gallery" aria-label="商品作品">
             <header className="commerce-output-gallery-header">
                 <div className="commerce-output-title">
                     <h2>方案与作品</h2>
-                    <span>
-                        {counts.done} 张完成{counts.active ? ` · ${counts.active} 张进行中` : ""}
-                        {counts.failed ? ` · ${counts.failed} 张失败` : ""}
-                    </span>
+                    {images.length > 0 && (
+                        <span>
+                            {counts.done} 张完成{counts.active ? ` · ${counts.active} 张进行中` : ""}
+                            {counts.failed ? ` · ${counts.failed} 张失败` : ""}
+                        </span>
+                    )}
                 </div>
                 <div className="commerce-output-tools">
                     {images.length ? (
@@ -156,7 +172,7 @@ export function EcommerceOutputGallery({
                             下载已打包文件
                         </Button>
                     ) : null}
-                    {onExport ? (
+                    {onExport && images.length > 0 ? (
                         <Button size="small" icon={<ArrowDownToLine size={14} />} disabled={!exportCount || exportDisabled} onClick={onExport} aria-label={`导出图片，共 ${exportCount} 张`}>
                             {selected.size ? `导出已选 ${exportCount}` : exportCount > 1 ? `导出全部 ${exportCount}` : "导出"}
                         </Button>
@@ -165,18 +181,36 @@ export function EcommerceOutputGallery({
             </header>
             {progress}
             <div className="commerce-output-scroll" data-canvas-wheel-scroll>
-                {stageActive ? <div className="ecs-stage">{stage}</div> : null}
-                {!images.length ? (
-                    stageActive ? null : (
-                        <div className="commerce-output-empty" role="status">
-                            <span className="commerce-output-empty-mark" aria-hidden="true">
-                                <ImageIcon size={22} strokeWidth={1.6} />
-                            </span>
-                            <strong>这一轮的方案和作品会出现在这里</strong>
-                            <span>{nextStep || "在右侧选好场景、添加商品图，再描述想要的画面。"}</span>
+                {!showResultsFirst && stagePanel}
+                {!images.length && !stageActive && active && !product && (
+                    <figure className="ec-photo-example">
+                        <figcaption>商品套图示例</figcaption>
+                        <div className="ec-photo-samples">
+                            {exampleImages.map(([src, label]) => (
+                                <div key={src}>
+                                    <img src={src} alt={label} decoding="async" />
+                                    <span aria-hidden="true">{label}</span>
+                                </div>
+                            ))}
                         </div>
-                    )
-                ) : (
+                        {onResume && <Button onClick={onResume}>去准备商品图</Button>}
+                    </figure>
+                )}
+                {!images.length && !stageActive && active && product && (
+                    <div className="commerce-output-empty">
+                        <figure>
+                            <CachedResourceImage variant="thumbnail" storageKey={resourceStorageKey(product.resourceId)} alt={product.name || "本项目的商品图"} fallback={<ImageIcon aria-hidden />} />
+                            <figcaption>已选商品素材</figcaption>
+                        </figure>
+                        {onResume && (
+                            <div className="commerce-output-empty-action">
+                                {nextStep && !progress && <p>{nextStep}</p>}
+                                <Button onClick={onResume}>继续图片创作</Button>
+                            </div>
+                        )}
+                    </div>
+                )}
+                {images.length > 0 && (
                     <div className="commerce-output-batches">
                         {current.length ? (
                             <section className="commerce-output-batch" aria-label="当前创作批次">
@@ -187,6 +221,7 @@ export function EcommerceOutputGallery({
                                 <div className="commerce-output-grid">{current.map(({ image, index }) => card(image, index, generationPending))}</div>
                             </section>
                         ) : null}
+                        {showResultsFirst && stagePanel}
                         {previous.length ? (
                             <section className="commerce-output-batch" aria-label="之前的商品作品">
                                 <header>
@@ -210,7 +245,11 @@ export function EcommerceOutputGallery({
             {preview ? (
                 <AppModal open onCancel={() => setPreview(null)} footer={null} width="min(1120px, calc(100vw - 32px))" title={`${String(preview.index + 1).padStart(2, "0")} · ${labelOf(imageTypes, preview.image.imageType)}`}>
                     <div className="commerce-output-preview">
-                        <CommerceResultImage ratio={commerceCanvasAspect(preview.image.ratio)} src={preview.src || ""} alt={`第 ${preview.index + 1} 张商品图片预览`} />
+                        <CommerceResultImage
+                            ratio={commerceCanvasAspect(preview.image.ratio)}
+                            src={(preview.resourceId && resolveResourceVariantUrl(resourceStorageKey(preview.resourceId), "original")) || preview.src || ""}
+                            alt={`第 ${preview.index + 1} 张商品图片预览`}
+                        />
                         <section>
                             {preview.image.copy ? <p>{preview.image.copy}</p> : null}
                             <Typography.Text type="secondary">{preview.image.prompt}</Typography.Text>
@@ -321,32 +360,34 @@ function OutputCard({
                     <Checkbox checked={selected} onChange={onSelect} aria-label={`选择第 ${index + 1} 张图片`} />
                 </span>
             </div>
-            <div className="commerce-output-card-meta">
-                <span className="commerce-output-card-title" title={image.goal || image.theme || title}>
-                    <strong>{title}</strong>
-                    {image.goal || image.theme ? <small>{image.goal || image.theme}</small> : null}
-                </span>
-                <span className="commerce-output-status">{status}</span>
+            <div className="commerce-output-card-details">
+                <div className="commerce-output-card-meta">
+                    <span className="commerce-output-card-title" title={image.goal || image.theme || title}>
+                        <strong>{title}</strong>
+                        {image.goal || image.theme ? <small>{image.goal || image.theme}</small> : null}
+                    </span>
+                    <span className="commerce-output-status">{status}</span>
+                </div>
+                {image.copy ? <p className="commerce-output-card-copy">{image.copy}</p> : null}
+                {issues?.length ? <p className="commerce-output-issue">需要检查：{issues.join("；")}</p> : null}
+                <footer>
+                    {failed ? (
+                        <Button size="small" onClick={onRetry}>
+                            {task!.canRecoverMedia ? "重新保存" : "重试"}
+                        </Button>
+                    ) : null}
+                    <Button size="small" type="text" icon={<RotateCcw size={14} />} onClick={onEdit}>
+                        修改这张
+                    </Button>
+                    {assetId && resourceId && onMakeVideo ? (
+                        <Button size="small" type="text" icon={<Clapperboard size={14} />} onClick={() => onMakeVideo(resourceId)}>
+                            做成视频
+                        </Button>
+                    ) : null}
+                    {assetId && resourceId ? <Button size="small" type="text" icon={<ArrowDownToLine size={14} />} aria-label={`下载第 ${index + 1} 张`} onClick={() => onDownload({ image, index, assetId, resourceId })} /> : null}
+                    <Button size="small" type="text" icon={<Trash2 size={14} />} aria-label={`从本轮移除第 ${index + 1} 张`} onClick={onRemove} />
+                </footer>
             </div>
-            {image.copy ? <p className="commerce-output-card-copy">{image.copy}</p> : null}
-            {issues?.length ? <p className="commerce-output-issue">需要检查：{issues.join("；")}</p> : null}
-            <footer>
-                {failed ? (
-                    <Button size="small" onClick={onRetry}>
-                        {task!.canRecoverMedia ? "重新保存" : "重试"}
-                    </Button>
-                ) : null}
-                <Button size="small" type="text" icon={<RotateCcw size={14} />} onClick={onEdit}>
-                    修改这张
-                </Button>
-                {assetId && resourceId && onMakeVideo ? (
-                    <Button size="small" type="text" icon={<Clapperboard size={14} />} onClick={() => onMakeVideo(resourceId)}>
-                        做成视频
-                    </Button>
-                ) : null}
-                {assetId && resourceId ? <Button size="small" type="text" icon={<ArrowDownToLine size={14} />} aria-label={`下载第 ${index + 1} 张`} onClick={() => onDownload({ image, index, assetId, resourceId })} /> : null}
-                <Button size="small" type="text" icon={<Trash2 size={14} />} aria-label={`从本轮移除第 ${index + 1} 张`} onClick={onRemove} />
-            </footer>
         </article>
     );
 }
@@ -357,7 +398,7 @@ function outputSource(image: EcommercePlanImage, tasks: Record<string, Generatio
         const output = task?.status === "succeeded" ? parseBackendGenerationResult(task)?.images?.[0] : undefined;
         if (output?.storageKey) return resolveResourceVariantUrl(output.storageKey, "thumbnail");
         if (output?.dataUrl || task?.previewUrl) return output?.dataUrl || task?.previewUrl;
-        if (image.resourceId) return resolveResourceVariantUrl(image.resourceId, "thumbnail");
+        if (image.resourceId) return resolveResourceVariantUrl(resourceStorageKey(image.resourceId), "thumbnail");
     } catch {
         if (task?.previewUrl) return task.previewUrl;
     }

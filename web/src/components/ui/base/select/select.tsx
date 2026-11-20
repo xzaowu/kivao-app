@@ -56,7 +56,7 @@ export const Select = forwardRef<RefSelectProps, SelectProps>(function Select({ 
             onOpenChange={changeOpen}
             variant={variant ?? "filled"}
             size={normalizedSize as AntSelectProps["size"]}
-            aria-label={ariaLabel}
+            aria-label={props["aria-label"] ?? ariaLabel}
             className={cn("app-unified-select", `app-unified-select--${appearance}`, className)}
             data-input-modality={inputModality}
             onMouseDown={(event) => {

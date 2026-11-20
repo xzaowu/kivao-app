@@ -84,7 +84,7 @@ export function ReferenceUploader({
         return (
             <div className="commerce-reference-item" key={`${ref.resourceId}-${index}`} title={compact ? undefined : ref.name || `商品参考图 ${index + 1}`}>
                 {/* 紧凑模式缩略图很小，悬停时放大预览，便于确认上传的是哪张商品图。 */}
-                {compact ? (
+                {compact && index > 0 ? (
                     <Popover
                         placement="top"
                         arrow={false}
@@ -127,7 +127,7 @@ export function ReferenceUploader({
         <CommerceHint text="上传本地商品主图或细节图，支持一次添加多张，也可直接拖入或粘贴。">
             <label className={`commerce-reference-add ${busy ? "is-uploading" : ""}`}>
                 {busy ? <span className="commerce-reference-spinner" aria-hidden="true" /> : <Plus size={25} strokeWidth={1.5} aria-hidden="true" />}
-                <span>{busy ? "上传中…" : full ? "参考图已满" : dragging ? "松开添加" : references.length ? "继续添加" : compact ? "商品图" : "上传或拖入商品图"}</span>
+                <span>{busy ? "上传中…" : full ? "参考图已满" : dragging ? "松开添加" : references.length ? "继续添加" : "上传或拖入商品图"}</span>
                 <input
                     type="file"
                     aria-label="添加商品参考图"
@@ -191,7 +191,6 @@ export function ReferenceUploader({
                 </>
             )}
             <div className="commerce-reference-list" aria-label="商品参考图片">
-                {compact ? addTile : null}
                 {tiles}
                 {previews.map((item, index) => (
                     <div className="commerce-reference-item is-pending" key={`${item.url}-${index}`}>
@@ -199,10 +198,10 @@ export function ReferenceUploader({
                         <span className="commerce-reference-pending-pulse" aria-hidden="true" />
                     </div>
                 ))}
-                {!compact ? addTile : null}
+                {addTile}
             </div>
             <p id="commerce-reference-help" className={compact ? "sr-only" : "commerce-reference-help"}>
-                可拖入微信、电脑、网页图片，或把右侧生成图拖到这里。点击此区域后按 Ctrl+V 粘贴图片。
+                可拖入商品图片，或点击此区域后按 Ctrl+V 粘贴图片。
             </p>
             {busy ? (
                 <p className="commerce-reference-status" role="status">

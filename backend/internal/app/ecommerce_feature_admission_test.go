@@ -106,6 +106,35 @@ func TestEcommerceTaskAdmissionUsesOwnedProjectAndMediaKind(t *testing.T) {
 	}
 }
 
+func TestEcommerceVideoStoryboardAdmission(t *testing.T) {
+	s, _, _, _ := ecommerceCreationTestService(t)
+	project, err := s.CreateEcommerceProject("user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := map[string]any{"mode": "text", "metadata": map[string]any{"stage": ecommerceVideoStoryboardStage, "source": "ecommerce-agent", "ecommerceProjectId": project.ID}}
+	for _, tc := range []struct {
+		name, owner, project, taskType string
+		video, workspace, allowed      bool
+	}{
+		{"enabled", "user", project.ID, "canvas_text", true, true, true},
+		{"ecommerce video disabled", "user", project.ID, "canvas_text", false, true, false},
+		{"video workspace disabled", "user", project.ID, "canvas_text", true, false, false},
+		{"other owner", "other", project.ID, "canvas_text", true, true, false},
+		{"mismatched project", "user", "other", "canvas_text", true, true, false},
+		{"media task", "user", project.ID, "canvas_video", true, true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			features := defaultFeatureAvailability()
+			features.EcommerceEnabled, features.EcommerceVideoEnabled, features.VideoWorkbenchEnabled = true, tc.video, tc.workspace
+			saveAdmissionFeatures(t, s, features)
+			if err := s.requireTaskGenerationFeatures(tc.owner, tc.project, tc.taskType, "", "", input); (err == nil) != tc.allowed {
+				t.Fatalf("admission = %v; want allowed %t", err, tc.allowed)
+			}
+		})
+	}
+}
+
 func TestEcommerceDisabledWritesKeepHistoryAndManualRetryGate(t *testing.T) {
 	s, db, _, _ := ecommerceCreationTestService(t)
 	project, err := s.CreateEcommerceProject("user")

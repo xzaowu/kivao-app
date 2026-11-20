@@ -1,4 +1,6 @@
 import { generationErrorMessage } from "@/lib/generation-error";
+import { workspaceApiPath, workspaceTeamId } from "@/lib/workspace-routes";
+import { createClientUUID } from "@/lib/client-id";
 import { http, apiBaseURL, type BackendEnvelope } from "@/services/api/request";
 import { consumeTaskTextStream, createTaskTextStreamParser, type TaskTextStreamEvent } from "@/services/api/task-text-stream";
 import { recordDiagnosticEvent } from "@/services/diagnostics/client-diagnostics";
@@ -17,6 +19,50 @@ export type GenerationTaskOutput = {
     providerArtifactRef?: string;
     materializedAssetId?: string;
     materializationErrorCode?: string;
+};
+
+export type ProductVideoReferenceAspect = "rhythm" | "camera" | "framing";
+export type ProductVideoReference = {
+    resourceId: string;
+    name: string;
+    durationMs: number;
+    aspects?: ProductVideoReferenceAspect[];
+    instruction?: string;
+};
+
+export type ProductVideoPresenter = { frameResourceId: string; delivery: "recommend" | "demonstrate" | "answer" };
+
+export type ProductVideoBoardShot = {
+    frame?: { resourceId: string; name: string };
+    framing?: "wide" | "medium" | "close" | "detail";
+    camera?: "static" | "push" | "pan" | "follow";
+};
+export type ProductVideoBoards = [ProductVideoBoardShot, ProductVideoBoardShot, ProductVideoBoardShot];
+export type ProductVideoShootBrief = { scene?: string; closing?: string };
+
+export type ProductVideoImage = { resourceId: string; name: string; source?: "library" | "composite" };
+
+export type ProductVideoVersion = {
+    schema: 1;
+    frame: ProductVideoImage;
+    productImages?: ProductVideoImage[];
+    referenceVideo?: ProductVideoReference;
+    presenter?: ProductVideoPresenter;
+    model: string;
+    facts: string;
+    purpose: "showcase" | "lifestyle" | "demo";
+    approachId?: string;
+    shots: string[];
+    boards?: ProductVideoBoards;
+    boardInputs?: true;
+    shootBrief?: ProductVideoShootBrief;
+    voice: string;
+    productName: string;
+    audience: string;
+    language: string;
+    region?: string;
+    settings: { seconds: 15; ratio: string; resolution: string; generateAudio: boolean };
+    parentTaskId?: string;
 };
 
 export type GenerationTask = {
@@ -70,12 +116,14 @@ export type GenerationTask = {
         status: TaskBillingStatus;
     };
     clientContext?: {
+        ecommerceVideoVersion?: ProductVideoVersion;
         assetTitle?: string;
         conversationId?: string;
         messageId?: string;
         nodeId?: string;
         /** 工作台一次提交拆出的多个任务共用的批次 ID；batchIndex 为 0 时后端省略该字段。 */
         batchId?: string;
+        batchSlotKey?: string;
         batchIndex?: number;
         batchCount?: number;
         domainProjectId?: string;
@@ -131,6 +179,8 @@ export type TaskLog = {
 };
 
 export type CreateTaskInput = {
+    idempotencyKey?: string;
+    maxChargeMicrocredits?: number;
     projectId?: string;
     type?: string;
     operation?: string;
@@ -140,7 +190,17 @@ export type CreateTaskInput = {
     logicalModelId?: string;
     input?: Record<string, unknown>;
 };
-export function createGenerationTask(input: CreateTaskInput) {
+export async function createGenerationTask(input: CreateTaskInput) {
+    if (workspaceTeamId) {
+        if (input.type !== "canvas_text" || input.operation !== "text") throw new Error("当前空间仅开放系统模型的文本生成");
+        const session = captureUserSession();
+        const quote = await http.post<{ maxChargeMicrocredits: number }>("/tasks/quote", input);
+        assertCurrentUserSession(session);
+        if (!Number.isSafeInteger(quote.maxChargeMicrocredits) || quote.maxChargeMicrocredits < 0) throw new Error("未取得有效的积分报价");
+        if (!window.confirm(`本次生成将从你的团队额度中扣除最多 ${quote.maxChargeMicrocredits / 1_000_000} 积分，继续生成？`)) throw new DOMException("已取消生成", "AbortError");
+        const metadata = input.input?.metadata as { clientOperationId?: string; messageId?: string } | undefined;
+        input = { ...input, maxChargeMicrocredits: quote.maxChargeMicrocredits, idempotencyKey: input.idempotencyKey || metadata?.clientOperationId || metadata?.messageId || createClientUUID() };
+    }
     return http.post<GenerationTask>("/tasks", input).then((task) => {
         recordDiagnosticEvent({ level: "info", category: "task", message: "任务已创建", taskId: task.id, projectId: task.projectId });
         observeGenerationTaskStatus(task);
@@ -351,9 +411,10 @@ export function queryTaskTextReplay(id: string, after = 0) {
     return http.get<TaskTextReplay>(`/tasks/${encodeURIComponent(id)}/text-deltas`, { params: { after } });
 }
 
-export function retryGenerationTask(id: string) {
+export function retryGenerationTask(id: string, expectedUpdatedAt?: string) {
     // 重试会在服务端预占/结算积分，与 cancel 对齐派发钱包事件，顶栏余额才不会停留在旧值。
-    return http.post<GenerationTask>(`/tasks/${encodeURIComponent(id)}/retry`).then((task) => {
+    const request = expectedUpdatedAt ? { expectedUpdatedAt } : undefined;
+    return http.post<GenerationTask>(`/tasks/${encodeURIComponent(id)}/retry`, request).then((task) => {
         const observed = observedTask(task);
         window.dispatchEvent(new CustomEvent("wallet:updated"));
         return observed;
@@ -548,8 +609,8 @@ async function waitForGenerationTaskTextEvents(id: string, options: WaitForGener
             const base = String(apiBaseURL).replace(/\/+$/, "");
             const cursor = lastEventId > 0 ? `?after=${encodeURIComponent(String(lastEventId))}` : "";
             const path = options.textEventsSource === "agent" ? `/agent/runs/${encodeURIComponent(id)}/events` : `/tasks/${encodeURIComponent(id)}/text-events`;
-            const response = await fetch(`${base}${path}${cursor}`, {
-                headers: { Accept: "text/event-stream", "X-Canvas-Expected-User": session.scope },
+            const response = await fetch(`${base}${workspaceApiPath(path)}${cursor}`, {
+                headers: { Accept: "text/event-stream", "X-Canvas-Expected-User": session.userId },
                 credentials: "include",
                 signal: options.signal,
             });

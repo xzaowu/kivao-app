@@ -1,6 +1,7 @@
 import { CollectionToolbar } from "@/components/layout/collection-toolbar";
 import { AppModal } from "@/components/ui/product/app-modal";
 import { App, Button, Dropdown, Input } from "antd";
+import { ListSearchInput } from "@/components/ui/base/list-search-input";
 import { Tooltip } from "@/components/ui/base/tooltip";
 
 import {
@@ -22,7 +23,6 @@ import {
     Pencil,
     Plus,
     Puzzle,
-    Search,
     ShoppingBag,
     Sparkles,
     Trash2,
@@ -64,12 +64,12 @@ import {
     type SkillScope,
     type SkillSort,
 } from "@/services/api/skills";
-import { useUserStore } from "@/stores/use-user-store";
+import { useSkillAdministrationAccess } from "@/lib/skill-access";
 import { Select } from "@/components/ui/base/select";
 import { useSkillCuration, curationQuery, curationIcon, effectiveCurationRoot } from "@/components/skills/skill-curation-browser";
 import { SkillRecommendationsModal } from "@/components/skills/skill-recommendations-modal";
 
-const scopeOptions: { label: string; value: SkillScope; icon: LucideIcon }[] = [
+const allScopeOptions: { label: string; value: SkillScope; icon: LucideIcon }[] = [
     { label: "技能广场", value: "public", icon: Store },
     { label: "我的技能", value: "mine", icon: Library },
     { label: "我创建的", value: "created", icon: UserRound },
@@ -133,7 +133,8 @@ export default function SkillsPage() {
     const [installOpen, setInstallOpen] = useState(false);
     const [recommendationsOpen, setRecommendationsOpen] = useState(false);
     const [editingSkill, setEditingSkill] = useState<Skill | null>(null);
-    const isAdmin = useUserStore((state) => state.user?.role === "admin");
+    const isAdmin = useSkillAdministrationAccess();
+    const scopeOptions = isAdmin ? allScopeOptions : allScopeOptions.filter((option) => option.value !== "created");
     const isLibraryScope = scope === "mine" || scope === "created";
     const libraryCategoryScope = scope === "created" ? "created" : "mine";
 
@@ -272,6 +273,7 @@ export default function SkillsPage() {
     };
 
     const openEditor = async (skill?: Skill) => {
+        if (!isAdmin) return;
         if (!skill) {
             setEditingSkill(null);
             setEditorOpen(true);
@@ -288,7 +290,7 @@ export default function SkillsPage() {
     };
 
     const openWorkbench = (skill: Skill) => {
-        if (!skill.isOwner) return;
+        if (!isAdmin || !skill.isOwner) return;
         setActiveSkill(null);
         navigate(`/skills/${encodeURIComponent(skill.skillId)}/edit`);
     };
@@ -330,6 +332,7 @@ export default function SkillsPage() {
     };
 
     const synchronizeSkill = async (skill: Skill) => {
+        if (!isAdmin) return;
         setMutatingID(skill.skillId);
         try {
             const result = await syncSkill(skill.skillId);
@@ -344,6 +347,7 @@ export default function SkillsPage() {
     };
 
     const confirmDelete = (skill: Skill) => {
+        if (!isAdmin) return;
         modal.confirm({
             title: `删除“${skill.skillName}”？`,
             content: "删除后，其他用户将无法继续使用该技能，已有加入和收藏关系也会一并移除。",
@@ -428,6 +432,44 @@ export default function SkillsPage() {
     };
 
     const renderSkillCard = (skill: Skill) => {
+        if (!isAdmin)
+            return (
+                <article className={cn("product-collection-card skill-tile", skill.isAdded && "is-added")} data-accent={skillAccent(skill.tag)} key={skill.skillId}>
+                    <div className="skill-tile-head">
+                        <span className="skill-tile-glyph" aria-hidden="true">
+                            {skillGlyph(skill.skillName)}
+                        </span>
+                        <div className="skill-tile-heading">
+                            <h3 className="skill-tile-name">
+                                <span className="skill-tile-name-text">{skill.skillName}</span>
+                            </h3>
+                            <div className="skill-tile-byline">
+                                <span className="skill-tile-chip">{skillCategoryLabel(skill.tag, categories)}</span>
+                            </div>
+                        </div>
+                        <Button className="shrink-0" aria-label={`${skill.isAdded ? "已加入" : "加入使用"}${skill.skillName}`} aria-pressed={skill.isAdded} disabled={mutatingID === skill.skillId} onClick={() => void toggleAdded(skill)}>
+                            {skill.isAdded ? "已加入" : "加入使用"}
+                        </Button>
+                    </div>
+                    <div className="skill-tile-footer">
+                        <button
+                            type="button"
+                            className="skill-tile-stat is-like"
+                            aria-label={`${skill.isLike ? "取消收藏" : "收藏"}${skill.skillName}，${formatSkillCount(skill.likeCount)} 人收藏`}
+                            aria-pressed={skill.isLike}
+                            disabled={mutatingID === skill.skillId}
+                            onClick={() => void toggleLiked(skill)}
+                        >
+                            <Heart aria-hidden="true" />
+                            <span>{formatSkillCount(skill.likeCount)} 人收藏</span>
+                        </button>
+                        <span className="skill-tile-stat" title={`${skill.addedCount} 人已加入技能库`}>
+                            <Users aria-hidden="true" />
+                            <span>{formatSkillCount(skill.addedCount)} 人加入</span>
+                        </span>
+                    </div>
+                </article>
+            );
         const rootId = curation?.enabled ? effectiveCurationRoot(skill, curation) : "";
         const rootLabel = rootId ? curationRoots.find((root) => root.id === rootId)?.name : undefined;
         return (
@@ -438,6 +480,7 @@ export default function SkillsPage() {
                 categoryLabel={!isLibraryScope && !categoryFiltered ? rootLabel || skillCategoryLabel(skill.tag, categories) : undefined}
                 libraryCategories={libraryCategories}
                 canCategorize={isLibraryScope}
+                canManage={isAdmin && skill.isOwner}
                 loading={mutatingID === skill.skillId}
                 onOpen={() => void openSkill(skill)}
                 onAdd={() => void toggleAdded(skill)}
@@ -465,13 +508,23 @@ export default function SkillsPage() {
                 className="min-h-[188px]"
                 icon="skills"
                 title={filtersActive ? (search.trim() ? `没有找到与“${search.trim()}”相关的技能` : "没有符合筛选条件的技能") : scope === "created" ? "还没有创建技能" : scope === "public" ? "技能广场还是空的" : "这里还没有技能"}
-                description={filtersActive ? "换一个关键词或分类，或清除筛选后查看全部。" : scope === "favorites" ? "收藏的公开技能会显示在这里。" : scope === "mine" ? "从技能广场加入后会显示在这里。" : "创建并公开第一个技能，其他用户就能直接加入使用。"}
+                description={
+                    filtersActive
+                        ? "换一个关键词或分类，或清除筛选后查看全部。"
+                        : scope === "favorites"
+                          ? "收藏的公开技能会显示在这里。"
+                          : scope === "mine"
+                            ? "从技能广场加入后会显示在这里。"
+                            : isAdmin
+                              ? "创建并公开第一个技能，其他用户就能直接加入使用。"
+                              : "管理员发布技能后，可以在这里加入使用。"
+                }
                 action={
                     filtersActive ? (
                         <Button onClick={resetFilters}>清除筛选</Button>
                     ) : scope === "mine" ? (
                         <Button onClick={() => selectScope("public")}>去技能广场</Button>
-                    ) : scope === "created" || scope === "public" ? (
+                    ) : isAdmin && (scope === "created" || scope === "public") ? (
                         <Button type="primary" icon={<Plus className="size-4" />} onClick={() => setInstallOpen(true)}>
                             安装技能
                         </Button>
@@ -538,11 +591,13 @@ export default function SkillsPage() {
                                     <span id="skills-rail-library" className="collection-filter-label">
                                         我的分类
                                     </span>
-                                    <Tooltip title="新建分类">
-                                        <button type="button" className="product-icon-button skills-rail-add" aria-label="新建技能库分类" onClick={openCategoryEditor}>
-                                            <FolderPlus />
-                                        </button>
-                                    </Tooltip>
+                                    {isAdmin ? (
+                                        <Tooltip title="新建分类">
+                                            <button type="button" className="product-icon-button skills-rail-add" aria-label="新建技能库分类" onClick={openCategoryEditor}>
+                                                <FolderPlus />
+                                            </button>
+                                        </Tooltip>
+                                    ) : null}
                                 </div>
                                 {libraryCategoryError ? (
                                     <div className="skills-rail-error" role="alert">
@@ -572,14 +627,14 @@ export default function SkillsPage() {
                                                 active: libraryCategoryId === category.id,
                                                 onClick: () => selectLibraryCategory(category.id),
                                             })}
-                                            {category.scope === "personal" || isAdmin ? (
+                                            {isAdmin ? (
                                                 <button type="button" className="product-icon-button skills-rail-delete" aria-label={`删除分类${category.name}`} title="删除分类" onClick={() => confirmDeleteLibraryCategory(category)}>
                                                     <Trash2 aria-hidden="true" />
                                                 </button>
                                             ) : null}
                                         </div>
                                     ))}
-                                    {!libraryCategories.length && libraryCategoryList ? (
+                                    {isAdmin && !libraryCategories.length && libraryCategoryList ? (
                                         <button type="button" className="skills-rail-item is-hint" onClick={openCategoryEditor}>
                                             <Plus aria-hidden="true" />
                                             <span className="skills-rail-item-label">新建分类整理技能</span>
@@ -609,25 +664,25 @@ export default function SkillsPage() {
                                 active={filtersActive}
                                 onReset={resetFilters}
                                 trailing={
-                                    <>
-                                        <Button icon={<Sparkles className="size-4" />} onClick={() => setRecommendationsOpen(true)}>
-                                            按行业推荐
-                                        </Button>
-                                        <Button type="primary" icon={<Plus className="size-4" />} onClick={() => setInstallOpen(true)}>
-                                            安装技能
-                                        </Button>
-                                    </>
+                                    isAdmin ? (
+                                        <>
+                                            <Button icon={<Sparkles className="size-4" />} onClick={() => setRecommendationsOpen(true)}>
+                                                按行业推荐
+                                            </Button>
+                                            <Button type="primary" icon={<Plus className="size-4" />} onClick={() => setInstallOpen(true)}>
+                                                安装技能
+                                            </Button>
+                                        </>
+                                    ) : null
                                 }
                             >
-                                <Input
+                                <ListSearchInput
                                     className="min-w-0 sm:!w-56"
-                                    prefix={<Search />}
                                     value={search}
-                                    allowClear
-                                    placeholder="搜索技能或作者"
-                                    aria-label="搜索技能或作者"
-                                    onChange={(event) => {
-                                        setSearch(event.target.value);
+                                    placeholder={isAdmin ? "搜索技能或作者" : "搜索技能名称"}
+                                    aria-label={isAdmin ? "搜索技能或作者" : "搜索技能名称"}
+                                    onValueChange={(value) => {
+                                        setSearch(value);
                                         setPage(1);
                                     }}
                                 />
@@ -660,7 +715,7 @@ export default function SkillsPage() {
             </WorkspacePage>
 
             <AppModal
-                open={categoryEditorOpen}
+                open={isAdmin && categoryEditorOpen}
                 title={
                     <div className="skills-library-category-title">
                         <span className="skills-library-category-title-icon">
@@ -736,7 +791,7 @@ export default function SkillsPage() {
                 </div>
             </AppModal>
             <SkillDetailModal
-                skill={activeSkill}
+                skill={isAdmin ? activeSkill : null}
                 loading={detailLoading}
                 mutating={Boolean(activeSkill && mutatingID === activeSkill.skillId)}
                 categories={categories}
@@ -747,21 +802,23 @@ export default function SkillsPage() {
                 onOpenWorkbench={openWorkbench}
                 onSync={(skill) => void synchronizeSkill(skill)}
             />
-            <SkillInstallModal
-                open={installOpen}
-                onClose={() => setInstallOpen(false)}
-                onInstalled={(skill) => {
-                    setInstallOpen(false);
-                    setActiveSkill(skill);
-                    reload();
-                }}
-                onManualCreate={() => {
-                    setInstallOpen(false);
-                    void openEditor();
-                }}
-            />
+            {isAdmin ? (
+                <SkillInstallModal
+                    open={installOpen}
+                    onClose={() => setInstallOpen(false)}
+                    onInstalled={(skill) => {
+                        setInstallOpen(false);
+                        setActiveSkill(skill);
+                        reload();
+                    }}
+                    onManualCreate={() => {
+                        setInstallOpen(false);
+                        void openEditor();
+                    }}
+                />
+            ) : null}
             <SkillRecommendationsModal
-                open={recommendationsOpen}
+                open={isAdmin && recommendationsOpen}
                 onClose={() => setRecommendationsOpen(false)}
                 onInstalled={(installed) => {
                     if (installed.length) {
@@ -770,17 +827,19 @@ export default function SkillsPage() {
                     }
                 }}
             />
-            <SkillEditorDrawer
-                open={editorOpen}
-                skill={editingSkill}
-                onClose={() => setEditorOpen(false)}
-                onSaved={(skill) => {
-                    setEditorOpen(false);
-                    setEditingSkill(null);
-                    setActiveSkill(skill);
-                    reload();
-                }}
-            />
+            {isAdmin ? (
+                <SkillEditorDrawer
+                    open={editorOpen}
+                    skill={editingSkill}
+                    onClose={() => setEditorOpen(false)}
+                    onSaved={(skill) => {
+                        setEditorOpen(false);
+                        setEditingSkill(null);
+                        setActiveSkill(skill);
+                        reload();
+                    }}
+                />
+            ) : null}
         </>
     );
 }
@@ -796,6 +855,7 @@ function SkillCard({
     categoryLabel,
     libraryCategories,
     canCategorize,
+    canManage,
     loading,
     onOpen,
     onAdd,
@@ -810,6 +870,7 @@ function SkillCard({
     categoryLabel?: string;
     libraryCategories: SkillLibraryCategory[];
     canCategorize: boolean;
+    canManage: boolean;
     loading: boolean;
     onOpen: () => void;
     onAdd: () => void;
@@ -826,9 +887,11 @@ function SkillCard({
     const likeLabel = `${skill.isLike ? "取消收藏" : "收藏"}，${skill.likeCount} 人已收藏`;
     const menuItems = [
         { key: "detail", label: "查看详情" },
-        ...(skill.isOwner
+        ...(canManage
             ? [{ key: "workbench", label: workbenchLabel }, { key: "edit", label: "编辑技能信息" }, { type: "divider" as const }, { key: "delete", label: "删除技能", danger: true }]
-            : [{ key: "toggle-added", label: skill.isAdded ? "从我的技能移除" : "加入我的技能", disabled: loading }]),
+            : skill.isOwner
+              ? []
+              : [{ key: "toggle-added", label: skill.isAdded ? "从我的技能移除" : "加入我的技能", disabled: loading }]),
     ];
     return (
         <article className={cn("product-collection-card skill-tile", skill.isAdded && "is-added")} data-accent={skillAccent(accentKey)}>
@@ -891,7 +954,7 @@ function SkillCard({
                 </span>
                 {/* 次要操作：hover / focus-within 显示，触屏常显；菜单展开时保持可见。 */}
                 <div className="skill-tile-actions">
-                    {skill.isOwner ? (
+                    {canManage ? (
                         <Tooltip title={workbenchLabel}>
                             <button type="button" className="product-icon-button skill-tile-edit" aria-label={`${workbenchLabel}：${skill.skillName}`} onClick={onOpenWorkbench}>
                                 <Pencil />

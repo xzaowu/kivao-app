@@ -95,7 +95,7 @@ func TestSkillAdministratorAuthorizationUsesPersistedAccount(t *testing.T) {
 }
 
 func TestSkillManagementRejectsOrdinaryOwnersBeforeReadingContent(t *testing.T) {
-	svc, db, _, member, created := newSkillAuthorizationTest(t)
+	svc, db, _, member, _ := newSkillAuthorizationTest(t)
 	// Every skill read would fail independently; authorization must run first.
 	var skillReads int
 	if err := db.Callback().Query().Before("gorm:query").Register("reject-skill-read", func(tx *gorm.DB) {
@@ -119,22 +119,10 @@ func TestSkillManagementRejectsOrdinaryOwnersBeforeReadingContent(t *testing.T) 
 		name string
 		run  func() error
 	}{
-		{"list", func() error { _, e := svc.Skills(member.ID, SkillListRequest{}); return e }},
-		{"added", func() error { _, e := svc.AddedSkills(member.ID); return e }},
-		{"detail-public", func() error { _, e := svc.SkillDetail(member.ID, created.SkillID); return e }},
-		{"detail-old-owned", func() error { _, e := svc.SkillDetail(member.ID, "legacy-skill"); return e }},
-		{"visible", func() error { _, e := svc.visibleSkill(member.ID, "legacy-skill"); return e }},
 		{"owned", func() error { _, e := svc.ownedSkill(member.ID, "legacy-skill"); return e }},
 		{"create", func() error { _, e := svc.CreateSkill(member.ID, SkillMutationRequest{}); return e }},
 		{"update", func() error { _, e := svc.UpdateSkill(member.ID, "legacy-skill", SkillMutationRequest{}); return e }},
 		{"delete", func() error { return svc.DeleteSkill(member.ID, "legacy-skill") }},
-		{"add", func() error { _, e := svc.SetSkillAdded(member.ID, created.SkillID, true); return e }},
-		{"like", func() error { _, e := svc.SetSkillLiked(member.ID, created.SkillID, true); return e }},
-		{"agent-mode", func() error { _, e := svc.SetSkillAgentMode(member.ID, "legacy-skill", "auto"); return e }},
-		{"agent-mode-invalid", func() error { _, e := svc.SetSkillAgentMode(member.ID, "legacy-skill", "invalid"); return e }},
-		{"agent-use", func() error { return svc.RecordSkillAgentUse(member.ID, []string{"legacy-skill"}) }},
-		{"catalog-by-ids", func() error { _, e := svc.AgentSkillCatalogByIDs(member.ID, []string{"legacy-skill"}); return e }},
-		{"catalog-empty-ids", func() error { _, e := svc.AgentSkillCatalogByIDs(member.ID, nil); return e }},
 		{"file-list", func() error { _, e := svc.SkillPackageFiles(member.ID, "legacy-skill"); return e }},
 		{"file", func() error { _, e := svc.SkillPackageFile(member.ID, "legacy-skill", "SKILL.md"); return e }},
 		{"raw-file", func() error { _, _, _, e := svc.SkillPackageRawFile(member.ID, "legacy-skill", "SKILL.md"); return e }},
@@ -171,14 +159,12 @@ func TestSkillManagementRejectsOrdinaryOwnersBeforeReadingContent(t *testing.T) 
 			_, e := svc.InstallSkillRecommendations(member.ID, "drama", SkillRecommendationInstallRequest{})
 			return e
 		}},
-		{"category-read", func() error { _, e := svc.SkillLibraryCategories(member.ID, "mine"); return e }},
 		{"category-create", func() error {
 			_, e := svc.CreateSkillLibraryCategory(forged, SkillLibraryCategoryMutationRequest{Name: "Personal"})
 			return e
 		}},
 		{"category-delete", func() error { return svc.DeleteSkillLibraryCategory(forged, "old-category") }},
 		{"category-assign", func() error { _, e := svc.SetSkillLibraryCategory(member.ID, "legacy-skill", ""); return e }},
-		{"curation-public", func() error { _, e := svc.SkillCuration(forged, false); return e }},
 		{"curation-admin", func() error { _, e := svc.SkillCuration(forged, true); return e }},
 		{"curation-write", func() error { _, e := svc.UpdateSkillCuration(forged, SkillCurationUpdate{}, ""); return e }},
 		{"admin-list", func() error { _, e := svc.AdminSkills(forged, AdminSkillListRequest{}); return e }},
@@ -201,12 +187,6 @@ func TestSkillManagementRejectsOrdinaryOwnersBeforeReadingContent(t *testing.T) 
 	for _, operation := range operations {
 		t.Run(operation.name, func(t *testing.T) { requireAppError(t, operation.run(), http.StatusForbidden, kernel.ReasonForbidden) })
 	}
-	for _, catalog := range []func(string) ([]AgentSkillCatalogEntry, error){svc.AgentSkillCatalog, svc.MarketSkillCatalog} {
-		items, err := catalog(member.ID)
-		if err != nil || items == nil || len(items) != 0 {
-			t.Fatalf("ordinary catalog=%#v, err=%v", items, err)
-		}
-	}
 	if requests != 0 || skillReads != 0 {
 		t.Fatalf("unauthorized side effects: HTTP=%d skill reads=%d", requests, skillReads)
 	}
@@ -218,14 +198,24 @@ func TestSkillManagementRejectsRevokedAndDisabledPersistedAdmin(t *testing.T) {
 		if err := db.Model(&model.User{}).Where("id = ?", actor.ID).Updates(change).Error; err != nil {
 			t.Fatal(err)
 		}
-		_, err := svc.SkillDetail(actor.ID, created.SkillID)
+		detail, err := svc.SkillDetail(actor.ID, created.SkillID)
+		if change["status"] == model.UserStatusDisabled {
+			requireAppError(t, err, http.StatusForbidden, kernel.ReasonForbidden)
+		} else if err != nil || detail.Instruction != "" {
+			t.Fatalf("demoted account must only see name: %#v %v", detail, err)
+		}
+		_, err = svc.SkillPackageFile(actor.ID, created.SkillID, "SKILL.md")
 		requireAppError(t, err, http.StatusForbidden, kernel.ReasonForbidden)
 		_, err = svc.AdminSkillDetail(actor, created.SkillID)
 		requireAppError(t, err, http.StatusForbidden, kernel.ReasonForbidden)
 		_, err = svc.AdminSetSkillEnabled(actor, created.SkillID, false)
 		requireAppError(t, err, http.StatusForbidden, kernel.ReasonForbidden)
 		_, err = svc.SkillCuration(actor, false)
-		requireAppError(t, err, http.StatusForbidden, kernel.ReasonForbidden)
+		if change["status"] == model.UserStatusDisabled {
+			requireAppError(t, err, http.StatusForbidden, kernel.ReasonForbidden)
+		} else if err != nil {
+			t.Fatal(err)
+		}
 		_, err = svc.CreateSkillLibraryCategory(actor, SkillLibraryCategoryMutationRequest{Name: "Revoked"})
 		requireAppError(t, err, http.StatusForbidden, kernel.ReasonForbidden)
 		if change["status"] == model.UserStatusDisabled {

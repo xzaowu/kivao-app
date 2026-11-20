@@ -16,6 +16,7 @@ var (
 	ErrRedeemCodeInvalid       = errors.New("兑换码无效或已使用")
 	ErrActiveTaskLimit         = errors.New("同时进行的任务数已达上限，请等待已有任务完成")
 	ErrTaskNotRetryable        = errors.New("该任务当前状态不支持重试")
+	ErrTaskRevisionChanged     = errors.New("任务状态版本已变化")
 	ErrTaskBillingReview       = errors.New("上一次调用费用仍需核对")
 	ErrBillingStateConflict    = errors.New("计费状态已变化，请刷新后重试")
 	ErrBillingUsageUnavailable = errors.New("暂时无法获取用量，计费未完成")
@@ -88,7 +89,7 @@ func (r *Repository) CreditAccounts(userIDs []string) ([]model.CreditAccount, er
 func (r *Repository) CreditLedger(userID string, entryType string, limit int, offset int) ([]model.CreditLedgerEntry, int64, error) {
 	var items []model.CreditLedgerEntry
 	var total int64
-	query := r.db.Model(&model.CreditLedgerEntry{}).Where("user_id = ? AND type <> ?", userID, model.CreditLedgerReserve)
+	query := r.db.Model(&model.CreditLedgerEntry{}).Where("account_id = ? AND type <> ?", model.PersonalCreditAccountID(userID), model.CreditLedgerReserve)
 	switch entryType {
 	case "income":
 		query = query.Where("type IN ?", []model.CreditLedgerType{model.CreditLedgerRedeem, model.CreditLedgerAdminGrant, model.CreditLedgerAdminAdjust, model.CreditLedgerSignupBonus, model.CreditLedgerCheckinBonus})
@@ -176,12 +177,19 @@ func (r *Repository) CreateTaskWithActiveLimit(task *model.Task, activeTaskLimit
 }
 
 func (r *Repository) RetryTaskWithBilling(userID string, prepared *model.Task, order *model.BillingOrder, activeTaskLimit int, authorizeRelease ...func(*Repository, *model.Task, *model.BillingOrder) error) (*model.Task, error) {
+	return r.RetryTaskAtVersionWithBilling(userID, prepared, order, activeTaskLimit, time.Time{}, authorizeRelease...)
+}
+
+func (r *Repository) RetryTaskAtVersionWithBilling(userID string, prepared *model.Task, order *model.BillingOrder, activeTaskLimit int, expected time.Time, authorizeRelease ...func(*Repository, *model.Task, *model.BillingOrder) error) (*model.Task, error) {
 	var task model.Task
 	taskID := prepared.ID
 	err := r.db.Transaction(func(tx *gorm.DB) error {
 		// 与自动退款保持任务先于账户的锁顺序；重试资格也必须在预扣前确认。
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&task, "id = ? AND user_id = ?", taskID, userID).Error; err != nil {
 			return err
+		}
+		if !expected.IsZero() && !task.UpdatedAt.Equal(expected) {
+			return ErrTaskRevisionChanged
 		}
 		if task.Status != model.TaskStatusFailed && task.Status != model.TaskStatusCancelled {
 			return ErrTaskNotRetryable
@@ -225,7 +233,7 @@ func (r *Repository) RetryTaskWithBilling(userID string, prepared *model.Task, o
 			"provider_cancel_requested_at": nil, "provider_cancelled_at": nil, "provider_cancel_next_check_at": nil,
 			"route_run":                 gorm.Expr("route_run + ?", 1),
 			"logical_model_revision_id": prepared.LogicalModelRevisionID, "route_id": prepared.RouteID,
-			"channel_model_id": prepared.ChannelModelID, "input_json": prepared.InputJSON,
+			"channel_model_id": prepared.ChannelModelID, "input_json": prepared.InputJSON, "protocol_binding_json": prepared.ProtocolBindingJSON,
 			"model": prepared.Model, "provider": prepared.Provider,
 			"lease_owner": "", "lease_expires_at": nil, "updated_at": time.Now(),
 		}

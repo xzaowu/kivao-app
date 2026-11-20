@@ -55,6 +55,35 @@ function dependencies(scope: string, initial = project()) {
 }
 
 describe("电商项目跨页面恢复", () => {
+    test("保存商品资料使用已存活动轮原稿并拒绝并发旧编辑", async () => {
+        const scope = crypto.randomUUID();
+        const current = {
+            ...project(),
+            activeRoundId: "current-round",
+            draftJson: JSON.stringify({ ...emptyEcommerceDraft(), productName: "已出片商品", productFacts: ["原事实"] }),
+            planJson: JSON.stringify({ images: [{ taskId: "original-video" }], inputSignature: "actual" }),
+        };
+        const server = dependencies(scope, current);
+        let activePlan: unknown, round: unknown;
+        const saveProject = server.adapter.saveProject;
+        server.adapter.saveProject = async (...args) => {
+            activePlan = args[2];
+            round = args[3];
+            return saveProject(...args);
+        };
+        const session = createEcommerceSession(scope, current, undefined, server.adapter);
+        const dirtyForm = { ...emptyEcommerceDraft(), productName: "另一个未保存商品", claims: "另一套文案" };
+        const first = session.saveProductFacts(["原事实", "独立收纳盒"], ["原事实"], dirtyForm, null);
+        const stale = session.saveProductFacts([], ["原事实"], dirtyForm, null);
+        const saved = await first;
+        await expect(stale).rejects.toThrow("商品资料已更新");
+        expect(JSON.parse(saved.draftJson)).toMatchObject({ productName: "已出片商品", productFacts: ["原事实", "独立收纳盒"] });
+        expect(activePlan).toEqual(JSON.parse(current.planJson));
+        expect(round).toEqual({ historyMode: "rounds", activeRoundId: "current-round" });
+        expect(dirtyForm.productName).toBe("另一个未保存商品");
+        expect(server.revisions).toEqual([1]);
+    });
+
     test("已发送消息快照与下一轮输入独立，保存草稿后保留且不串项目", async () => {
         const scope = crypto.randomUUID();
         const sent = { ...emptyEcommerceDraft(), instruction: "已经发送的原需求", references: [{ resourceId: "original", role: "primary" as const }] };
@@ -123,13 +152,15 @@ describe("电商项目跨页面恢复", () => {
         const first = createEcommerceSession(scope, current, undefined, server.adapter);
         const states: boolean[] = [];
         const unsubscribe = subscribeEcommerceWorkspace(scope, () => states.push(first.submitting));
-        expect(first.beginSubmission()).toBe(true);
+        expect(first.beginSubmission(true)).toBe(true);
         const returned = createEcommerceSession(scope, current, undefined, server.adapter);
         expect(returned.submitting).toBe(true);
+        expect(returned.oneClickSubmitting).toBe(true);
         expect(returned.beginSubmission()).toBe(false);
         first.endSubmission();
         expect(returned.submitting).toBe(false);
         expect(returned.beginSubmission()).toBe(true);
+        expect(returned.oneClickSubmitting).toBe(false);
         returned.endSubmission();
         unsubscribe();
         expect(states).toEqual([true, false, true, false]);

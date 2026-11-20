@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { listVideoProcessingModels, videoProcessingSourceReference } from "@/lib/canvas/canvas-video-processing";
-import { videoDepthQuoteRequest, videoDepthSourceError, videoDepthTaskInput } from "@/lib/canvas/canvas-video-depth";
+import { canvasVideoDepthMetadata, videoDepthQuoteRequest, videoDepthSourceError, videoDepthTaskInput } from "@/lib/canvas/canvas-video-depth";
 import { defaultModelCapabilityConfig, VOLCENGINE_MEDIAKIT_ENHANCE_VIDEO_PROTOCOL, VOLCENGINE_MEDIAKIT_VIDEO_DEPTH_PROTOCOL } from "@/lib/model-capabilities";
 import { createModelChannel, defaultConfig, encodeChannelModel, type AiConfig } from "@/stores/use-config-store";
 import { prepareBackendGenerationTask } from "@/services/api/generation-task";
@@ -72,4 +72,14 @@ test("admin pricing templates keep depth independent and reject enhancement dime
     expect(tiers[0]).toMatchObject({ operation: "depth", billingMode: "per_second", priceConfigured: false, enabled: false });
     expect(priceSelectorIssues({ ...context, priceTiers: tiers })).toEqual([]);
     expect(priceSelectorIssues({ ...context, priceTiers: [{ ...defaultPriceTier("advanced"), operation: "depth", fpsBand: "le30" }] }).join()).toContain("fpsBand");
+});
+
+test("canonical metadata wins and earlier KIVAO drafts remain readable without rewriting nodes", () => {
+    const legacy = { sourceNodeId: "old-source", model };
+    const canonical = { sourceNodeId: source.id, model };
+    const node = { ...source, metadata: { videoDepthCapture: legacy } };
+    expect(canvasVideoDepthMetadata(node)).toEqual(legacy);
+    expect(canvasVideoDepthMetadata({ ...node, metadata: { ...node.metadata, videoDepth: canonical } })).toEqual(canonical);
+    expect(canvasVideoDepthMetadata(undefined)).toBeUndefined();
+    expect(node.metadata).toEqual({ videoDepthCapture: legacy });
 });

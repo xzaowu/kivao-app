@@ -30,9 +30,10 @@ type TaskInput struct {
 // TaskBatch 关联同一次提交拆出的多个任务（例如一次生成 3 条视频），
 // 只用于页面分组展示，不参与调度、准入和计费；每个任务仍各自校验与扣费。
 type TaskBatch struct {
-	ID    string `json:"id"`
-	Index int    `json:"index"`
-	Count int    `json:"count"`
+	ID      string `json:"id"`
+	Index   int    `json:"index"`
+	Count   int    `json:"count"`
+	SlotKey string `json:"slotKey,omitempty"`
 }
 
 // MaxTaskBatchCount 与单任务 count 上限一致，避免一次提交拆出过多任务。
@@ -134,6 +135,12 @@ func (s *Service) ResolveTask(userID string, req TaskInput) (*TaskResolution, er
 			return nil, kernel.BadAuthRequest("批量生成分组字段无效")
 		}
 		batch = map[string]any{"id": batchID, "index": req.Batch.Index, "count": req.Batch.Count}
+		if req.Batch.SlotKey != "" {
+			if len(req.Batch.SlotKey) > 80 || strings.Trim(req.Batch.SlotKey, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-") != "" {
+				return nil, kernel.BadAuthRequest("批次任务标识无效")
+			}
+			batch["slotKey"] = req.Batch.SlotKey
+		}
 	}
 	refs := make([]TaskReference, 0, len(req.References))
 	frameRoles := map[string]bool{}

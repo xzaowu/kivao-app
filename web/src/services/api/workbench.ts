@@ -94,11 +94,11 @@ export type CreateWorkbenchTaskInput = {
         role?: "reference" | "first_frame" | "last_frame";
         slotKey?: string;
     }>;
-    /** 一次提交拆成多个任务时共用的批次标识，只用于列表分组，不影响准入和计费。 */
+    /** 同批任务的分组信息；批量换装还用 slotKey 标识一次出图。 */
     batch?: WorkbenchTaskBatch;
 };
 
-export type WorkbenchTaskBatch = { id: string; index: number; count: number };
+export type WorkbenchTaskBatch = { id: string; index: number; count: number; slotKey?: string };
 
 export async function listWorkbenchTasks(kind: WorkbenchKind, limit = 100, activeOnly = false, signal?: AbortSignal) {
     const pageSize = Number.isFinite(limit) ? Math.max(1, Math.min(100, Math.trunc(limit))) : 100;
@@ -238,3 +238,11 @@ export async function createWorkbenchTask(input: WorkbenchTaskIntent) {
 export type WorkbenchTaskReceipt = {
     task: GenerationTask;
 };
+
+export function deleteTryOnBatch(id: string) {
+    return http.delete<{ assetIds: string[] }>(`/workbench/tryon/batches/${encodeURIComponent(id)}`);
+}
+
+export function listTryOnBatchTasks(id: string, signal?: AbortSignal) {
+    return http.get<GenerationTask[]>(`/workbench/tryon/batches/${encodeURIComponent(id)}/tasks`, { signal });
+}

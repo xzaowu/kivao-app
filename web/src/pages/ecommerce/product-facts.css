@@ -1,0 +1,72 @@
+.ec-product-facts {
+    border-block-start: 1px solid var(--user-border);
+    min-width: 0;
+    padding-block: var(--space-1);
+}
+.ec-product-facts summary,
+.ec-product-facts-actions,
+.ec-product-facts li,
+.ec-product-facts fieldset label {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+.ec-product-facts summary {
+    min-height: 38px;
+    cursor: pointer;
+    list-style: none;
+}
+.ec-product-facts summary::-webkit-details-marker {
+    display: none;
+}
+.ec-product-facts summary > svg:last-child {
+    margin-inline-start: auto;
+}
+.ec-product-facts[open] summary > svg:last-child {
+    transform: rotate(180deg);
+}
+.ec-video .ec-product-facts:not([open]) summary > svg {
+    transform: none;
+}
+.ec-product-facts-body,
+.ec-product-facts fieldset,
+.ec-product-facts ul {
+    display: grid;
+    gap: var(--space-2);
+    margin: 0;
+    padding: 0;
+    min-width: 0;
+}
+.ec-product-facts-body {
+    padding-block: var(--space-1) var(--space-2);
+}
+.ec-product-facts li {
+    justify-content: space-between;
+}
+.ec-product-facts li span,
+.ec-product-facts fieldset label {
+    overflow-wrap: anywhere;
+}
+.ec-product-facts li button {
+    flex-shrink: 0;
+}
+.ec-product-facts fieldset {
+    border: 0;
+}
+.ec-product-facts legend {
+    margin: 0 0 var(--space-1);
+    font-size: var(--fs-ui);
+}
+.ec-product-facts fieldset label {
+    cursor: pointer;
+}
+.ec-product-facts input[type="checkbox"] {
+    accent-color: var(--user-ink);
+}
+.ec-product-facts small {
+    color: var(--user-ink-soft);
+    font-size: var(--fs-caption);
+}
+.ec-product-facts [role="alert"] {
+    color: var(--ant-color-error);
+}
