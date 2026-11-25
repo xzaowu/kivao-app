@@ -1398,7 +1398,13 @@ test("简报建议逐项选用，一键只补空白，AI 先报价并隔离回�
         updatedAt: "",
         resultJson: JSON.stringify({ text: JSON.stringify(ai) }),
     }));
-    await click(button("确认起草 · 1 积分", panel));
+    // Flush the task query notification inside act before inspecting the receipt UI.
+    notifyManager.setScheduler(queueMicrotask);
+    try {
+        await click(button("确认起草 · 1 积分", panel));
+    } finally {
+        notifyManager.setScheduler(defaultScheduler);
+    }
     expect(createTask.mock.calls[0][0].input?.metadata).toMatchObject({ assetTitle: "商品视频 · 拍摄简报", stage: "product-video-storyboard" });
     expect(sessionStorage.getItem(JSON.stringify(["ecommerce-video-shoot-brief", "studio-user", "project"]))).toContain("test-brief");
     expect(sessionStorage.getItem(JSON.stringify(["ecommerce-video-planning", "studio-user", "project"]))).toBeNull();
