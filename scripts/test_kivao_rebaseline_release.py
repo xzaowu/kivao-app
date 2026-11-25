@@ -121,7 +121,7 @@ class ReleaseTests(unittest.TestCase):
                 return '.github/workflows/kivao-rebaseline-ci.yml'
             return ''
         with patch.object(r, 'git', side_effect=fake_git):
-            self.assertEqual(r.source(SHA)['schema'], 109)
+            self.assertEqual(r.source(SHA)['schema'], 110)
             with patch.dict(r.POLICY, {'schema': 104}), self.assertRaisesRegex(ValueError, 'unexpected_schema'):
                 r.source(SHA)
         def changed_product(*args):
@@ -185,7 +185,7 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(locks['database_strategy'], 'separate_database_data_and_redis')
         self.assertFalse(locks['production_cutover_authorized'])
         self.assertTrue(locks['agent_init_required'])
-        self.assertEqual((locks['target_schema'], locks['rollback_schema']), (109, 104))
+        self.assertEqual((locks['target_schema'], locks['rollback_schema']), (110, 104))
         with patch.dict(r.POLICY, {'rollback_schema': r.POLICY['schema']}):
             same_schema = r.paired_locks(reports)
             self.assertTrue(same_schema['image_only_cutover_allowed'])

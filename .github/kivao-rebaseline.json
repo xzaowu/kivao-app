@@ -1,9 +1,9 @@
 {
   "repository": "xzaowu/kivao-app",
-  "product_commit": "2e9a72880e2fb5e66873e53e9b24da121101b672",
+  "product_commit": "dd1f64a0d57bc78af3a1dcd93a2cbdd0e552c8d0",
   "upstream_commit": "3979305c1413be231cbaef242e50afc67f553c5e",
   "ci_branch": "dev/kivao-upstream-sync-20261117",
-  "schema": 109,
+  "schema": 110,
   "rollback_schema": 104,
   "rollback_commit": "fc76cc22c024f06393d08bc29705cf585a6dcf84",
   "platform": "linux/amd64",
