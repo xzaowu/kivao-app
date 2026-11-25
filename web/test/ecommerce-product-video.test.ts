@@ -210,7 +210,7 @@ test("a reference remake quotes the clip duration and only offers models accepti
     profiles[0].video!.remixGenerateAudio = true;
     profiles[1].video!.operations = ["image_to_video"];
     profiles[2].video!.references.maxVideos = 0;
-    profiles[3].video!.references.maxVideoDurationSeconds = 5;
+    profiles[3].video!.references.maxTotalVideoDurationSeconds = 5;
     profiles[4].video!.references.maxImages = 0;
     const channel = createModelChannel({
         id: "shop",

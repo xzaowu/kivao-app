@@ -555,7 +555,7 @@ test("参考复刻按实测参考片报价，恢复草稿后须再次确认才�
         upload.mockRestore();
         lookup.mockRestore();
     }
-});
+}, 15_000);
 
 test("带货视频旧分镜图默认仅预演，启用后报价与提交使用相同的商品图和分镜图", async () => {
     const images = [

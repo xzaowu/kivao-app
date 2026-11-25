@@ -9,7 +9,7 @@ import { moduleGroupSource } from "./helpers/module-group-source";
  */
 const dock = readFileSync(resolve(import.meta.dir, "../src/components/canvas/previs/previs-viewport-dock.tsx"), "utf8");
 const workbench = moduleGroupSource("components/canvas/previs/canvas-previs-workbench.tsx");
-const sequencer = readFileSync(resolve(import.meta.dir, "../src/components/canvas/previs/previs-sequencer.tsx"), "utf8");
+const sequencer = readFileSync(resolve(import.meta.dir, "../src/components/canvas/previs/previs-sequencer.tsx"), "utf8").replace(/\s+/g, " ");
 const styles = readFileSync(resolve(import.meta.dir, "../src/styles/globals.css"), "utf8");
 
 function slice(source: string, from: string, to: string) {
@@ -165,7 +165,7 @@ describe("三类轨道都有删除入口，概览轨保持只读", () => {
         expect(cameraCut).toContain("<TrackKeys duration={duration} keys={cameraKeys} />");
         expect(cameraCut).not.toContain("onDeleteKey");
 
-        const cameraRow = slice(sequencer, "{camera ? <SequencerRow label={camera.name}", "</SequencerRow> : null}");
+        const cameraRow = slice(sequencer, "<SequencerRow label={camera.name}", "</SequencerRow>");
         expect(cameraRow).toContain("onDeleteKey={deleteTrackKey}");
     });
 
@@ -207,7 +207,7 @@ describe("三类轨道都有删除入口，概览轨保持只读", () => {
 
     test("切换摄影机或外部删帧后清除陈旧选择，顶部控件不能误改不可见轨道", () => {
         expect(sequencer).toContain("previsKeyframeTargetExists(selectedKey.target, camera, objects)");
-        expect(sequencer).toContain("setSelectedKey((current) => current?.target && !previsKeyframeTargetExists(current.target, camera, objects) ? null : current);");
+        expect(sequencer).toMatch(/setSelectedKey\(\(current\) => \(?current\?\.target && !previsKeyframeTargetExists\(current.target, camera, objects\) \? null : current\)?\);/);
         expect(sequencer).toContain("camera?.id === target.cameraId && camera.keyframes.some");
         expect(sequencer).toContain("object.boneTracks?.some");
     });
