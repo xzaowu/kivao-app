@@ -10,7 +10,23 @@ import { type OSSConnectionTestResult, changesRequireOSSRetest, getS3PresetHints
 import { getAdminOSSSetting, updateAdminOSSSetting, type AdminOSSSetting, testAdminOSSConnection } from "@/services/api/auth";
 import { useAppearanceStore } from "@/stores/use-appearance-store";
 import { AdminStatusBadge, configuredSecretText, SettingsSectionCard } from "../components/admin-ui";
-import { accessKeySecretLabel, formValues, formatSettingTime, hasStorageChanges, isAdminOSSSetting, normalizeStoragePayload, providerDraftValues, storageProviderLabel, storageResponseMatches, type StoragePayload, validateStorageDraft, connectionInput, storageConfigurationReady, providerGuidance, accessKeyIdLabel } from "./storage-settings-model";
+import {
+    accessKeySecretLabel,
+    formValues,
+    formatSettingTime,
+    hasStorageChanges,
+    isAdminOSSSetting,
+    normalizeStoragePayload,
+    providerDraftValues,
+    storageProviderLabel,
+    storageResponseMatches,
+    type StoragePayload,
+    validateStorageDraft,
+    connectionInput,
+    storageConfigurationReady,
+    providerGuidance,
+    accessKeyIdLabel,
+} from "./storage-settings-model";
 import { type OSSFormValues, type StorageMode } from "./storage-settings-model";
 
 export { type OSSFormValues, type StorageMode, type StoragePayload } from "./storage-settings-model";
@@ -38,6 +54,9 @@ export default function StorageSettingsPage() {
     const [draftMode, setDraftMode] = useState<StorageMode>("local");
     const [loadError, setLoadError] = useState("");
     const [saveError, setSaveError] = useState("");
+    // antd v6 的 setFieldsValue 只触发关联 Field 的局部更新；页面顶层的状态徽标与
+    // 初始渲染的输入框可能停留在回填前的空状态。回填后递增该计数强制整页重渲染。
+    const [backfillTick, setBackfillTick] = useState(0);
     const [form] = Form.useForm<OSSFormValues>();
     const requestVersionRef = useRef(0);
     const navigationConfirmOpenRef = useRef(false);
@@ -86,6 +105,7 @@ export default function StorageSettingsPage() {
         const values = formValues(setting);
         form.setFieldsValue(values);
         setDraftMode(values.mode);
+        setBackfillTick((tick) => tick + 1);
     }, [form, loading, setting]);
 
     const blocker = useBlocker(dirty && !saving);
@@ -297,9 +317,10 @@ export default function StorageSettingsPage() {
     const currentValues = form.getFieldsValue(true);
     const normalizedDraft = normalizeStoragePayload(currentValues, setting);
     const hasCurrentProviderSecret = draftMode !== "local" && setting.provider === draftMode && setting.hasAccessKeySecret;
+    void backfillTick;
 
     return (
-        <AdminPageFrame title="存储服务" description="配置新增资源的默认存储位置" scroll>
+        <AdminPageFrame title="存储服务" description="配置新增资源的默认存储位置" scroll data-backfill-tick={backfillTick}>
             <div className="admin-settings-stack admin-storage-settings">
                 <div className={cn("admin-storage-command-bar", dirty && "is-dirty")}>
                     <div className="admin-storage-command-copy" aria-live="polite">
@@ -405,6 +426,7 @@ export default function StorageSettingsPage() {
                         }
                     >
                         <Form
+                            key={setting?.updatedAt ?? "loading"}
                             form={form}
                             layout="vertical"
                             requiredMark={false}
@@ -425,9 +447,11 @@ export default function StorageSettingsPage() {
                                 <div className="admin-storage-form-section">
                                     <FormSectionTitle icon={<Globe2 className="size-4" />} title="公开访问根地址" description="用于生成本地资源的短时签名链接；填写站点根地址，不要附带 /api、查询参数或片段。" />
                                     <div className="admin-storage-local-field">
-                                        <Form.Item name="publicBaseUrl" label="服务器访问地址" extra="支持本机、局域网或公网地址，例如 http://192.168.1.10:8080。">
+                                        <Form.Item label="服务器访问地址" extra="支持本机、局域网或公网地址，例如 http://192.168.1.10:8080。">
                                             <div className="admin-storage-address-control">
-                                                <Input aria-label="服务器访问地址" autoComplete="off" inputMode="url" placeholder="https://canvas.example.com" prefix={<Globe2 className="size-4 text-foreground/35" />} />
+                                                <Form.Item name="publicBaseUrl" noStyle>
+                                                    <Input aria-label="服务器访问地址" autoComplete="off" inputMode="url" placeholder="https://canvas.example.com" prefix={<Globe2 className="size-4 text-foreground/35" />} />
+                                                </Form.Item>
                                                 <Button
                                                     icon={<LocateFixed className="size-4" />}
                                                     onClick={() => {
@@ -565,7 +589,12 @@ export default function StorageSettingsPage() {
                                             <Form.Item name="requireCDN" label="必须走 CDN" valuePropName="checked" extra="开启后 CDN 鉴权配置不完整时直接失败，不会静默回源。">
                                                 <Switch checkedChildren="严格" unCheckedChildren="允许回源" />
                                             </Form.Item>
-                                            <Form.Item name="allowPrivateProxy" label="允许模型输入代理" valuePropName="checked" extra="仅允许服务端向第三方模型提交参考素材时读取私有源站。浏览器展示、复制、下载和本地处理始终直连 OSS/CDN，不会经平台中转媒体正文。">
+                                            <Form.Item
+                                                name="allowPrivateProxy"
+                                                label="允许模型输入代理"
+                                                valuePropName="checked"
+                                                extra="仅允许服务端向第三方模型提交参考素材时读取私有源站。浏览器展示、复制、下载和本地处理始终直连 OSS/CDN，不会经平台中转媒体正文。"
+                                            >
                                                 <Switch checkedChildren="允许" unCheckedChildren="禁止" />
                                             </Form.Item>
                                         </div>

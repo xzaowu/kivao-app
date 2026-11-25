@@ -4,7 +4,8 @@ import { readFileSync } from "node:fs";
 import localforage from "localforage";
 
 import { apiClient } from "@/services/api/request";
-import { deleteAssetsWithRemoteSync, initializeRemoteUserDataSession, loadAssetLibraryPage, loadAssetsForUse, resetRemoteUserDataSync, saveRemoteUserDataNow } from "@/services/user-data-sync";
+import { assetLibraryPageQuery } from "@/services/asset-library-query";
+import { deleteAssetsWithRemoteSync, initializeRemoteUserDataSession, loadAssetsForUse, resetRemoteUserDataSync, saveRemoteUserDataNow } from "@/services/user-data-sync";
 import { flushAssetStorePersistence, useAssetStore, type Asset } from "@/stores/use-asset-store";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { appQueryClient } from "@/lib/query-client";
@@ -144,12 +145,12 @@ describe("素材批量删除", () => {
             };
         };
         const warning = spyOn(console, "warn").mockImplementation(() => {});
-        const observers = ["asset-library", "asset-picker"].map(
-            (key) =>
+        const observers = Array.from(
+            { length: 2 },
+            () =>
                 new QueryObserver(appQueryClient, {
-                    queryKey: [key, "delete-regression"],
-                    queryFn: () => loadAssetLibraryPage({ page: 1, pageSize: 20 }),
-                    initialData: initialPage,
+                    ...assetLibraryPageQuery("delete-regression", { page: 1, pageSize: 20 }),
+                    initialData: { source: "library", ...initialPage },
                 }),
         );
         const stops: (() => void)[] = [];
@@ -167,7 +168,7 @@ describe("素材批量删除", () => {
             // GET 尚未返回，删除必须已返回，调用方才能关闭 Modal / Popconfirm。
             await within(deleteAssetsWithRemoteSync(["first"]));
             expect(useAssetStore.getState().assets.map((item) => item.id)).toEqual(["keep"]);
-            expect(requests).toEqual(["post /assets/batch-delete", "get /assets", "get /assets"]);
+            expect(requests).toEqual(["post /assets/batch-delete", "get /assets"]);
             for (const observer of observers) expect(observer.getCurrentResult().fetchStatus).toBe("fetching");
 
             releaseRefresh();

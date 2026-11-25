@@ -938,7 +938,6 @@ export async function removeTryOnBatch(scope: string, batchId: string) {
     await useAssetStore.getState().removeAssets(assetIds);
     await flushAssetStorePersistence();
     void appQueryClient.invalidateQueries({ queryKey: ["asset-library"] });
-    void appQueryClient.invalidateQueries({ queryKey: ["asset-picker"] });
 }
 
 /** 用这批的草稿快照恢复面板，方便调整后再生成。 */

@@ -10,6 +10,7 @@ import { RequireFeature } from "@/components/auth/require-feature";
 import { FullScreenLoader, WorkspaceRouteLoader } from "@/components/ui/aceternity/full-screen-loader";
 import { StudioOpening } from "@/pages/projects/studio/studio-opening";
 import { workspaceRoutePages } from "@/lib/workspace-route-modules";
+import { preloadableLazy } from "@/lib/preloadable-lazy";
 import { CanvasRefreshShell } from "@/pages/canvas/canvas-refresh-shell";
 import { AuthScene } from "@/pages/auth/auth-scene";
 import RouteErrorPage from "@/pages/route-error";
@@ -17,7 +18,7 @@ import { isGuestWorkspacePath } from "@/lib/guest-workspace";
 import { teamIdFromPath } from "@/lib/team-query-keys";
 import { workspacePagePath, workspaceTeamId } from "@/lib/workspace-routes";
 
-const AdminPage = lazy(() => import("@/pages/admin"));
+const AdminPage = preloadableLazy(() => import("@/pages/admin"));
 const EcommerceManagementPage = lazyAdminPage(() => import("@/pages/admin/ecommerce-management-page"));
 const EcommerceFeaturesPage = lazyAdminPage(() => import("@/pages/admin/ecommerce-features-page"));
 const GarmentLibraryAdminPage = lazyAdminPage(() => import("@/pages/admin/pose-library/garment-library-page"));
@@ -33,6 +34,7 @@ const EmailSettingsPage = lazyAdminPage(() => import("@/pages/admin/admin-route-
 const FeatureAvailabilityPage = lazyAdminPage(() => import("@/pages/admin/admin-route-pages").then((module) => ({ default: module.FeatureAvailabilityPage })));
 const AgentLessonsPage = lazyAdminPage(() => import("@/pages/admin/admin-route-pages").then((module) => ({ default: module.AgentLessonsPage })));
 const ChannelsPage = lazyAdminPage(() => import("@/pages/admin/channels/channels-page"));
+const RequestProtocolsPage = lazyAdminPage(() => import("@/pages/admin/request-protocols/protocols-page"));
 const LogicalModelsPage = lazyAdminPage(() => import("@/pages/admin/logical-models/logical-models-page"));
 const AdminPluginsPage = lazyAdminPage(() => import("@/pages/admin/plugins/plugins-page"));
 const AdminOfficialAssetsPage = lazyAdminPage(() => import("@/pages/admin/official-assets-page"));
@@ -62,18 +64,18 @@ const AdminFeedbacksPage = lazyAdminPage(() => import("@/pages/admin/feedbacks/f
 const UsersPage = lazyAdminPage(() => import("@/pages/admin/users/users-page"));
 const UserGroupsPage = lazyAdminPage(() => import("@/pages/admin/user-groups/user-groups-page"));
 const AssetsPage = workspaceRoutePages.assets;
-const LoginPage = lazy(() => import("@/pages/auth/login"));
-const RegisterPage = lazy(() => import("@/pages/auth/register"));
-const ForgotPasswordPage = lazy(() => import("@/pages/auth/forgot-password"));
+const LoginPage = preloadableLazy(() => import("@/pages/auth/login"));
+const RegisterPage = preloadableLazy(() => import("@/pages/auth/register"));
+const ForgotPasswordPage = preloadableLazy(() => import("@/pages/auth/forgot-password"));
 const CanvasPage = workspaceRoutePages.canvas;
 const CanvasProjectPage = workspaceRoutePages.canvasProject;
-const SharedCanvasPage = lazy(() => import("@/pages/canvas/shared"));
-const ArkPortraitResultPage = lazy(() => import("@/pages/ark-portrait-result"));
+const SharedCanvasPage = preloadableLazy(() => import("@/pages/canvas/shared"));
+const ArkPortraitResultPage = preloadableLazy(() => import("@/pages/ark-portrait-result"));
 const CreatePage = workspaceRoutePages.create;
 const EcommercePage = workspaceRoutePages.ecommerce;
 const ImageWorkbenchPage = workspaceRoutePages.imageWorkbench;
 const VideoWorkbenchPage = workspaceRoutePages.videoWorkbench;
-const NotFound = lazy(() => import("@/pages/not-found"));
+const NotFound = preloadableLazy(() => import("@/pages/not-found"));
 const SkillsPage = workspaceRoutePages.skills;
 const SkillWorkbenchPage = workspaceRoutePages.skillWorkbench;
 const TasksPage = workspaceRoutePages.tasks;
@@ -83,11 +85,11 @@ const ProjectCreatePage = workspaceRoutePages.projectCreate;
 const SettingsPage = workspaceRoutePages.settings;
 const ReferralPage = workspaceRoutePages.referral;
 const AdminReferralPage = lazyAdminPage(() => import("@/pages/admin/referral/referral-admin-page"));
-const UserLayout = lazy(() => import("@/layouts/user-layout"));
-const TeamsPage = lazy(() => import("@/pages/teams"));
-const TeamWorkspacePage = lazy(() => import("@/pages/teams").then((module) => ({ default: module.TeamWorkspacePage })));
-const TeamMembersPage = lazy(() => import("@/pages/teams/members").then((module) => ({ default: module.TeamMembersPane })));
-const TeamWalletPage = lazy(() => import("@/pages/teams/wallet").then((module) => ({ default: module.TeamWalletPane })));
+const UserLayout = preloadableLazy(() => import("@/layouts/user-layout"));
+const TeamsPage = preloadableLazy(() => import("@/pages/teams"));
+const TeamWorkspacePage = preloadableLazy<object>(() => import("@/pages/teams").then((module) => ({ default: module.TeamWorkspacePage })));
+const TeamMembersPage = preloadableLazy<object>(() => import("@/pages/teams/members").then((module) => ({ default: module.TeamMembersPane })));
+const TeamWalletPage = preloadableLazy<object>(() => import("@/pages/teams/wallet").then((module) => ({ default: module.TeamWalletPane })));
 
 function deferred(element: ReactNode, fallback: ReactNode = <WorkspaceRouteLoader />) {
     return <Suspense fallback={fallback}>{element}</Suspense>;
@@ -274,6 +276,7 @@ const routes: RouteObject[] = [
                     { path: "email-logs", element: <EmailLogsPage /> },
                     { path: "feedbacks", element: <AdminFeedbacksPage /> },
                     { path: "channels", element: <ChannelsPage /> },
+                    { path: "request-protocols", element: <RequestProtocolsPage /> },
                     // 关闭前台模型只影响用户端模型来源；后台仍可进入，便于开启前先配置。
                     { path: "models", element: <LogicalModelsPage /> },
                     { path: "ecommerce", element: <Navigate to="/admin/ecommerce/agent" replace /> },

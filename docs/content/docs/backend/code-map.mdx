@@ -71,6 +71,7 @@ description: 从产品功能快速定位主要代码入口
 
 - 网站与 Key 管理：`web/src/pages/admin/channels/`；统一批量弹窗与模板库：`pages/admin/components/channel-model-batch-*`、`capability-template-panel.tsx`、`pricing-template-panel.tsx`、`saved-*-templates.ts`。业务 API 在 `services/api/channel-websites.ts`、`wallet.ts`。
 - 后端：`handler/channel_websites.go`、`channel_model_batch.go` → `app/channel_websites.go`、`channel_model_batch*.go`；网站模型在 `model/channel_website.go`，Schema 97 在 `database/migration_channel_websites.go`。
+- 后台请求协议工作台：`web/src/pages/admin/request-protocols/`（`protocols-page.tsx`、`protocol-editor.tsx`、`protocol-form.ts`）与 `web/src/services/api/request-protocols.ts`；后端 `handler/request_protocols.go` → `app/request_protocol_management.go` → `protocol_plugins.go` 与 `repository/request_protocols.go`。直接复用 `.yingce-plugin` 归档与 `channel_model_batch.go` 的 `protocolRelease` 批量绑定。
 - 图片 / 视频设置适配入口：`web/src/lib/media-settings.ts`，调用方在画布生成、创作表单和工作台；生成请求在 `services/generation-task.ts`。版本预览沿用画布媒体历史及 `CanvasImagePreview` 组件。
 - 用户合同、并发和迁移说明见[渠道、模板与批量配置](/docs/backend/channel-configuration)、[HTTP API](/docs/backend/http-api)及[后端数据库](/docs/backend/backend-database)。
 
@@ -284,7 +285,7 @@ Pi SDK 执行前的参数校验失败由 `agent-runtime/pi/agent-runtime.mjs` �
 | 生成 Composer | `web/src/components/canvas/canvas-node-prompt-panel.tsx`、`canvas-config-composer.tsx` |
 | 风格中心、用户风格编辑与项目快照 | `web/src/components/canvas/canvas-style-picker-modal.tsx`、`style-profile-editor-modal.tsx`、`style-asset-binding-modal.tsx`、`web/src/lib/canvas/style-profile.ts`、`web/src/services/api/style-profiles.ts` |
 | 分镜脚本节点 | `web/src/components/canvas/canvas-script-node.tsx` |
-| 3D 导演台 | `web/src/components/canvas/director/` |
+| 世界引擎（原 3D 预演台） | 工作台与视口在 `web/src/components/canvas/previs/`，场景算法在 `web/src/lib/canvas/previs/`，类型在 `web/src/types/previs.ts`；运镜手法表与大师手法配方 `previs-camera-techniques.ts`（纯数据）、求值 `previs-camera-moves.ts`（CAM、截图、录制共用 `resolvePrevisViewFraming`）、检查器 `previs-camera-move-section.tsx`；录制转 MP4 在 `web/src/lib/canvas/canvas-video-merge.ts`（FFmpeg.wasm 排队执行，参数见 `canvas-video-merge-args.ts`）；Agent 写入在 `backend/internal/app/cloud_agent_previs*.go`，运镜白名单 `cloud_agent_previs_camera.go`、配方 `cloud_agent_previs_camera_recipes.go`、镜头检查 `cloud_agent_previs_review.go`，说明书完整范例由 `cloud_agent_previs_recipes_manual_test.go` 原样执行校验；手法表由 `web/test/previs-camera-moves.test.ts` 逐项比对，配方由 `backend/internal/app/testdata/previs_camera_recipes.json` 前后端共同校对；说明书在 `backend/internal/prompts/previs-manual/` |
 | 节点生成上下文 | `web/src/components/canvas/canvas-node-generation.ts` |
 | 布局和连线算法 | `web/src/lib/canvas/canvas-layout.ts`、`canvas-frame.ts` |
 | 任务结果准备与按节点提交 | `web/src/lib/canvas/canvas-generation-task-sync.ts`、`canvas-generation-result.ts`；持久化协调在 `web/src/services/canvas-generation-consumer.ts` |

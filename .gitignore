@@ -37,6 +37,9 @@ docs/content/docs/backend/*
 !docs/content/docs/backend/image-usage-billing.mdx
 !docs/content/docs/backend/credit-rewards.mdx
 !docs/content/docs/backend/creative-agent-runtime.mdx
+!docs/content/docs/backend/request-protocols.mdx
+!docs/content/docs/backend/evolink-seed-audio.mdx
+!docs/content/docs/backend/minimax-speech.mdx
 # Keep the pose library operator guide versioned without unignoring generated docs.
 !docs/content/docs/canvas/
 docs/content/docs/canvas/*
@@ -55,6 +58,7 @@ docs/public/images/*
 !docs/public/images/channel-website-groups.png
 !docs/public/images/channel-batch-configuration.png
 !docs/public/images/canvas-image-version-ratio.png
+!docs/public/images/drama-segment-canvas.png
 .env*
 !.env.example
 data/

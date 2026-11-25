@@ -74,7 +74,6 @@ export function ArkGroupDetail({ group, config, progress, onChanged, onDeleted }
     const syncLibrary = async (ids: Array<string | undefined>) => {
         await refreshArkLibraryAssets(ids.filter((id): id is string => Boolean(id)));
         void queryClient.invalidateQueries({ queryKey: ["asset-library"] });
-        void queryClient.invalidateQueries({ queryKey: ["asset-picker"] });
     };
 
     const saveName = () =>

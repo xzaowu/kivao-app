@@ -12,6 +12,7 @@ import (
 	"gorm.io/gorm"
 
 	"yingce/backend/internal/production"
+	"yingce/backend/internal/protocol"
 )
 
 var dramaCapabilities = []string{"text", "image", "video"}
@@ -52,7 +53,7 @@ func (s *Service) resolveDramaLogicalModel(access *userGroupAccess, id, capabili
 // dramaSegmentOperation 是剧情段视频在该衔接方式下的主要生成方式，用于报价与能力校验。
 func dramaSegmentOperation(settings DramaSettings, profile dramaVideoProfile) (string, map[string]int) {
 	if !settings.parallelVideo() {
-		return "image_to_video", map[string]int{"image": 1}
+		return profile.tailFrameOperation(false), map[string]int{"image": 1}
 	}
 	if profile.supports("reference_to_video") {
 		return "reference_to_video", map[string]int{"image": 1}
@@ -342,10 +343,10 @@ type dramaVideoProfile struct {
 	Operations []string
 	// MinImages 是模型要求的最少参考图数（含首帧）；剧情段发不出这么多张时预演就报出，不提交。
 	MinImages int
-	// MaxAudios / MaxAudioSeconds 是参考音频的张数与单段时长上限（秒，0 表示未声明），用于随段发送角色声音样本。
-	MaxAudios       int
-	MaxAudioSeconds int
-	GenerateAudio   bool
+	// 角色声音样本共享本次请求的参考音频段数和总时长上限。
+	MaxAudios             int
+	MaxTotalAudioDuration *int
+	GenerateAudio         bool
 	// PromptMaxChars 是提示词字符上限（含系统追加的参考图说明），与任务准入同一份能力合同；0 表示不限。
 	PromptMaxChars int
 	video          *VideoCapabilityConfig
@@ -402,10 +403,32 @@ func (p dramaVideoProfile) maxSeconds() int {
 
 // continuityIssue 返回模型不支持作品段落衔接方式的原因；空串表示可用。
 func (p dramaVideoProfile) continuityIssue(settings DramaSettings) string {
-	if !settings.parallelVideo() && !p.supports("image_to_video") {
-		return "所选视频模型不支持图生视频，无法用上一段尾帧续接；请在制作设置里改用“并行出片”或换用支持图生视频的模型"
+	if !settings.parallelVideo() && !p.supportsTailFrame() {
+		return "所选视频模型不支持短剧尾帧续接，请在制作设置里改用“并行出片”或换用支持续接的模型"
 	}
 	return ""
+}
+
+func (p dramaVideoProfile) tailFrameMode() string {
+	if p.video == nil {
+		return ""
+	}
+	return p.video.referenceContract.DramaTailFrameMode(p.video.providerModel)
+}
+
+func (p dramaVideoProfile) tailFrameOperation(withReferenceImages bool) string {
+	mode := p.tailFrameMode()
+	if p.supports("reference_to_video") && (mode == protocol.DramaTailFrameOmni ||
+		mode == protocol.DramaTailFrameReference && (withReferenceImages || !p.supports("image_to_video"))) {
+		return "reference_to_video"
+	}
+	return "image_to_video"
+}
+
+func (p dramaVideoProfile) supportsTailFrame() bool {
+	operation := p.tailFrameOperation(false)
+	return p.tailFrameMode() != protocol.DramaTailFrameParallel && p.supports(operation) &&
+		(p.video == nil || p.video.maxImagesFor(operation) > 0)
 }
 
 // dramaModelUnavailable 说明作品保存的模型为什么不能用、去哪里改。渠道模型被删除或停用后，
@@ -456,7 +479,7 @@ func (s *Service) dramaVideoProfile(choice DramaModelChoice) (dramaVideoProfile,
 	video := capability.Video
 	options := dramaDurationOptions(video.Duration)
 	// 不声明同步生成声音的模型也可以用：段视频没有对白与音效，由用户在选模型时自行取舍。
-	profile := dramaVideoProfile{Durations: options, Operations: video.Operations, MinImages: max(video.References.MinImages, 0), MaxAudios: max(video.References.MaxAudios, 0), MaxAudioSeconds: max(video.References.MaxAudioDuration, 0), GenerateAudio: video.GenerateAudio.Supported, PromptMaxChars: max(video.References.PromptMaxChars, 0), video: video}
+	profile := dramaVideoProfile{Durations: options, Operations: video.Operations, MinImages: max(video.References.MinImages, 0), MaxAudios: max(video.References.MaxAudios, 0), MaxTotalAudioDuration: video.References.MaxTotalAudioDuration, GenerateAudio: video.GenerateAudio.Supported, PromptMaxChars: max(video.References.PromptMaxChars, 0), video: video}
 	if profile.maxSeconds() <= 0 {
 		return profile, errors.New("未声明可生成时长，无法按剧情段切分")
 	}
@@ -981,7 +1004,7 @@ func (s *Service) dramaModelOption(choice DramaModelChoice, capability, label, p
 			option.MaxVideoSeconds = profile.maxSeconds()
 			option.MaxAudios = profile.MaxAudios
 			option.MinReferenceImages = profile.MinImages
-			option.TailFrameChain = profile.supports("image_to_video")
+			option.TailFrameChain = profile.supportsTailFrame()
 			option.VideoRatios = profile.ratios()
 			audio := profile.GenerateAudio
 			option.GenerateAudio = &audio

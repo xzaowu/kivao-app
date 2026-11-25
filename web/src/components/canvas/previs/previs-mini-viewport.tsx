@@ -3,6 +3,7 @@ import { OrthographicCamera } from "@react-three/drei";
 import { Suspense } from "react";
 import { useTranslation } from "react-i18next";
 import type { PrevisObject, PrevisScene } from "@/types/previs";
+import { PrevisPropVisual } from "./previs-prop-view";
 
 /**
  * 画布卡片的轻量场景缩略图：固定俯视正交相机，只渲染简化几何体。
@@ -21,11 +22,14 @@ export function PrevisMiniViewport({ scene }: { scene: PrevisScene }) {
                 <directionalLight position={[4, 8, 4]} intensity={1.1} />
                 <Suspense fallback={null}>
                     <gridHelper args={[20, 20, "#65738a", "#2b3544"]} />
-                    {visibleObjects.map((object) => <MiniObject key={object.id} object={object} />)}
+                    {visibleObjects.map((object) => (
+                        <MiniObject key={object.id} object={object} />
+                    ))}
                 </Suspense>
             </Canvas>
             <div className="pointer-events-none absolute inset-x-3 top-3 flex items-center justify-between text-[var(--fs-label)] font-semibold uppercase tracking-[0.16em] text-white/55">
-                <span>Top view</span><span>{activeShot?.name || t("canvasC.previsMini.noShot")}</span>
+                <span>Top view</span>
+                <span>{activeShot?.name || t("canvasC.previsMini.noShot")}</span>
             </div>
             <div className="pointer-events-none absolute inset-x-3 bottom-3 flex items-center justify-between gap-2 rounded-lg border border-white/12 bg-[#0d1118cc] px-3 py-2 text-[var(--fs-label)] font-medium text-white/80 backdrop-blur-md">
                 <Stat value={visibleObjects.length} label={t("canvasC.previsMini.objects")} />
@@ -61,6 +65,22 @@ function MiniObject({ object }: { object: PrevisObject }) {
             </group>
         );
     }
+    if (object.kind === "prop" && object.propId) {
+        return (
+            <group position={position} rotation={rotation} scale={scale}>
+                <PrevisPropVisual object={object} selected={false} />
+            </group>
+        );
+    }
+    if (object.kind === "layout" && object.layout) {
+        // 俯视缩略图只表达布景占地，不展开上千个实例。
+        return (
+            <mesh position={[x, -0.03, z]} rotation={[-Math.PI / 2, 0, object.transform.rotation[1]]}>
+                <planeGeometry args={[object.layout.size, object.layout.size]} />
+                <meshBasicMaterial color="#7f8b78" transparent opacity={0.35} />
+            </mesh>
+        );
+    }
     if (object.primitive === "sphere") {
         return (
             <mesh position={position} rotation={rotation} scale={scale} castShadow receiveShadow>
@@ -94,5 +114,10 @@ function MiniObject({ object }: { object: PrevisObject }) {
 }
 
 function Stat({ value, label }: { value: number | string; label: string }) {
-    return <span className="inline-flex min-w-0 items-center gap-1"><b className="text-white">{value}</b><span>{label}</span></span>;
+    return (
+        <span className="inline-flex min-w-0 items-center gap-1">
+            <b className="text-white">{value}</b>
+            <span>{label}</span>
+        </span>
+    );
 }

@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"yingce/backend/internal/assets"
 	"yingce/backend/internal/auth"
 	"yingce/backend/internal/canvas"
 	"yingce/backend/internal/inspirations"
@@ -31,6 +32,7 @@ import (
 type Service struct {
 	repo                     *repository.Repository
 	dataDir                  string
+	resourceThumbnails       *assets.ThumbnailCache
 	cancelMu                 sync.Mutex
 	registrationMu           sync.Mutex
 	emailCodeMu              sync.Mutex
@@ -173,6 +175,7 @@ func newService(repo *repository.Repository, dataDir string) *Service {
 		}
 	}
 	service := &Service{repo: repo, dataDir: dataDir, activeStorageTests: make(map[string]bool), activeCancels: make(map[string]context.CancelFunc), agentConflictStreak: make(map[string]int), agentSchedulerWake: make(chan struct{}, 1), taskDispatcherWake: make(chan struct{}, 1), piRunners: make(map[string]context.CancelFunc), coordinator: coordinator, runtimeErr: err, pluginRuntime: pluginRuntime, pluginRuntimeErr: pluginRuntimeErr, paymentRegistry: paymentRegistry, workerID: newID(), routeCatalogTTL: 30 * time.Second, routeCatalogMaxStale: 5 * time.Minute, routeHealthBlocked: make(map[string]time.Time), geminiCacheLocks: make(map[string]*geminiCacheKeyLock)}
+	service.resourceThumbnails = assets.NewThumbnailCache(dataDir)
 	service.taskBillingCoordinator = newTaskBillingCoordinator(service.repo)
 	service.taskTerminalCoordinator = newTaskTerminalCoordinator(service)
 	service.taskRouteExecutor = newTaskRouteExecutor(service)

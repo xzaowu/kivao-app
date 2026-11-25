@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"yingce/backend/internal/imagebilling"
 	"yingce/backend/internal/kernel"
@@ -413,6 +414,12 @@ func (s *Service) resolveBillingOrder(actor *model.User, id string, action strin
 	}
 	switch action {
 	case "settle":
+		if order.BillingMode == "per_second" && order.Capability == "audio" {
+			if err := s.settleReviewedAudio(actor, order, truncateRunes(note, 500)); err != nil {
+				return nil, err
+			}
+			return s.repo.BillingOrder(id)
+		}
 		err = s.SettleBilling(id, order.ProviderRequestID)
 	case "refund":
 		err = s.RefundBilling(id, note)
@@ -957,6 +964,13 @@ func estimateTaskBillingTokens(input map[string]any, capability string) tokenBil
 		estimate := estimateArkVideoTokens(input)
 		estimate.ReferenceVideos = referenceVideoUsageFromInput(input)
 		return estimate
+	}
+	if capability == "audio" {
+		// Qwen TTS settles from provider usage. Reserve conservatively from the
+		// spoken text so an audio task does not inherit the text model's fixed
+		// 4096 output-token estimate regardless of its length.
+		chars := int64(utf8.RuneCountInString(stringValue(input["prompt"])))
+		return tokenBillingEstimate{InputTokens: max(1, (chars*6+4)/5), OutputTokens: max(64, chars*6)}
 	}
 	return estimateTaskTokens(input)
 }

@@ -97,3 +97,9 @@
 按文案创作及独立文字排版 [#1035](https://github.com/ddcat-ai/open-ai-canvas/pull/1035)（`6bbeaf59`）继续单独评估，涉及共用工作台和作品画廊、透明原图导出的底色，以及多轮历史素材的删除保护。
 
 对照了 [WMRBYY/ecommerce-agent 的 `6a29d57a`](https://github.com/WMRBYY/ecommerce-agent/tree/6a29d57a6cb5ef4ea1174259d73ab7d34b9fafbf)。这是已于 2026-11-04 合入的 [上游 #945](https://github.com/ddcat-ai/open-ai-canvas/pull/945) 的商品图片模块。模块在 `backend/`、`web/` 下有 388 个文件，当前工作区有 386 个同路径文件，其中 319 个内容完全一致。其余两个是旧版画布文案布局函数与测试。该仓库的手持风扇多屏示例适合做商品详情图验收参考。工作区保留现有实现，不重复应用其基于 `82fc5c03` 的接入补丁。
+
+## `882a1d1` 至 `536771c6` 同步
+
+分批采用画布媒体细节、预演台世界引擎、慢网资源预加载、创作任务恢复、Agent 历史归档与 SSE 重连、短剧参考素材、音频按秒结算及声明式请求协议管理。上游发布标签和版本元数据延后处理。Agent 历史归档使用 Schema 110。
+
+KIVAO 本地优化增加平台本地图片缩略图，并复用素材库和同条件选材弹窗的列表缓存。检查项见 [媒体性能跟进](kivao-performance-followups.md) 和 [待测试](../content/docs/progress/pending-test.mdx#画布与素材库缩略图)。

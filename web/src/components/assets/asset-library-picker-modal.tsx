@@ -18,7 +18,8 @@ import { translate } from "@/i18n";
 import type { ExternalAssetPickerReference } from "@/lib/plugins/plugin-types";
 import { flushAssetStorePersistence, useAssetStore, type Asset } from "@/stores/use-asset-store";
 import { listProjectAssetsPage, type ProjectAsset } from "@/services/api/projects";
-import { deleteAssetsWithRemoteSync, loadAssetLibraryPage, loadAssetsForUse, localSavedRemotePendingMessage, saveRemoteUserDataNow } from "@/services/user-data-sync";
+import { deleteAssetsWithRemoteSync, loadAssetsForUse, localSavedRemotePendingMessage, saveRemoteUserDataNow } from "@/services/user-data-sync";
+import { assetLibraryPageQuery, isAssetLibraryQueryScope } from "@/services/asset-library-query";
 import { fetchOfficialAssets, importOfficialAssetToProject, type OfficialAsset } from "@/services/api/official-assets";
 
 import "./asset-library-picker-modal.css";
@@ -262,8 +263,16 @@ export function AssetLibraryPickerModal({
     });
     // remoteKind 是调用方写死的能力约束；媒体类型筛选只在没有该约束时参与服务端查询。
     const remoteQueryKind = remoteKind || (mediaKind === "all" ? undefined : mediaKind);
+    const libraryPageQuery = assetLibraryPageQuery(userId, {
+        page: remotePage,
+        pageSize: remotePageSize,
+        kind: remoteQueryKind,
+        category: category === "all" || category === "archived" || category === remoteQueryKind ? undefined : category,
+        status: category === "archived" ? "archived" : "active",
+        query: remoteKeyword,
+    });
     const remoteQuery = useQuery({
-        queryKey: projectId ? ["project-asset-picker", projectId, userId, remotePage, remotePageSize, category, remoteKeyword] : ["asset-picker", userId, remotePage, remotePageSize, category, remoteKeyword, remoteQueryKind],
+        queryKey: projectId ? ["project-asset-picker", projectId, userId, remotePage, remotePageSize, category, remoteKeyword] : libraryPageQuery.queryKey,
         queryFn: async ({ signal }) => {
             if (projectId) {
                 const page = await listProjectAssetsPage(
@@ -279,22 +288,16 @@ export function AssetLibraryPickerModal({
                 );
                 return { source: "project" as const, ...page };
             }
-            const page = await loadAssetLibraryPage({
-                page: remotePage,
-                pageSize: remotePageSize,
-                kind: remoteQueryKind,
-                category: category === "all" || category === "archived" || category === remoteQueryKind ? undefined : category,
-                status: category === "archived" ? "archived" : "active",
-                query: remoteKeyword,
-                signal,
-            });
-            return { source: "library" as const, ...page };
+            return libraryPageQuery.queryFn({ signal });
         },
+        staleTime: projectId ? undefined : libraryPageQuery.staleTime,
+        gcTime: projectId ? undefined : libraryPageQuery.gcTime,
         enabled: remoteEnabled && open && sessionHydrated,
         // 切分类/翻页时保留上一页，避免加载间隙退回本地数据源、左侧分类被重置（点"角色"闪一下又跳回全部）。
         placeholderData: (previous, previousQuery) => {
-            if (projectId && (previousQuery?.queryKey[0] !== "project-asset-picker" || previousQuery.queryKey[1] !== projectId || previousQuery.queryKey[2] !== userId)) return undefined;
-            return keepPreviousData(previous);
+            const key = previousQuery?.queryKey;
+            if (projectId) return key?.[0] === "project-asset-picker" && key[1] === projectId && key[2] === userId ? previous : undefined;
+            return isAssetLibraryQueryScope(key, userId) ? previous : undefined;
         },
     });
     // 调用方的 items 只是本地缓存，不代表可插入集合（分页结果大多不在缓存里）。能接收 pickedItems 的
@@ -1021,16 +1024,16 @@ function PickerCard({ item, categoryLabel, selected, onToggle }: { item: AssetLi
             <button type="button" className="asset-picker-card-action" onClick={onToggle} disabled={disabled} aria-pressed={selected} title={item.disabledReason || item.title}>
                 <span className="asset-picker-card-media" data-state={mediaState}>
                     {item.officialAsset ? (
-                        <CachedResourceImage eager storageKey={item.officialAsset.coverStorageKey} alt={item.title} fallback={fallback} loadingFallback={null} onLoad={markLoaded} onError={markFailed} />
+                        <CachedResourceImage storageKey={item.officialAsset.coverStorageKey} variant="thumbnail" alt={item.title} loading="lazy" decoding="async" fallback={fallback} loadingFallback={null} onLoad={markLoaded} onError={markFailed} />
                     ) : item.asset?.kind === "entity" ? (
                         <CharacterAssetCover asset={item.asset} />
                     ) : item.asset?.kind === "audio" && !hasImage ? (
                         <AudioWaveArt seed={item.asset.id} />
                     ) : hasImage ? (
                         <CachedResourceImage
-                            eager
                             storageKey={item.imageStorageKey}
                             src={item.imageUrl}
+                            variant="thumbnail"
                             alt={item.title}
                             loading="lazy"
                             decoding="async"
@@ -1086,7 +1089,7 @@ function PickerThumb({ item }: { item: AssetLibraryPickerItem }) {
     const storageKey = item.imageStorageKey || (asset?.kind === "image" ? asset.data.storageKey : asset?.kind === "entity" ? asset.data.coverStorageKey : undefined);
     const fallback = <span className="asset-picker-tray-fallback">{kindIcon(item)}</span>;
     if (!src && !storageKey) return fallback;
-    return <CachedResourceImage storageKey={storageKey} src={src} alt="" loading="lazy" decoding="async" draggable={false} fallback={fallback} loadingFallback={null} />;
+    return <CachedResourceImage storageKey={storageKey} src={src} variant="thumbnail" alt="" loading="lazy" decoding="async" draggable={false} fallback={fallback} loadingFallback={null} />;
 }
 
 function renderPickerFolders(folders: AssetLibraryPickerFolder[], items: AssetLibraryPickerItem[], selectedId: string, onSelect: (folderId: string) => void, parentId = "", depth = 0, visited: ReadonlySet<string> = new Set()): ReactNode {

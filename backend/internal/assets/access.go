@@ -55,6 +55,8 @@ type ResourceAccess struct {
 	RefreshAt        time.Time       `json:"refreshAt"`
 	Revision         string          `json:"revision"`
 	FallbackReason   string          `json:"fallbackReason,omitempty"`
+	OriginalWidth    int             `json:"originalWidth,omitempty"`
+	OriginalHeight   int             `json:"originalHeight,omitempty"`
 }
 
 func AccessError(status int, reason, message string) *kernel.AppError {
@@ -131,7 +133,8 @@ func ResolveAccess(resource *model.Resource, setting storage.Settings, options A
 		return nil, kernel.Forbidden("资源授权已过期")
 	}
 	access := &ResourceAccess{ResourceID: resource.ID, RequestedVariant: options.Variant, ActualVariant: VariantOriginal,
-		IssuedAt: now, ExpiresAt: &expires, RefreshAt: now.Add(expires.Sub(now) * 4 / 5), Revision: resource.ETag + ":" + resource.PlaybackStatus + ":" + storage.DeliveryRevision(setting)}
+		IssuedAt: now, ExpiresAt: &expires, RefreshAt: now.Add(expires.Sub(now) * 4 / 5), Revision: resource.ETag + ":" + resource.PlaybackStatus + ":" + storage.DeliveryRevision(setting),
+		OriginalWidth: resource.Width, OriginalHeight: resource.Height}
 	if options.Variant == VariantPlayback {
 		if resource.Provider == "local" && resource.PlaybackStatus == model.PlaybackStatusReady && resource.PlaybackObjectKey != "" {
 			access.ActualVariant = VariantPlayback
@@ -140,7 +143,11 @@ func ResolveAccess(resource *model.Resource, setting storage.Settings, options A
 		}
 	}
 	if options.Variant == VariantThumbnail {
-		access.FallbackReason = "thumbnail_not_ready"
+		if options.Purpose == PurposeDisplay && ThumbnailEligible(resource) {
+			access.ActualVariant = VariantThumbnail
+		} else {
+			access.FallbackReason = "thumbnail_not_ready"
+		}
 	}
 	if options.Purpose == PurposeEcommerceExport {
 		access.Delivery = DeliveryProxy

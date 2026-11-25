@@ -998,7 +998,7 @@ export async function deleteAssetsWithRemoteSync(ids: string[]) {
     if (epoch !== sessionEpoch) throw new Error("账号已切换，请刷新原账号素材库确认删除结果");
     // 列表查询也会进入同步队列，必须在退出删除队列后触发，不能在队列内等待刷新。
     // 刷新慢或失败不应阻塞确认弹窗关闭，也不能把已完成的删除报告为失败。
-    void Promise.all([appQueryClient.invalidateQueries({ queryKey: ["asset-library"] }, { throwOnError: true }), appQueryClient.invalidateQueries({ queryKey: ["asset-picker"] }, { throwOnError: true })]).catch((error) => {
+    void appQueryClient.invalidateQueries({ queryKey: ["asset-library"] }, { throwOnError: true }).catch((error) => {
         console.warn("素材删除后列表刷新失败", error);
     });
 }

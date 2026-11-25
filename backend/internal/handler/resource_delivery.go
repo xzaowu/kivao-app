@@ -63,6 +63,15 @@ func serveResourceDelivery(c *gin.Context, delivery *service.ResourceDelivery, c
 		return
 	}
 	defer stream.Body.Close()
+	if access.RequestedVariant == assets.VariantThumbnail {
+		// A fallback and a later thumbnail at the same URL use distinct
+		// validators. Revalidation always runs after the access check.
+		if access.ActualVariant == assets.VariantThumbnail {
+			c.Header("ETag", stream.ETag)
+		} else {
+			c.Header("ETag", resourceResponseETag(stream.Resource))
+		}
+	}
 	if cacheControl != "" {
 		c.Header("Cache-Control", cacheControl)
 	}

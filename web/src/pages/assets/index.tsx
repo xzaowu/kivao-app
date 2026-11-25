@@ -19,7 +19,7 @@ import { AssetBatchUploadModal } from "./asset-batch-upload-modal";
 import { AssetRenameModal } from "./asset-rename-modal";
 import { assetGridCardMinWidth, type AssetGridDensity, assetGridDensityOptions, parseAssetGridDensity } from "./asset-grid-density";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { App, Form, Popconfirm, Button, Checkbox, Dropdown, Input, Modal, Space, Tag, Typography, Progress } from "antd";
 import { createOfficialAssetRecommendation } from "@/services/api/official-asset-recommendations";
 import { ensureAssetAvailableForRecommendation } from "@/services/user-data-sync";
@@ -35,7 +35,8 @@ import { arkLibraryProgressMap } from "@/lib/ark-assets";
 import { ARK_ASSET_CATEGORY, ASSET_ASSIGNABLE_CATEGORY_OPTIONS, ASSET_CATEGORY_LABELS, ASSET_CATEGORY_OPTIONS, defaultAssetCategoryForKind, normalizeAssetCategory } from "@/lib/asset-category";
 import { downloadBrowserMedia } from "@/services/browser-download";
 import { flushAssetStorePersistence, useAssetStore, type AssetCategory, type AssetKind, type ImageAsset } from "@/stores/use-asset-store";
-import { loadAssetLibraryPage, loadAssetsForUse, saveRemoteUserDataNow, localSavedRemotePendingMessage, deleteAssetsWithRemoteSync, deleteAssetWithRemoteSync } from "@/services/user-data-sync";
+import { loadAssetsForUse, saveRemoteUserDataNow, localSavedRemotePendingMessage, deleteAssetsWithRemoteSync, deleteAssetWithRemoteSync } from "@/services/user-data-sync";
+import { ASSET_LIBRARY_QUERY_KEY, assetLibraryPageQuery, isAssetLibraryQueryScope } from "@/services/asset-library-query";
 import { useUserStore } from "@/stores/use-user-store";
 import { createAssetFolder, deleteAssetFolder, listAssetFolders, listRemoteAssetsPage, updateAssetFolder, type AssetFolder, moveRemoteAssetsToFolder } from "@/services/api/user-data";
 import { assetCountMap, assetSearchText, readAssetGridDensity, assetKindIcons, assetCategoryIcons } from "./asset-library-format";
@@ -116,7 +117,6 @@ const categoryOptions = [
 ];
 // 方舟认证分类只能由认证结果写入：未认证素材从可选分类里排除，已认证素材只展示锁定的方舟认证分类。
 const arkLockedCategoryOptions = [{ label: ASSET_CATEGORY_LABELS[ARK_ASSET_CATEGORY], value: ARK_ASSET_CATEGORY }];
-const ASSET_LIBRARY_QUERY_KEY = ["asset-library"] as const;
 const ASSET_FOLDER_QUERY_KEY = ["asset-folders"] as const;
 type AssetFolderFilter = "all" | "uncategorized" | string;
 
@@ -215,21 +215,18 @@ export default function AssetsPage() {
     }, [validAssets, keyword, kindFilter, categoryFilter, folderFilter]);
 
     const assetPageQuery = useQuery({
-        queryKey: [...ASSET_LIBRARY_QUERY_KEY, userId, page, pageSize, viewMode, kindFilter, categoryFilter, folderFilter, debouncedKeyword],
-        queryFn: ({ signal }) =>
-            loadAssetLibraryPage({
-                page,
-                pageSize,
-                status: viewMode === "trash" ? "archived" : "active",
-                kind: kindFilter === "all" ? undefined : kindFilter,
-                category: categoryFilter === "all" ? undefined : categoryFilter,
-                folderId: folderFilter !== "all" && folderFilter !== "uncategorized" ? folderFilter : undefined,
-                uncategorized: folderFilter === "uncategorized",
-                query: debouncedKeyword || undefined,
-                signal,
-            }),
+        ...assetLibraryPageQuery(userId, {
+            page,
+            pageSize,
+            status: viewMode === "trash" ? "archived" : "active",
+            kind: kindFilter === "all" ? undefined : kindFilter,
+            category: categoryFilter === "all" ? undefined : categoryFilter,
+            folderId: folderFilter !== "all" && folderFilter !== "uncategorized" ? folderFilter : undefined,
+            uncategorized: folderFilter === "uncategorized",
+            query: debouncedKeyword || undefined,
+        }),
         enabled: Boolean(userId),
-        placeholderData: keepPreviousData,
+        placeholderData: (previous, query) => (isAssetLibraryQueryScope(query?.queryKey, userId) ? previous : undefined),
     });
 
     const localVisibleAssets = useMemo(() => {

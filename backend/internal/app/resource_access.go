@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"io"
 	"net/url"
 	"strconv"
 	"time"
@@ -71,7 +72,14 @@ func (s *Service) resolveResourceAccess(resource *model.Resource, options Resour
 			return nil, assets.AccessError(409, "resource_not_ready", "资源尚未上传完成")
 		}
 		now := time.Now().UTC()
-		return &ResourceAccess{ResourceID: resource.ID, RequestedVariant: options.Variant, ActualVariant: assets.VariantOriginal, Delivery: assets.DeliveryProxy, IssuedAt: now, RefreshAt: now.Add(time.Hour), Revision: resource.ETag, URL: "/api/teams/" + url.PathEscape(teamID) + "/workspace/resources/" + url.PathEscape(resource.ID) + "/file"}, nil
+		access := &ResourceAccess{ResourceID: resource.ID, RequestedVariant: options.Variant, ActualVariant: assets.VariantOriginal, Delivery: assets.DeliveryProxy,
+			IssuedAt: now, RefreshAt: now.Add(time.Hour), Revision: resource.ETag, OriginalWidth: resource.Width, OriginalHeight: resource.Height,
+			URL: "/api/teams/" + url.PathEscape(teamID) + "/workspace/resources/" + url.PathEscape(resource.ID) + "/file"}
+		if options.Variant == assets.VariantThumbnail && options.Purpose == assets.PurposeDisplay && assets.ThumbnailEligible(resource) {
+			access.ActualVariant = assets.VariantThumbnail
+			access.URL += "?variant=thumbnail"
+		}
+		return access, nil
 	}
 	var setting ossSettingValue
 	if resource.Provider != "local" {
@@ -86,6 +94,9 @@ func (s *Service) resolveResourceAccess(resource *model.Resource, options Resour
 		setting.Runtime = s.storageSettingWithRuntimePolicy(ossSettingValue{}).Runtime
 	}
 	return assets.ResolveAccess(resource, setting, options, time.Now().UTC(), func(variant assets.ResourceVariant, expires time.Time) (string, error) {
+		if variant == assets.VariantThumbnail {
+			return "/api/resources/" + url.PathEscape(resource.ID) + "/file?variant=thumbnail", nil
+		}
 		if options.Purpose == assets.PurposeEcommerceExport {
 			u := &url.URL{Path: "/api/resources/" + url.PathEscape(resource.ID) + "/file"}
 			q := u.Query()
@@ -129,6 +140,23 @@ func (s *Service) prepareResourceDelivery(userID string, resource *model.Resourc
 	delivery := &ResourceDelivery{Resource: resource, Access: access}
 	if options.DescribeOnly || access.Delivery == assets.DeliveryCDN || access.Delivery == assets.DeliveryOrigin {
 		return delivery, nil
+	}
+	if access.ActualVariant == assets.VariantThumbnail {
+		delivery.Stream, err = s.resourceThumbnails.Open(resource, func() (io.ReadCloser, error) {
+			source, err := s.openResourceRange(userID, resource, "")
+			if err != nil {
+				return nil, err
+			}
+			return source.Body, nil
+		})
+		if err == nil {
+			delivery.Resource = delivery.Stream.Resource
+			return delivery, nil
+		}
+		// Serve the original with a separate cache validator when a thumbnail
+		// cannot be produced.
+		access.ActualVariant = assets.VariantOriginal
+		access.FallbackReason = "thumbnail_not_ready"
 	}
 	if access.ActualVariant == assets.VariantPlayback {
 		delivery.Stream, err = s.OpenResourcePlaybackRange(userID, resource.ID)
